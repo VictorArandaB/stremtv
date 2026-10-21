@@ -1339,6 +1339,7 @@
       var self = this;
       this.ctx = ctx; this.stream = stream; this.row = row || null;
       this.duration = 0; this.time = 0; this.paused = false; this.started = false; this.lastPaused = null;
+      this.finalUrl = null; this.probeText = ''; this.probeId = 0;
       this.startAt = ctx.startAt || 0;
       this.seekTarget = null;
       $('#player').classList.remove('hidden');
@@ -1361,6 +1362,7 @@
       // Torrentio redirige a un vídeo de aviso cuando el debrid falla: comprobarlo antes de reproducir
       this.resolve(stream.url).then(function (finalUrl) {
         if (self.stream !== stream) return;
+        self.finalUrl = finalUrl;
         if (self.hasAV()) self.openAV(finalUrl); else self.openHTML(finalUrl);
       }, function (msg) {
         if (self.stream === stream) self.fail(msg);
@@ -1494,6 +1496,7 @@
       }
       // avisar a Trakt al empezar, pausar y reanudar
       if (this.started && this.lastPaused !== this.paused) {
+        if (this.paused) this.probeSpeed(); else { this.probeId++; this.probeText = ''; }
         this.lastPaused = this.paused;
         Trakt.scrobble(this.paused ? 'pause' : 'start', this.ctx, this.pct());
       }
@@ -1501,7 +1504,8 @@
       $('#osd-cur').textContent = fmtTime(shown);
       $('#osd-dur').textContent = this.duration ? fmtTime(this.duration) : '--:--';
       $('#osd-progress').style.width = this.duration ? (shown / this.duration * 100) + '%' : '0';
-      $('#osd-state').textContent = this.seekTarget !== null ? (this.seekTarget >= this.time ? '⏩ ' : '⏪ ') + fmtTime(this.seekTarget) : (this.paused ? '⏸ Pausa' : '');
+      $('#osd-state').textContent = this.seekTarget !== null ? (this.seekTarget >= this.time ? '⏩ ' : '⏪ ') + fmtTime(this.seekTarget) :
+        (this.paused ? '⏸ Pausa' + (this.probeText ? ' · ' + this.probeText : '') : '');
       if (this.paused) this.showOSD(true);
       Subs.update(this.time);
     },
@@ -1676,6 +1680,38 @@
       return false; // Atrás lo gestiona la pila (cierra el reproductor)
     },
 
+    // al pausar: descargar ~4 MB del mismo archivo (por donde vamos) para medir lo rápido que lo sirve el debrid
+    probeSpeed: function () {
+      var self = this, id = ++this.probeId, url = this.finalUrl, st = this.stream || {};
+      if (!url) return;
+      var gb = parseSizeGB(st.stats), total = gb * 1073741824;
+      var start = total && this.duration ? Math.floor(total * Math.min(0.95, this.time / this.duration)) : 0;
+      var CHUNK = 4 * 1048576;
+      this.probeText = '↓ midiendo…';
+      var x = new XMLHttpRequest(), t0 = 0, done = false;
+      x.open('GET', url, true);
+      x.setRequestHeader('Range', 'bytes=' + start + '-' + (start + CHUNK - 1));
+      x.responseType = 'arraybuffer';
+      x.timeout = 20000;
+      var finish = function (bytes) {
+        if (done || id !== self.probeId) return;
+        done = true;
+        var secs = (Date.now() - t0) / 1000;
+        if (!t0 || secs <= 0 || bytes < 262144) { self.probeText = '↓ no se pudo medir'; return; }
+        var mbps = Math.round(bytes * 8 / secs / 1e5) / 10;
+        var need = st.mbps || 0;
+        self.probeText = '↓ ' + String(mbps).replace('.', ',') + ' Mb/s' +
+          (need ? ' (necesita ~' + String(need).replace('.', ',') + ') ' + (mbps >= need * 1.3 ? '✓' : mbps >= need ? '⚠ justo' : '✗ lenta: prueba otra fuente') : '');
+      };
+      x.onprogress = function (e) {
+        if (!t0) t0 = Date.now();
+        if (Date.now() - t0 > 6000) { finish(e.loaded); try { x.abort(); } catch (er) { /* ya cerrada */ } }
+      };
+      x.onload = function () { finish(x.response ? x.response.byteLength : 0); };
+      x.onerror = x.ontimeout = function () { if (!done && id === self.probeId) { done = true; self.probeText = '↓ no se pudo medir'; } };
+      x.send();
+    },
+
     pct: function () { return this.duration ? this.time / this.duration * 100 : 0; },
 
     saveProgress: function () {
@@ -1711,6 +1747,7 @@
     },
 
     close: function () {
+      this.probeId++;
       this.syncMode = false;
       this.paintSync();
       if (this.started) Trakt.scrobble('stop', this.ctx, this.pct()); // >= 80 % lo marca como visto
@@ -1982,7 +2019,7 @@
 
   // ---------------------------------------------------------------- arranque
 
-  var VERSION = '0.5.2';
+  var VERSION = '0.5.3';
 
   function fitScreen() {
     var z = window.innerWidth / 1920;
