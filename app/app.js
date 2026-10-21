@@ -2602,13 +2602,20 @@
           onbufferingcomplete: function () { self.buffering = false; self.spinner(false); },
           oncurrentplaytime: function (ms) {
             self.time = ms / 1000;
-            // Tizen 3 puede ignorar el cambio de pista antes de que el vídeo arranque de verdad:
-            // repetirlo con el primer avance de tiempo y otra vez a los 3 s
+            // Tizen 3 ignora el cambio de pista hasta un rato después de arrancar (en la tele se veía el cambio a los 3 s):
+            // comprobar cada 0,4 s qué pista suena y repetirlo hasta que la tele lo acepte (3 lecturas buenas seguidas)
             if (self.started && !self.audioRetried) {
               self.audioRetried = true;
-              var mine = self.stream;
-              self.autoAudio();
-              setTimeout(function () { if (self.stream === mine && self.backend === 'av') self.autoAudio(); }, 3000);
+              var mine = self.stream, tries = 0, good = 0, t0 = Date.now();
+              var poll = setInterval(function () {
+                if (self.stream !== mine || self.backend !== 'av' || ++tries > 25) { clearInterval(poll); return; }
+                if (self.autoAudio(true)) {
+                  if (++good >= 3) {
+                    clearInterval(poll);
+                    logEv('audio', 'aplicada', { intentos: tries, ms: Date.now() - t0 });
+                  }
+                } else good = 0;
+              }, 400);
             }
           },
           onstreamcompleted: function () { self.finished(); },
@@ -2808,8 +2815,9 @@
       } catch (e) { return -1; }
     },
 
-    autoAudio: function () {
-      if (this.audioChosen) return; // ya elegida a mano con ▼
+    // devuelve true si ya suena la pista que toca (o no hay ninguna que elegir); quiet: sin apuntarlo en el registro
+    autoAudio: function (quiet) {
+      if (this.audioChosen) return true; // ya elegida a mano con ▼
       var c = this.ctx, pref = srcPrefs[c.metaId];
       // por orden: lo elegido en esta película o serie, el idioma de Ajustes, el último elegido a mano y, si no, inglés
       // (muchos archivos traen primero una pista en ruso u otro doblaje)
@@ -2824,8 +2832,11 @@
       if (pick && pick.index !== cur) {
         try { webapis.avplay.setSelectTrack('AUDIO', pick.index); cur = pick.index; } catch (e) { err = e.message || String(e); }
       }
-      logEv('audio', pick ? 'elegida ' + langKey(pick.lang) : 'sin coincidencia', { busca: wants, pistas: tracks.map(function (t) { return t.lang || '?'; }),
-        antes: before, ahora: this.currentAudio(), error: err || undefined });
+      var now = this.currentAudio();
+      if (!quiet || err) {
+        logEv('audio', pick ? 'elegida ' + langKey(pick.lang) : 'sin coincidencia', { busca: wants, pistas: tracks.map(function (t) { return t.lang || '?'; }),
+          antes: before, ahora: now, error: err || undefined });
+      }
       this.audioKey = '';
       for (i = 0; i < tracks.length; i++) if (tracks[i].index === cur || tracks.length === 1) this.audioKey = langKey(tracks[i].lang);
       // con el audio en el mismo idioma que los subtítulos automáticos, sobran
@@ -2845,6 +2856,7 @@
           break;
         }
       }
+      return !pick || now === pick.index;
     },
 
     skipAutoSubs: function () { return settings.subLang !== 'off' && this.audioKey === settings.subLang; },
@@ -3598,7 +3610,7 @@
 
   // ---------------------------------------------------------------- arranque
 
-  var VERSION = '0.14.0';
+  var VERSION = '0.14.1';
 
   function fitScreen() {
     var z = window.innerWidth / 1920;
