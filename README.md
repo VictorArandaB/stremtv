@@ -14,6 +14,7 @@ Escrito en ES5 y CSS sin funciones modernas para que funcione en el motor web de
 - «Continuar viendo» y progreso por episodio (guardado en la propia tele).
 - **Siguiente episodio automático**: aviso en los últimos 40 s con cuenta atrás de 10 s (OK lo pone ya, Atrás lo descarta).
 - En cada serie recuerda la **fuente** (misma release o pack) y la **pista de audio** elegidas y las usa en los demás episodios.
+- **Registro de diagnóstico** (errores, pistas de audio de cada archivo, fallos de fuentes, tiempos de arranque) que se envía con la copia al Gist; sinopsis del episodio al pasar por él; **Reparto** con la filmografía de cada actor (TMDB); fila **Visto recientemente**; subtítulos en más idiomas, amarillos o más arriba.
 - Búsquedas recientes y resultados mientras escribes, «Más como esto» en la ficha, **saltar intro/ending de anime** (AniSkip) y **temporizador** (menú ▼).
 - La pista de audio elegida se recuerda por película o serie; si falta tu idioma, se prueba el último elegido y después inglés.
 - **Títulos y sinopsis en español** con una clave gratuita de TMDB (Ajustes, debajo del idioma): tarjetas, fichas, géneros, nombres de episodio y búsqueda en español.

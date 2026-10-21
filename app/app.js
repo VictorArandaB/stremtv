@@ -202,6 +202,14 @@
     'Datos': 'Data', 'Borrar historial de reproducción': 'Clear playback history',
     '¿Borrar «Continuar viendo» y el progreso?': 'Clear “Continue watching” and progress?', 'Borrar': 'Clear', 'Historial borrado': 'History cleared',
     'Diagnóstico de reproducción': 'Playback diagnostics',
+    'Enviar registro de diagnóstico': 'Send diagnostic log', 'Configura antes la copia de seguridad (token de GitHub)': 'Set up the backup first (GitHub token)',
+    'Enviando…': 'Sending…', 'Registro enviado. ID: {0}': 'Log sent. ID: {0}', 'Ver registro': 'View log',
+    'Registro (lo más reciente arriba)': 'Log (most recent first)', 'Vacío': 'Empty',
+    'ID del Gist de la copia y del registro: {0}': 'Gist ID of the backup and log: {0}',
+    'Reparto': 'Cast', 'Sin datos de reparto': 'No cast data',
+    'Con la clave de TMDB (Ajustes) puedes ver la filmografía de cada actor': 'With the TMDB key (Settings) you can see each actor\'s filmography',
+    'Visto recientemente': 'Recently watched', 'Color': 'Color', 'Amarillo': 'Yellow', 'Blanco': 'White',
+    'Posición': 'Position', 'Más arriba': 'Higher', 'Abajo': 'Bottom',
     'Búsquedas recientes': 'Recent searches', 'Más como esto': 'More like this', 'Más como «{0}»': 'More like “{0}”',
     'Intro saltada': 'Intro skipped', 'Audio cambiado (se recordará para esta película)': 'Audio changed (it will be remembered for this movie)', '⏭ OK: saltar intro': '⏭ OK: skip intro', '⏭ OK: saltar ending': '⏭ OK: skip ending',
     'Saltar solo las intros de anime': 'Skip anime intros automatically',
@@ -297,7 +305,7 @@
   var DEFAULTS = {
     debrid: 'realdebrid', key: '', onlyCached: true, maxQ: 'all',
     preferEs: true, compatFirst: true, hideWatched: true, maxRate: 'auto', measuredMbps: 0, measuredAt: 0,
-    subLang: 'spa', subSize: 'normal', autoNext: true, audioLang: 'spa', lang: 'es', quickPlay: true, subBg: true, tmdbKey: '', autoSkip: false, lastAudio: ''
+    subLang: 'spa', subSize: 'normal', autoNext: true, audioLang: 'spa', lang: 'es', quickPlay: true, subBg: true, tmdbKey: '', autoSkip: false, lastAudio: '', subColor: 'white', subPos: 'low'
   };
   var settings = extend(extend({}, DEFAULTS), load('settings', {}));
   function saveSettings() { save('settings', settings); }
@@ -353,7 +361,7 @@
     return u === 'TB' ? v * 1024 : u === 'MB' ? v / 1024 : v;
   }
 
-  var SUB_NAMES = { spa: 'Español', eng: 'Inglés', off: 'Desactivados' };
+  var SUB_NAMES = { spa: 'Español', eng: 'Inglés', fre: 'Francés', ger: 'Alemán', ita: 'Italiano', por: 'Portugués', off: 'Desactivados' };
   var LANG_NAMES = { spa: 'Español', eng: 'Inglés', fre: 'Francés', ger: 'Alemán', ita: 'Italiano', por: 'Portugués',
     jpn: 'Japonés', kor: 'Coreano', cat: 'Catalán' };
   // idiomas que se pueden elegir como audio preferido (orig = el que traiga el archivo por defecto)
@@ -362,7 +370,7 @@
   // código de idioma de una pista (es, spa, Spanish, cas… → spa; fr, fra, French → fre…)
   var LANG_RE = {
     spa: /^(es($|[-_])|spa|esp|spanish|cas|lat)/, eng: /^(en($|[-_])|eng)/, fre: /^(fr($|[-_])|fre|fra)/,
-    ger: /^(de($|[-_])|ger|deu)/, ita: /^(it($|[-_])|ita)/, por: /^(pt($|[-_])|por)/,
+    ger: /^(de($|[-_])|ger|deu)/, ita: /^(it($|[-_])|ita)/, por: /^(pt($|[-_])|por|pob)/,
     jpn: /^(ja($|[-_])|jpn|jap)/, kor: /^(ko($|[-_])|kor)/, cat: /^(ca($|[-_])|cat)/
   };
   function langKey(l) {
@@ -787,6 +795,22 @@
       });
     },
 
+    // lo último visto (una entrada por película o serie)
+    history: function () {
+      return Trakt.call('GET', '/sync/history?limit=80').then(function (items) {
+        var seen = {}, out = [];
+        (items || []).forEach(function (it) {
+          var o = it.movie || it.show;
+          if (!o || !o.ids || !o.ids.imdb || seen[o.ids.imdb]) return;
+          seen[o.ids.imdb] = true;
+          var what = it.episode ? o.title + ' ' + tr('T{0}:E{1}', it.episode.season, it.episode.number) : o.title;
+          out.push({ id: o.ids.imdb, type: it.movie ? 'movie' : 'series', name: o.title, poster: metahubPoster(o.ids.imdb),
+            label: dayLabel(new Date(it.watched_at)) + ' · ' + what });
+        });
+        return out;
+      });
+    },
+
     // lo dejado a medias en cualquier dispositivo: imdb (película) o imdb:temporada:episodio → % visto
     resumeCache: null,
     resumeMap: function () {
@@ -861,6 +885,24 @@
     }
   };
 
+  // ---------------------------------------------------------------- registro de diagnóstico
+
+  // últimos 300 eventos (errores, reproductor, pistas, fuentes, arranque) para entender fallos que solo pasan en la tele.
+  // Se envía con la copia de seguridad al Gist (archivo diagnostico.json)
+  var diagLog = load('log', []);
+  var logSaveTimer = null;
+  function logEv(kind, msg, data) {
+    var e = { t: new Date().toISOString(), k: kind, m: String(msg === undefined ? '' : msg).slice(0, 300) };
+    if (data !== undefined) { try { e.d = JSON.parse(JSON.stringify(data)); } catch (x) { /* no serializable */ } }
+    diagLog.push(e);
+    if (diagLog.length > 300) diagLog.splice(0, diagLog.length - 300);
+    clearTimeout(logSaveTimer);
+    logSaveTimer = setTimeout(function () { save('log', diagLog); }, 1500);
+  }
+  window.addEventListener('error', function (ev) {
+    logEv('error', (ev.message || 'error') + (ev.lineno ? ' (línea ' + ev.lineno + ')' : ''));
+  });
+
   // ---------------------------------------------------------------- copia de seguridad en un Gist secreto de GitHub
 
   var BACKUP_KEYS = ['settings', 'trakt', 'progress', 'suboffsets', 'srcprefs', 'addons', 'explore'];
@@ -906,6 +948,8 @@
     BACKUP_KEYS.forEach(function (k) { var v = load(k, null); if (v !== null) data.data[k] = v; });
     var files = {};
     files[BACKUP_FILE] = { content: JSON.stringify(data) };
+    files['diagnostico.json'] = { content: JSON.stringify({ version: VERSION, at: data.at, ua: navigator.userAgent,
+      player: Player.hasAV() ? 'avplay' : 'html5', boot: load('boot', []), log: diagLog }, null, 1) };
     return findBackupGist().then(function (id) {
       if (id) {
         return ghReq('PATCH', '/gists/' + id, { files: files }).catch(function (e) {
@@ -1389,10 +1433,38 @@
     }
     renderTrakt();
 
-    asyncRow(vs, tr('Películas populares'), CINEMETA + '/catalog/movie/top.json', openMeta);
-    asyncRow(vs, tr('Series populares'), CINEMETA + '/catalog/series/top.json', openMeta);
-    asyncRow(vs, tr('Películas mejor valoradas'), CINEMETA + '/catalog/movie/imdbRating.json', openMeta);
-    asyncRow(vs, tr('Series mejor valoradas'), CINEMETA + '/catalog/series/imdbRating.json', openMeta);
+    // con Trakt vinculado, sus filas van arriba: los catálogos generales (fuera de pantalla) esperan 1,5 s
+    // para no competir con ellas por la red y el procesador de la tele al arrancar
+    var generalRows = el('div');
+    vs.appendChild(generalRows);
+    function loadGeneral() {
+      asyncRow(generalRows, tr('Películas populares'), CINEMETA + '/catalog/movie/top.json', openMeta);
+      asyncRow(generalRows, tr('Series populares'), CINEMETA + '/catalog/series/top.json', openMeta);
+      asyncRow(generalRows, tr('Películas mejor valoradas'), CINEMETA + '/catalog/movie/imdbRating.json', openMeta);
+      asyncRow(generalRows, tr('Series mejor valoradas'), CINEMETA + '/catalog/series/imdbRating.json', openMeta);
+    }
+    if (Trakt.linked()) setTimeout(loadGeneral, 1500); else loadGeneral();
+    // lo último visto: de Trakt si está vinculado (incluye otros dispositivos) o, si no, de esta tele
+    var histWrap = el('div');
+    vs.insertBefore(histWrap, traktWrap.nextSibling);
+    var histLoaded = 0;
+    function renderHistory() {
+      if (Trakt.linked() && Date.now() - histLoaded < 120000) return;
+      histLoaded = Date.now();
+      histWrap.innerHTML = '';
+      promiseRow(histWrap, tr('Visto recientemente'), Trakt.linked() ? Trakt.history() : Promise.resolve(localHistory()), openMeta, true, 30);
+    }
+    function localHistory() {
+      var seen = {};
+      return Object.keys(progress).map(function (k) { return progress[k]; }).filter(function (p) { return p.done; })
+        .sort(function (a, b) { return b.ts - a.ts; }).filter(function (p) {
+          if (seen[p.metaId]) return false;
+          seen[p.metaId] = true;
+          return true;
+        }).map(function (p) { return { id: p.metaId, type: p.type, name: p.name, poster: p.poster, label: dayLabel(new Date(p.ts)) + ' · ' + (p.label || p.name) }; });
+    }
+    renderHistory();
+
     // catálogos de los addons añadidos: como mucho 4 filas por addon para no llenar el inicio
     var perAddon = {};
     addonCatalogs(false).forEach(function (c) {
@@ -1405,7 +1477,7 @@
     });
 
     return { el: root, onResume: function () {
-      renderTop(); renderTrakt();
+      renderTop(); renderTrakt(); renderHistory();
       // si se acaba de poner la clave de TMDB, traducir las tarjetas que ya se ven
       Array.prototype.forEach.call(root.querySelectorAll('.card'), function (c) { if (c._loaded || !c._img) nameCard(c); });
     } };
@@ -1568,15 +1640,35 @@
   }
 
   function similarScreen(type, imdb, name) {
+    return gridScreen(tr('Más como «{0}»', name), similarTitles(type, imdb));
+  }
+
+  // películas y series de un actor (TMDB), de la más conocida a la menos
+  function personScreen(id, name) {
+    return gridScreen(name, tmdbGet('/person/' + id + '/combined_credits').then(function (d) {
+      var seen = {};
+      return (d.cast || []).filter(function (x) {
+        var k = x.media_type + x.id;
+        if ((x.media_type !== 'movie' && x.media_type !== 'tv') || seen[k]) return false;
+        seen[k] = true;
+        return true;
+      }).sort(function (a, b) { return (b.vote_count || 0) - (a.vote_count || 0); }).slice(0, 60).map(function (x) {
+        return { id: 'tmdb:' + x.media_type + ':' + x.id, type: x.media_type === 'movie' ? 'movie' : 'series', name: x.title || x.name,
+          poster: x.poster_path ? 'https://image.tmdb.org/t/p/w185' + x.poster_path : '' };
+      });
+    }));
+  }
+
+  function gridScreen(title, promise) {
     var root = el('div', 'screen');
     var vs = el('div', 'vscroll');
     root.appendChild(vs);
-    vs.appendChild(el('div', 'screen-title', esc(tr('Más como «{0}»', name))));
+    vs.appendChild(el('div', 'screen-title', esc(title)));
     var grid = el('div', 'grid');
     vs.appendChild(grid);
     var status = el('div', 'empty', tr('Cargando…'));
     grid.appendChild(status);
-    Promise.all([similarTitles(type, imdb), seenReady()]).then(function (r) {
+    Promise.all([promise, seenReady()]).then(function (r) {
       var metas = filterSeen(r[0]), cards = [];
       grid.innerHTML = '';
       if (!metas.length) { grid.appendChild(el('div', 'empty', tr('Sin resultados'))); return; }
@@ -1697,7 +1789,7 @@
     root.appendChild(d);
     var screen = { el: root };
     var meta = null, curSeason = null, episodesBox = null, actions = null;
-    var traktSeen = {}, traktNext = null, showSeen = false, progressRequested = false, traktResume = {};
+    var traktSeen = {}, traktNext = null, showSeen = false, progressRequested = false, traktResume = {}, descEl = null;
 
     function watchlistButton(container) {
       if (!Trakt.linked()) return;
@@ -1715,9 +1807,35 @@
       container.appendChild(b);
     }
 
+    // reparto: con TMDB, cada actor abre su filmografía; sin clave, solo los nombres de Cinemeta
+    function castButton(container) {
+      if (!(meta.cast && meta.cast.length) && !(meta._tmdb && tmdbOn())) return;
+      var b = el('div', 'btn small', tr('Reparto'));
+      focusable(b, function () {
+        var names = function () {
+          return (meta.cast || []).slice(0, 15).map(function (n) { return { label: n, value: 0 }; });
+        };
+        var show = function (items) {
+          if (!items.length) { toast(tr('Sin datos de reparto')); return; }
+          menu(tr('Reparto'), items, function (it) {
+            if (it.value) push(personScreen(it.value, it.name));
+            else if (!tmdbOn()) toast(tr('Con la clave de TMDB (Ajustes) puedes ver la filmografía de cada actor'));
+          });
+        };
+        if (!meta._tmdb || !tmdbOn()) { show(names()); return; }
+        tmdbGet('/' + meta._tmdb.k + '/' + meta._tmdb.id + '/credits').then(function (d) {
+          var cast = (d.cast || []).slice(0, 20).map(function (c) {
+            return { label: c.name + (c.character ? ' · ' + c.character : ''), value: c.id, name: c.name };
+          });
+          show(cast.length ? cast : names());
+        }).catch(function () { show(names()); });
+      });
+      container.appendChild(b);
+    }
+
     function similarButton(container) {
       if (!imdbOf() || !(tmdbOn() || trakt.clientId)) return; // hace falta TMDB o una app de Trakt
-      var b = el('div', 'btn', tr('Más como esto'));
+      var b = el('div', 'btn small', tr('Más como esto'));
       focusable(b, function () { push(similarScreen(type, imdbOf(), meta.name)); });
       container.appendChild(b);
     }
@@ -1763,7 +1881,7 @@
       d.innerHTML = '';
       d.appendChild(el('h1', null, esc(meta.name)));
       d.appendChild(el('div', 'meta-line', info()));
-      var desc = el('div', 'desc', esc(meta.description || ''));
+      var desc = descEl = el('div', 'desc', esc(meta.description || ''));
       d.appendChild(desc);
       actions = el('div');
       d.appendChild(actions);
@@ -1826,6 +1944,7 @@
       }
       watchlistButton(actions);
       similarButton(actions);
+      castButton(actions);
     }
 
     function seasonsOf() {
@@ -1910,6 +2029,7 @@
       var top = el('div');
       watchlistButton(top);
       similarButton(top);
+      castButton(top);
       var toggle = null;
       if (settings.hideWatched && seenCount) {
         toggle = el('div', 'btn', showSeen ? tr('Ocultar vistos') : seenCount === 1 ? tr('Mostrar 1 visto') : tr('Mostrar {0} vistos', seenCount));
@@ -1954,6 +2074,7 @@
       nums.forEach(function (n) {
         var b = el('div', 'btn' + (n === curSeason ? ' primary' : ''), n === 0 ? tr('Especiales') : tr('Temporada {0}', n));
         b._season = n;
+        b._onfocus = function () { if (descEl) descEl.textContent = meta.description || ''; };
         focusable(b, function () {
           curSeason = n;
           Array.prototype.forEach.call(sRow.children, function (x) { x.classList.remove('primary'); });
@@ -1980,14 +2101,17 @@
       Object.keys(need).forEach(function (n) {
         if (tmdbSeasons[n]) return;
         tmdbSeasons[n] = tmdbGet('/tv/' + meta._tmdb.id + '/season/' + n).then(function (d) {
-          var names = {};
+          var names = {}, ovs = {};
           (d.episodes || []).forEach(function (e) {
             if (e.name && !/^(Episodio|Episode) \d+$/.test(e.name)) names[e.episode_number] = e.name; // sin traducir: se queda el original
+            if (e.overview) ovs[e.episode_number] = e.overview;
           });
           var changed = false;
           (meta.videos || []).forEach(function (v) {
             var s = v.imdbSeason !== undefined ? v.imdbSeason : v.season, e = v.imdbEpisode !== undefined ? v.imdbEpisode : v.episode;
-            if (String(s) === n && names[e] && v.name !== names[e]) { v.name = names[e]; v.title = names[e]; changed = true; }
+            if (String(s) !== n) return;
+            if (names[e] && v.name !== names[e]) { v.name = names[e]; v.title = names[e]; changed = true; }
+            if (ovs[e] && v.overview !== ovs[e]) { v.overview = ovs[e]; changed = true; }
           });
           if (!changed || !episodesBox || curSeason === null || Nav.root !== root) return;
           var idx = Nav.cur && Nav.cur.parentNode === episodesBox ? Array.prototype.indexOf.call(episodesBox.children, Nav.cur) : -1;
@@ -2026,7 +2150,11 @@
         else if (tp) sub.push(tr('Continuar desde el {0} % (Trakt)', tp));
         txt.appendChild(el('div', 'ep-sub', esc(sub.join(' · '))));
         row.appendChild(txt);
-        focusable(row, function () { push(streamsScreen(extend(epCtx(v), { autoPlay: settings.quickPlay }))); });
+        focusable(row, function () { push(streamsScreen(extend(epCtx(v), { autoPlay: settings.quickPlay }))); }, function () {
+          // la sinopsis del episodio sustituye a la de la serie mientras está enfocado
+          var ov = v.overview || v.description || '';
+          if (descEl) descEl.textContent = ov ? tr('T{0}:E{1}', v.season, v.episode) + ' · ' + ov : meta.description || '';
+        });
         episodesBox.appendChild(row);
         if (!focusTarget && ((p && !p.done) || tp || traktNext === traktKey(v))) focusTarget = row;
       });
@@ -2256,6 +2384,7 @@
         }
         Nav.setRoot(root);
       }).catch(function (e) {
+        logEv('fuentes', e.message, { id: ctx.videoId });
         sub.textContent = '';
         message(tr('No se pudieron obtener las fuentes ({0}). Pulsa Atrás e inténtalo de nuevo.', e.message));
       });
@@ -2307,7 +2436,8 @@
     reset: function () {
       this.cues = []; this.idx = 0; this.offset = 0; this.list = []; this.current = null; this.embedded = false; this.auto = false; this.manual = false;
       this.box.textContent = '';
-      this.box.className = (settings.subSize === 'big' ? 'big' : '') + (settings.subBg ? ' bg' : '');
+      this.box.className = (settings.subSize === 'big' ? 'big' : '') + (settings.subBg ? ' bg' : '') +
+        (settings.subColor === 'yellow' ? ' yellow' : '') + (settings.subPos === 'high' ? ' high' : '');
     },
     fetchList: function (ctx) {
       var self = this;
@@ -2319,9 +2449,10 @@
           return (d.subtitles || []).map(function (x) { return extend(extend({}, x), { lang: langKey(x.lang), addon: src.name }); });
         }).catch(function () { return []; });
       })).then(function (r) {
-        var order = { spa: 0, eng: 1 };
-        self.list = [].concat.apply([], r).filter(function (x) { return x.lang === 'spa' || x.lang === 'eng'; })
-          .sort(function (a, b) { return order[a.lang] - order[b.lang]; }).slice(0, 30);
+        // el idioma de Ajustes primero, después español e inglés
+        var rank = function (l) { return l === settings.subLang ? 0 : l === 'spa' ? 1 : l === 'eng' ? 2 : 3; };
+        self.list = [].concat.apply([], r).filter(function (x) { return rank(x.lang) < 3; })
+          .sort(function (a, b) { return rank(a.lang) - rank(b.lang); }).slice(0, 40);
         return self.list;
       });
     },
@@ -2373,6 +2504,7 @@
       this.seekTarget = null;
       this.upNext = null; this.upNextOff = false; this.nextCtx = undefined; this.audioKey = ''; this.audioRetried = false; this.audioChosen = false;
       this.skips = []; this.skipNow = null;
+      logEv('reproducir', ctx.label, { archivo: stream.file, calidad: stream.quality, addon: stream.addon, cache: stream.cached, desde: Math.round(this.startAt) || (ctx.startPct ? ctx.startPct + '%' : 0) });
       skipTimes(ctx).then(function (list) { if (self.ctx === ctx) self.skips = list; });
       $('#player').classList.remove('hidden');
       $('#osd-title').textContent = ctx.label;
@@ -2487,6 +2619,9 @@
         });
         av.prepareAsync(function () {
           self.duration = av.getDuration() / 1000;
+          try {
+            logEv('pistas', Math.round(self.duration) + ' s', webapis.avplay.getTotalTrackInfo().map(function (t) { return { tipo: t.type, i: t.index, info: t.extra_info }; }));
+          } catch (e) { logEv('pistas', 'no disponibles: ' + e.message); }
           if (!self.startAt && self.startPct && self.duration) self.startAt = self.duration * self.startPct / 100;
           self.autoAudio();
           // por si la pista no se puede cambiar antes de empezar: volver a intentarlo ya reproduciendo
@@ -2685,9 +2820,12 @@
       for (w = 0; !pick && tracks.length > 1 && w < wants.length; w++) {
         for (i = 0; wants[w] && i < tracks.length; i++) if (langKey(tracks[i].lang) === wants[w]) { pick = tracks[i]; break; }
       }
+      var before = cur, err = '';
       if (pick && pick.index !== cur) {
-        try { webapis.avplay.setSelectTrack('AUDIO', pick.index); cur = pick.index; } catch (e) { /* se queda la del archivo */ }
+        try { webapis.avplay.setSelectTrack('AUDIO', pick.index); cur = pick.index; } catch (e) { err = e.message || String(e); }
       }
+      logEv('audio', pick ? 'elegida ' + langKey(pick.lang) : 'sin coincidencia', { busca: wants, pistas: tracks.map(function (t) { return t.lang || '?'; }),
+        antes: before, ahora: this.currentAudio(), error: err || undefined });
       this.audioKey = '';
       for (i = 0; i < tracks.length; i++) if (tracks[i].index === cur || tracks.length === 1) this.audioKey = langKey(tracks[i].lang);
       // con el audio en el mismo idioma que los subtítulos automáticos, sobran
@@ -2844,7 +2982,7 @@
         });
       }
       Subs.list.forEach(function (s) {
-        items.push({ label: tr(s.lang === 'spa' ? 'Español' : 'Inglés') + ' · ' + (s.addon ? s.addon + ' · ' : '') + (s.subtitleFileName || s.id), value: 'ext', sub: s, selected: Subs.current === s });
+        items.push({ label: (tr(LANG_NAMES[s.lang]) || s.lang) + ' · ' + (s.addon ? s.addon + ' · ' : '') + (s.subtitleFileName || s.id), value: 'ext', sub: s, selected: Subs.current === s });
       });
       if (Subs.current || Subs.embedded) {
         items.unshift({ label: tr('Sincronizar subtítulos… (ahora {0})', fmtOffset(Subs.offset)), value: 'sync' });
@@ -2988,6 +3126,7 @@
     },
 
     fail: function (msg) {
+      logEv('fallo', msg, { archivo: this.stream && this.stream.file, addon: this.stream && this.stream.addon });
       var row = this.row;
       this.spinner(false);
       pop();
@@ -3232,7 +3371,9 @@
 
     box.appendChild(el('div', 'row-title', tr('Subtítulos')));
     box.lastChild.style.padding = '30px 0 16px 0';
-    opt('Idioma automático', function () { return tr(SUB_NAMES[settings.subLang]); }, cycle('subLang', ['spa', 'eng', 'off']));
+    opt('Idioma automático', function () { return tr(SUB_NAMES[settings.subLang]); }, cycle('subLang', ['spa', 'eng', 'fre', 'ger', 'ita', 'por', 'off']));
+    opt('Color', function () { return settings.subColor === 'yellow' ? tr('Amarillo') : tr('Blanco'); }, function () { settings.subColor = settings.subColor === 'yellow' ? 'white' : 'yellow'; });
+    opt('Posición', function () { return settings.subPos === 'high' ? tr('Más arriba') : tr('Abajo'); }, function () { settings.subPos = settings.subPos === 'high' ? 'low' : 'high'; });
     opt('Fondo detrás del texto', function () { return yesNo(settings.subBg); }, function () { settings.subBg = !settings.subBg; });
     opt('Tamaño', function () { return settings.subSize === 'big' ? tr('Grande') : tr('Normal'); }, function () { settings.subSize = settings.subSize === 'big' ? 'normal' : 'big'; });
 
@@ -3403,6 +3544,22 @@
       });
     });
     box.appendChild(clear);
+    var sendLog = el('div', 'btn', tr('Enviar registro de diagnóstico'));
+    focusable(sendLog, function () {
+      if (!backup.token) { toast(tr('Configura antes la copia de seguridad (token de GitHub)')); return; }
+      toast(tr('Enviando…'));
+      backupNow().then(function () { toast(tr('Registro enviado. ID: {0}', backup.gistId), 8000); }).catch(function (e) { toast('✗ ' + e.message); });
+    });
+    box.appendChild(sendLog);
+    var viewLog = el('div', 'btn', tr('Ver registro'));
+    focusable(viewLog, function () {
+      var last = diagLog.slice(-60).reverse();
+      menu(tr('Registro (lo más reciente arriba)'), last.length ? last.map(function (e) {
+        return { label: e.t.slice(5, 16).replace('T', ' ') + ' · ' + e.k + ' · ' + e.m + (e.d ? ' · ' + JSON.stringify(e.d).slice(0, 160) : '') };
+      }) : [{ label: tr('Vacío') }], function () { /* solo lectura */ });
+    });
+    box.appendChild(viewLog);
+    if (backup.gistId) box.appendChild(el('div', 'note', esc(tr('ID del Gist de la copia y del registro: {0}', backup.gistId))));
     var diag = el('div', 'btn', tr('Diagnóstico de reproducción'));
     focusable(diag, function () {
       var yn = function (v) { return v ? tr('sí ({0})', v) : tr('no'); };
@@ -3441,7 +3598,7 @@
 
   // ---------------------------------------------------------------- arranque
 
-  var VERSION = '0.13.2';
+  var VERSION = '0.14.0';
 
   function fitScreen() {
     var z = window.innerWidth / 1920;
@@ -3454,6 +3611,7 @@
     if (!b || b[name]) return;
     b[name] = Date.now();
     if (name !== 'firstRow') return;
+    logEv('arranque', VERSION + ' · ' + b.src, { cargador: b.loader - b.nav, app: b.app - b.nav, primeraFila: b.firstRow - b.nav });
     var log = load('boot', []);
     log.unshift({ at: new Date(b.nav || b.loader).toISOString(), src: b.src, loader: b.loader - b.nav, app: b.app - b.nav, firstRow: b.firstRow - b.nav });
     save('boot', log.slice(0, 5));
