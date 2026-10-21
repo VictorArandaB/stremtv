@@ -43,10 +43,10 @@
       x.onload = function () {
         if (x.status < 200 || x.status >= 300) return reject(new Error('HTTP ' + x.status));
         if (!asJSON) return resolve(x.responseText);
-        try { resolve(JSON.parse(x.responseText)); } catch (e) { reject(new Error('respuesta no válida')); }
+        try { resolve(JSON.parse(x.responseText)); } catch (e) { reject(new Error(tr('respuesta no válida'))); }
       };
-      x.onerror = function () { reject(new Error('sin conexión')); };
-      x.ontimeout = function () { reject(new Error('tiempo de espera agotado')); };
+      x.onerror = function () { reject(new Error(tr('sin conexión'))); };
+      x.ontimeout = function () { reject(new Error(tr('tiempo de espera agotado'))); };
       x.send();
     });
   }
@@ -65,10 +65,160 @@
 
   function extend(dst, src) { for (var k in src) if (src.hasOwnProperty(k)) dst[k] = src[k]; return dst; }
 
+  // ---------------------------------------------------------------- idioma de la app
+
+  // Los textos se escriben en español; EN da su traducción. {0}, {1}… se sustituyen por los argumentos.
+  var LANGS = { es: 'Español', en: 'English' };
+  var EN = {
+    // general
+    'respuesta no válida': 'invalid response', 'sin conexión': 'no connection', 'tiempo de espera agotado': 'timed out',
+    'medida no válida': 'invalid measurement', 'sin datos': 'no data',
+    'Sí': 'Yes', 'No': 'No', 'sí ({0})': 'yes ({0})', 'no': 'no',
+    '¿Salir de StremTV?': 'Exit StremTV?', 'Salir': 'Exit', 'Cancelar': 'Cancel', 'Cargando…': 'Loading…',
+    'Sin resultados': 'No results', 'No se pudo cargar ({0})': 'Could not load ({0})',
+    'Actualización descargada: se aplicará la próxima vez que abras StremTV': 'Update downloaded: it will apply the next time you open StremTV',
+    // inicio, anime y búsqueda
+    'Inicio': 'Home', 'Anime': 'Anime', 'Buscar': 'Search', 'Ajustes': 'Settings',
+    'Configura tu Real-Debrid o AllDebrid para poder reproducir': 'Set up Real-Debrid or AllDebrid to be able to play',
+    'Continuar viendo': 'Continue watching', 'Continuar (Trakt)': 'Continue (Trakt)', 'Mi lista (Trakt)': 'My list (Trakt)',
+    'Recomendadas para ti: películas': 'Recommended for you: movies', 'Recomendadas para ti: series': 'Recommended for you: shows',
+    'Películas populares': 'Popular movies', 'Series populares': 'Popular shows',
+    'Películas mejor valoradas': 'Top rated movies', 'Series mejor valoradas': 'Top rated shows',
+    'En emisión esta temporada': 'Airing this season', 'Tendencias': 'Trending', 'Más populares': 'Most popular',
+    'Mejor valorados': 'Top rated', 'Películas': 'Movies', 'Series': 'Shows',
+    'Título de película o serie…': 'Movie or show title…',
+    'Pulsa OK para escribir y confirma con «Hecho».': 'Press OK to type and confirm with “Done”.',
+    // detalle
+    '✓ En mi lista': '✓ In my list', '＋ Mi lista': '＋ My list',
+    'Añadido a tu lista de Trakt': 'Added to your Trakt list', 'Quitado de tu lista de Trakt': 'Removed from your Trakt list',
+    '▶ Ver': '▶ Watch', '▶ Continuar ({0})': '▶ Resume ({0})', 'Desde el principio': 'From the beginning',
+    'T{0}:E{1}': 'S{0}:E{1}', 'Episodio {0}': 'Episode {0}', 'Temporada {0}': 'Season {0}', 'Especiales': 'Specials',
+    'Sin episodios disponibles': 'No episodes available', 'Ocultar vistos': 'Hide watched',
+    'Mostrar 1 visto': 'Show 1 watched', 'Mostrar {0} vistos': 'Show {0} watched',
+    '✓ Has visto todos los episodios emitidos.': '✓ You have watched every aired episode.',
+    'Visto': 'Watched', 'Continuar desde {0}': 'Resume from {0}',
+    // fuentes
+    'Buscando fuentes…': 'Looking for sources…', 'Abrir ajustes': 'Open settings',
+    'La clave de {0} no es válida o ha caducado.': 'The {0} key is invalid or has expired.',
+    '{0} torrents encontrados': '{0} torrents found',
+    'Sin un servicio debrid configurado la tele no puede reproducir torrents. Añade tu clave de Real-Debrid o AllDebrid en Ajustes.':
+      'Without a debrid service the TV cannot play torrents. Add your Real-Debrid or AllDebrid key in Settings.',
+    'No hay fuentes en caché para este título. Puedes desactivar «Solo en caché» en Ajustes para ver más.':
+      'There are no cached sources for this title. You can turn off “Cached only” in Settings to see more.',
+    'No se han encontrado fuentes.': 'No sources found.',
+    '1 fuente · {0}': '1 source · {0}', '{1} fuentes · {0}': '{1} sources · {0}', ' · tu conexión: hasta ~{0} Mb/s': ' · your connection: up to ~{0} Mb/s',
+    '↺ Como el anterior': '↺ Same as before', '⚡ Instantáneo': '⚡ Instant', 'Descargar en debrid': 'Download on debrid',
+    ' · pesada': ' · heavy', '✗ Falló': '✗ Failed',
+    'No se pudieron obtener las fuentes ({0}). Pulsa Atrás e inténtalo de nuevo.': 'Could not get sources ({0}). Press Back and try again.',
+    // reproductor
+    'Conectando con {0}…': 'Connecting to {0}…',
+    'OK pausa · ◀ ▶ avanzar/retroceder · ▲ subtítulos · ▼ audio · Atrás salir': 'OK pause · ◀ ▶ seek · ▲ subtitles · ▼ audio · Back exit',
+    '{0} ha bloqueado el acceso desde Torrentio. Revisa tu correo o la sección de autorizaciones de tu cuenta y aprueba el acceso.':
+      '{0} has blocked access from Torrentio. Check your email or the authorizations section of your account and approve it.',
+    'La clave de {0} no es válida o tu suscripción ha caducado.': 'The {0} key is invalid or your subscription has expired.',
+    '{0} aún está descargando este archivo. Prueba dentro de unos minutos o elige una fuente instantánea.':
+      '{0} is still downloading this file. Try again in a few minutes or pick an instant source.',
+    '{0} no ha podido descargar este archivo. Prueba otra fuente.': '{0} could not download this file. Try another source.',
+    'Has alcanzado el límite de {0}. Prueba más tarde.': 'You have reached the {0} limit. Try again later.',
+    'El archivo es demasiado grande para {0}.': 'The file is too big for {0}.',
+    'La fuente es un RAR y no se puede reproducir. Prueba otra.': 'The source is a RAR and cannot be played. Try another one.',
+    '{0} no ha podido abrir este archivo. Prueba otra fuente.': '{0} could not open this file. Try another source.',
+    '{0} ha retirado este archivo. Prueba otra fuente.': '{0} has removed this file. Try another source.',
+    'Este archivo ya no está disponible. Prueba otra fuente.': 'This file is no longer available. Try another source.',
+    'Error inesperado de Torrentio. Prueba otra fuente.': 'Unexpected Torrentio error. Try another source.',
+    'Aviso de Torrentio: {0}': 'Torrentio notice: {0}',
+    'Error del reproductor: {0}': 'Player error: {0}',
+    'El reproductor nativo no ha podido abrir esta fuente ({0}).': 'The native player could not open this source ({0}).',
+    'No se pudo reproducir: el enlace ha fallado o la tele no admite el formato. Prueba otra fuente (mejor 1080p).':
+      'Could not play: the link failed or the TV does not support the format. Try another source (1080p is safer).',
+    'Error de reproducción ({0})': 'Playback error ({0})', '⏸ Pausa': '⏸ Paused',
+    ' Pulsa OK para probar la siguiente fuente.': ' Press OK to try the next source.',
+    'Siguiente episodio': 'Next episode', 'Empieza en {0} s · ': 'Starts in {0} s · ',
+    'OK ver ahora · Atrás seguir viendo': 'OK watch now · Back keep watching',
+    '↓ midiendo…': '↓ measuring…', '↓ no se pudo medir': '↓ could not measure', ' (necesita ~{0}) ': ' (needs ~{0}) ',
+    '⚠ justo': '⚠ tight', '✗ lenta: prueba otra fuente': '✗ slow: try another source',
+    // audio y subtítulos
+    'Cambiar el audio solo es posible con el reproductor nativo': 'Changing audio is only possible with the native player',
+    'Esta fuente solo tiene una pista de audio': 'This source has only one audio track',
+    'Pista {0}': 'Track {0}', ' · {0} canales': ' · {0} channels',
+    'No se pudo cambiar el audio': 'Could not change the audio',
+    'Audio cambiado (se usará en el resto de la serie)': 'Audio changed (it will be used for the rest of the show)',
+    'Audio cambiado': 'Audio changed',
+    'Sin subtítulos': 'No subtitles', 'Incrustado: {0}': 'Embedded: {0}', 'pista {0}': 'track {0}',
+    'Sincronizar subtítulos… (ahora {0})': 'Sync subtitles… (now {0})', 'Subtítulos': 'Subtitles',
+    'No se pudo activar el subtítulo incrustado': 'Could not enable the embedded subtitle', 'Subtítulos activados': 'Subtitles on',
+    'El subtítulo está vacío o no se puede leer': 'The subtitle is empty or unreadable',
+    'No se pudo descargar el subtítulo': 'Could not download the subtitle',
+    'sin desfase': 'no offset', ' (más tarde)': ' (later)', ' (antes)': ' (earlier)',
+    '◀ adelantar · ▶ retrasar (0,25 s) &nbsp;·&nbsp; ▲ ▼ 1 s &nbsp;·&nbsp; OK terminar':
+      '◀ earlier · ▶ later (0.25 s) &nbsp;·&nbsp; ▲ ▼ 1 s &nbsp;·&nbsp; OK done',
+    'Subtítulos: {0} (se recordará para este vídeo)': 'Subtitles: {0} (remembered for this video)',
+    'Español': 'Spanish', 'Inglés': 'English', 'Francés': 'French', 'Alemán': 'German', 'Italiano': 'Italian',
+    'Portugués': 'Portuguese', 'Japonés': 'Japanese', 'Coreano': 'Korean', 'Catalán': 'Catalan', 'Desactivados': 'Off',
+    // Trakt
+    'Trakt no vinculado': 'Trakt not linked',
+    'La sesión de Trakt ha caducado. Vuelve a vincularla en Ajustes.': 'Your Trakt session has expired. Link it again in Settings.',
+    'Vincular Trakt': 'Link Trakt', 'Pidiendo código…': 'Requesting code…',
+    'En el móvil o el ordenador entra en': 'On your phone or computer go to', 'e introduce este código:': 'and enter this code:',
+    'Esperando confirmación…': 'Waiting for confirmation…', 'El código ha caducado. Vuelve a intentarlo.': 'The code has expired. Try again.',
+    'Trakt vinculado': 'Trakt linked', ' como {0}': ' as {0}', 'Has rechazado la vinculación.': 'You declined the link.',
+    'El Client Secret no es correcto. Prueba a dejarlo vacío.': 'The Client Secret is wrong. Try leaving it empty.',
+    'Trakt ha rechazado la vinculación. Revisa el Client ID.': 'Trakt rejected the link. Check the Client ID.',
+    'Error al vincular ({0})': 'Linking error ({0})', 'El Client ID no es válido.': 'The Client ID is not valid.',
+    'No se pudo contactar con Trakt ({0})': 'Could not reach Trakt ({0})',
+    // ajustes
+    'Idioma de la app': 'App language', 'Servicio debrid': 'Debrid service', 'Servicio': 'Service',
+    'Clave API (pulsa OK para escribirla)': 'API key (press OK to type it)', 'Pega o escribe aquí tu clave': 'Paste or type your key here',
+    'Probar clave': 'Test key', 'Escribe primero la clave.': 'Type the key first.', 'Comprobando…': 'Checking…',
+    '✗ Clave no válida para {0}': '✗ Invalid key for {0}', '✓ Clave válida · {0} fuentes de prueba': '✓ Valid key · {0} test sources',
+    'No se pudo comprobar ({0})': 'Could not check ({0})',
+    'Fuentes': 'Sources', 'Solo enlaces en caché (instantáneos)': 'Cached links only (instant)', 'Calidad máxima': 'Maximum quality',
+    'Todas': 'All', 'Hasta 1080p': 'Up to 1080p', 'Hasta 720p': 'Up to 720p',
+    'Tasa máxima de las fuentes': 'Maximum source bitrate', 'Automática': 'Automatic', 'Sin límite': 'No limit', ' (sin medir)': ' (not measured)',
+    'Medir mi conexión': 'Measure my connection', 'Última medida: {0} Mb/s': 'Last measurement: {0} Mb/s', 'Sin medir todavía': 'Not measured yet',
+    'Midiendo… (unos segundos)': 'Measuring… (a few seconds)',
+    'Tu conexión: {0} Mb/s → fuentes de hasta ~{1} Mb/s': 'Your connection: {0} Mb/s → sources up to ~{1} Mb/s',
+    'No se pudo medir ({0})': 'Could not measure ({0})',
+    'Las fuentes más pesadas que tu conexión salen al final, marcadas como «pesada»: suelen pararse a cargar.':
+      'Sources heavier than your connection go last, marked “heavy”: they tend to stop to buffer.',
+    'Mostrar primero las fuentes que la tele puede reproducir': 'Show sources the TV can play first',
+    'Ocultar lo que ya he visto (Trakt y esta app)': 'Hide what I have already watched (Trakt and this app)',
+    'Mostrar primero las fuentes en español': 'Show Spanish sources first',
+    'Reproducción': 'Playback', 'Pasar solo al siguiente episodio': 'Play the next episode automatically',
+    'Idioma del audio': 'Audio language', 'El que traiga el archivo': 'Whatever the file has', '{0} si lo hay': '{0} if available',
+    'Si cambias la pista con ▼ en una serie, se recuerda para el resto de episodios (y la fuente que elijas, también).':
+      'If you change the track with ▼ in a show, it is remembered for the rest of the episodes (and so is the source you pick).',
+    'Idioma automático': 'Automatic language', 'Tamaño': 'Size', 'Grande': 'Large', 'Normal': 'Normal',
+    'Client ID de tu app de Trakt': 'Client ID of your Trakt app',
+    'Client Secret (solo apps antiguas de Trakt; déjalo vacío si no tienes)': 'Client Secret (old Trakt apps only; leave empty if you have none)',
+    'Opcional': 'Optional',
+    'Créala gratis en trakt.tv/oauth/applications/new · Redirect URI: http://localhost': 'Create it for free at trakt.tv/oauth/applications/new · Redirect URI: http://localhost',
+    'Trakt desvinculado': 'Trakt unlinked', 'Escribe primero el Client ID de tu app de Trakt': 'Type your Trakt app Client ID first',
+    '✓ Vinculado': '✓ Linked', '. Lo que veas se registra automáticamente (visto al pasar del 80 %).': '. What you watch is logged automatically (watched after 80 %).',
+    'Sin vincular. Registra lo que ves, tu lista y recomendaciones.': 'Not linked. Logs what you watch, your list and recommendations.',
+    'Desvincular Trakt': 'Unlink Trakt', 'Vincular con Trakt': 'Link with Trakt',
+    'Datos': 'Data', 'Borrar historial de reproducción': 'Clear playback history',
+    '¿Borrar «Continuar viendo» y el progreso?': 'Clear “Continue watching” and progress?', 'Borrar': 'Clear', 'Historial borrado': 'History cleared',
+    'Diagnóstico de reproducción': 'Playback diagnostics', 'Diagnóstico': 'Diagnostics',
+    'Reproductor: {0}': 'Player: {0}', 'nativo (AVPlay)': 'native (AVPlay)', 'Navegador: Chromium {0}': 'Browser: Chromium {0}',
+    ' · Catálogo: Cinemeta · Fuentes: Torrentio · Subtítulos: OpenSubtitles · Reproductor: {0}':
+      ' · Catalog: Cinemeta · Sources: Torrentio · Subtitles: OpenSubtitles · Player: {0}'
+  };
+
+  function tr(s) {
+    if (s === undefined || s === null) return s;
+    var out = settings.lang === 'en' && EN.hasOwnProperty(s) ? EN[s] : s;
+    for (var i = 1; i < arguments.length; i++) out = out.split('{' + (i - 1) + '}').join(arguments[i]);
+    return out;
+  }
+  // decimales con coma en español y con punto en inglés
+  function num(x) { return settings.lang === 'en' ? String(x) : String(x).replace('.', ','); }
+  function yesNo(v) { return v ? tr('Sí') : tr('No'); }
+
   function fmtOffset(o) {
     o = Math.round((o || 0) * 100) / 100;
-    if (!o) return 'sin desfase';
-    return (o > 0 ? '+' : '−') + Math.abs(o).toFixed(2).replace('.', ',') + ' s' + (o > 0 ? ' (más tarde)' : ' (antes)');
+    if (!o) return tr('sin desfase');
+    return (o > 0 ? '+' : '−') + num(Math.abs(o).toFixed(2)) + ' s' + (o > 0 ? tr(' (más tarde)') : tr(' (antes)'));
   }
 
   function fmtTime(sec) {
@@ -94,7 +244,7 @@
   var DEFAULTS = {
     debrid: 'realdebrid', key: '', onlyCached: true, maxQ: 'all',
     preferEs: true, compatFirst: true, hideWatched: true, maxRate: 'auto', measuredMbps: 0, measuredAt: 0,
-    subLang: 'spa', subSize: 'normal', autoNext: true, audioLang: 'spa'
+    subLang: 'spa', subSize: 'normal', autoNext: true, audioLang: 'spa', lang: 'es'
   };
   var settings = extend(extend({}, DEFAULTS), load('settings', {}));
   function saveSettings() { save('settings', settings); }
@@ -121,7 +271,7 @@
         if (done) return;
         done = true;
         var secs = (Date.now() - t0) / 1000;
-        if (!t0 || secs <= 0 || bytes < 500000) return reject(new Error('medida no válida'));
+        if (!t0 || secs <= 0 || bytes < 500000) return reject(new Error(tr('medida no válida')));
         resolve(Math.round(bytes * 8 / secs / 1e5) / 10);
       };
       x.onprogress = function (e) {
@@ -129,7 +279,7 @@
         if (Date.now() - t0 > 8000) { finish(e.loaded); try { x.abort(); } catch (er) { /* ya cerrada */ } }
       };
       x.onload = function () { finish(x.response ? x.response.byteLength : 0); };
-      x.onerror = x.ontimeout = function () { if (!done) { done = true; reject(new Error('sin conexión')); } };
+      x.onerror = x.ontimeout = function () { if (!done) { done = true; reject(new Error(tr('sin conexión'))); } };
       x.send();
     });
   }
@@ -227,8 +377,8 @@
         err.status = x.status;
         reject(err);
       };
-      x.onerror = function () { reject(new Error('sin conexión')); };
-      x.ontimeout = function () { reject(new Error('tiempo de espera agotado')); };
+      x.onerror = function () { reject(new Error(tr('sin conexión'))); };
+      x.ontimeout = function () { reject(new Error(tr('tiempo de espera agotado'))); };
       x.send(body ? JSON.stringify(body) : null);
     });
   }
@@ -262,9 +412,9 @@
     },
 
     call: function (method, path, body) {
-      if (!Trakt.linked()) return Promise.reject(new Error('Trakt no vinculado'));
+      if (!Trakt.linked()) return Promise.reject(new Error(tr('Trakt no vinculado')));
       return Trakt.ensureFresh().then(function () { return traktReq(method, path, body); }).catch(function (e) {
-        if (e.status === 401) { trakt.access = ''; saveTrakt(); toast('La sesión de Trakt ha caducado. Vuelve a vincularla en Ajustes.'); }
+        if (e.status === 401) { trakt.access = ''; saveTrakt(); toast(tr('La sesión de Trakt ha caducado. Vuelve a vincularla en Ajustes.')); }
         throw e;
       });
     },
@@ -323,7 +473,7 @@
             out.push({ id: it.movie.ids.imdb, type: 'movie', name: it.movie.title, poster: metahubPoster(it.movie.ids.imdb), pct: it.progress / 100 });
           } else if (it.type === 'episode' && it.show && it.show.ids.imdb && it.episode) {
             out.push({ id: it.show.ids.imdb, type: 'series', name: it.show.title, poster: metahubPoster(it.show.ids.imdb), pct: it.progress / 100,
-              label: it.show.title + ' · T' + it.episode.season + ':E' + it.episode.number });
+              label: it.show.title + ' · ' + tr('T{0}:E{1}', it.episode.season, it.episode.number) });
           }
         });
         return out;
@@ -614,7 +764,7 @@
   }
 
   function confirmExit() {
-    menu('¿Salir de StremTV?', [{ label: 'Salir', value: 1 }, { label: 'Cancelar', value: 0, selected: true }], function (it) {
+    menu(tr('¿Salir de StremTV?'), [{ label: tr('Salir'), value: 1 }, { label: tr('Cancelar'), value: 0, selected: true }], function (it) {
       if (it.value) exitApp();
     });
   }
@@ -667,7 +817,7 @@
   function promiseRow(container, title, promise, onPick, hideIfEmpty) {
     var row = el('div', 'row');
     row.appendChild(el('div', 'row-title', esc(title)));
-    row.appendChild(el('div', 'empty', 'Cargando…'));
+    row.appendChild(el('div', 'empty', tr('Cargando…')));
     container.appendChild(row);
     promise.then(function (metas) {
       bootMark('firstRow');
@@ -677,12 +827,12 @@
       var hadFocus = Nav.cur && row.contains(Nav.cur);
       var fresh = metas.length
         ? posterRow(title, metas, onPick, metas.map(function (m) { return m.pct || m.label ? { pct: m.pct, label: m.label } : null; }))
-        : el('div', 'row', '<div class="row-title">' + esc(title) + '</div><div class="empty">Sin resultados</div>');
+        : el('div', 'row', '<div class="row-title">' + esc(title) + '</div><div class="empty">' + tr('Sin resultados') + '</div>');
       container.replaceChild(fresh, row);
       if (hadFocus) Nav.setRoot(Nav.root);
     }).catch(function (e) {
       if (hideIfEmpty && row.parentNode) { container.removeChild(row); return; }
-      row.lastChild.textContent = 'No se pudo cargar (' + e.message + ')';
+      row.lastChild.textContent = tr('No se pudo cargar ({0})', e.message);
     });
   }
 
@@ -700,7 +850,7 @@
     var h = el('div', 'header');
     h.appendChild(el('div', 'logo', 'StremTV'));
     [['home', 'Inicio'], ['anime', 'Anime'], ['search', 'Buscar'], ['settings', 'Ajustes']].forEach(function (t) {
-      var tab = el('div', 'tab', t[1]);
+      var tab = el('div', 'tab', tr(t[1]));
       focusable(tab, function () {
         if (t[0] === active) return;
         if (t[0] === 'search') push(searchScreen());
@@ -725,7 +875,7 @@
       contWrap.innerHTML = '';
       if (!settings.key) {
         var warn = el('div', 'row');
-        var b = el('div', 'btn primary', 'Configura tu Real-Debrid o AllDebrid para poder reproducir');
+        var b = el('div', 'btn primary', tr('Configura tu Real-Debrid o AllDebrid para poder reproducir'));
         b.style.marginLeft = '80px';
         focusable(b, function () { push(settingsScreen()); });
         warn.appendChild(b);
@@ -733,7 +883,7 @@
       }
       var cont = continueList();
       if (cont.length) {
-        contWrap.appendChild(posterRow('Continuar viendo', cont.map(function (p) {
+        contWrap.appendChild(posterRow(tr('Continuar viendo'), cont.map(function (p) {
           return { id: p.metaId, type: p.type, name: p.name, poster: p.poster };
         }), function (m, i) {
           var p = cont[i];
@@ -754,7 +904,7 @@
       traktWrap.innerHTML = '';
       var local = {};
       continueList().forEach(function (p) { local[p.metaId] = true; });
-      promiseRow(traktWrap, 'Continuar (Trakt)', Trakt.playback().then(function (items) {
+      promiseRow(traktWrap, tr('Continuar (Trakt)'), Trakt.playback().then(function (items) {
         var seen = {};
         return items.filter(function (m) {
           if (local[m.id] || seen[m.id]) return false; // ya está en «Continuar viendo»
@@ -762,17 +912,17 @@
           return true;
         });
       }), openMeta, true);
-      promiseRow(traktWrap, 'Mi lista (Trakt)', Trakt.loadWatchlist(), openMeta, true);
+      promiseRow(traktWrap, tr('Mi lista (Trakt)'), Trakt.loadWatchlist(), openMeta, true);
       var seenThen = function (pr) { return Promise.all([pr, seenReady()]).then(function (r) { return filterSeen(r[0]); }); };
-      promiseRow(traktWrap, 'Recomendadas para ti: películas', seenThen(Trakt.recommendations('movies')), openMeta, true);
-      promiseRow(traktWrap, 'Recomendadas para ti: series', seenThen(Trakt.recommendations('shows')), openMeta, true);
+      promiseRow(traktWrap, tr('Recomendadas para ti: películas'), seenThen(Trakt.recommendations('movies')), openMeta, true);
+      promiseRow(traktWrap, tr('Recomendadas para ti: series'), seenThen(Trakt.recommendations('shows')), openMeta, true);
     }
     renderTrakt();
 
-    asyncRow(vs, 'Películas populares', CINEMETA + '/catalog/movie/top.json', openMeta);
-    asyncRow(vs, 'Series populares', CINEMETA + '/catalog/series/top.json', openMeta);
-    asyncRow(vs, 'Películas mejor valoradas', CINEMETA + '/catalog/movie/imdbRating.json', openMeta);
-    asyncRow(vs, 'Series mejor valoradas', CINEMETA + '/catalog/series/imdbRating.json', openMeta);
+    asyncRow(vs, tr('Películas populares'), CINEMETA + '/catalog/movie/top.json', openMeta);
+    asyncRow(vs, tr('Series populares'), CINEMETA + '/catalog/series/top.json', openMeta);
+    asyncRow(vs, tr('Películas mejor valoradas'), CINEMETA + '/catalog/movie/imdbRating.json', openMeta);
+    asyncRow(vs, tr('Series mejor valoradas'), CINEMETA + '/catalog/series/imdbRating.json', openMeta);
 
     return { el: root, onResume: function () { renderTop(); renderTrakt(); } };
   }
@@ -789,10 +939,10 @@
     var vs = el('div', 'vscroll');
     root.appendChild(vs);
     vs.appendChild(header('anime'));
-    asyncRow(vs, 'En emisión esta temporada', ANIME + '/catalog/anime/kitsu-anime-airing.json', openMeta);
-    asyncRow(vs, 'Tendencias', ANIME + '/catalog/anime/kitsu-anime-trending.json', openMeta);
-    asyncRow(vs, 'Más populares', ANIME + '/catalog/anime/kitsu-anime-popular.json', openMeta);
-    asyncRow(vs, 'Mejor valorados', ANIME + '/catalog/anime/kitsu-anime-rating.json', openMeta);
+    asyncRow(vs, tr('En emisión esta temporada'), ANIME + '/catalog/anime/kitsu-anime-airing.json', openMeta);
+    asyncRow(vs, tr('Tendencias'), ANIME + '/catalog/anime/kitsu-anime-trending.json', openMeta);
+    asyncRow(vs, tr('Más populares'), ANIME + '/catalog/anime/kitsu-anime-popular.json', openMeta);
+    asyncRow(vs, tr('Mejor valorados'), ANIME + '/catalog/anime/kitsu-anime-rating.json', openMeta);
     return { el: root, initialFocus: function () { return vs.querySelectorAll('.tab')[1]; } };
   }
 
@@ -806,12 +956,12 @@
     var box = el('div', 'search-box');
     var input = el('input');
     input.type = 'text';
-    input.placeholder = 'Título de película o serie…';
+    input.placeholder = tr('Título de película o serie…');
     focusable(input, function () { input.focus(); });
     input._ondone = function (q) { run(q); };
     box.appendChild(input);
     vs.appendChild(box);
-    vs.appendChild(el('div', 'hint', 'Pulsa OK para escribir y confirma con «Hecho».'));
+    vs.appendChild(el('div', 'hint', tr('Pulsa OK para escribir y confirma con «Hecho».')));
     var results = el('div');
     vs.appendChild(results);
 
@@ -820,9 +970,9 @@
       results.innerHTML = '';
       if (!q) return;
       var enc = encodeURIComponent(q);
-      asyncRow(results, 'Películas', CINEMETA + '/catalog/movie/top/search=' + enc + '.json', openMeta);
-      asyncRow(results, 'Series', CINEMETA + '/catalog/series/top/search=' + enc + '.json', openMeta);
-      asyncRow(results, 'Anime', ANIME + '/catalog/anime/kitsu-anime-list/search=' + enc + '.json', openMeta);
+      asyncRow(results, tr('Películas'), CINEMETA + '/catalog/movie/top/search=' + enc + '.json', openMeta);
+      asyncRow(results, tr('Series'), CINEMETA + '/catalog/series/top/search=' + enc + '.json', openMeta);
+      asyncRow(results, tr('Anime'), ANIME + '/catalog/anime/kitsu-anime-list/search=' + enc + '.json', openMeta);
     }
 
     return { el: root, initialFocus: function () { return input; } };
@@ -836,7 +986,7 @@
     root.appendChild(bd);
     root.appendChild(el('div', 'shade'));
     var d = el('div', 'detail');
-    d.appendChild(el('div', 'loading', 'Cargando…'));
+    d.appendChild(el('div', 'loading', tr('Cargando…')));
     root.appendChild(d);
     var screen = { el: root };
     var meta = null, curSeason = null, episodesBox = null, actions = null;
@@ -847,12 +997,12 @@
       var b = el('div', 'btn');
       var imdb = imdbOf();
       if (!imdb) return; // anime sin correspondencia en IMDb: Trakt no lo puede identificar
-      var paint = function () { b.textContent = Trakt.watchlist[imdb] ? '✓ En mi lista' : '＋ Mi lista'; };
+      var paint = function () { b.textContent = Trakt.watchlist[imdb] ? tr('✓ En mi lista') : tr('＋ Mi lista'); };
       paint();
       focusable(b, function () {
         Trakt.toggleWatchlist(type, imdb).then(function (added) {
           paint();
-          toast(added ? 'Añadido a tu lista de Trakt' : 'Quitado de tu lista de Trakt');
+          toast(added ? tr('Añadido a tu lista de Trakt') : tr('Quitado de tu lista de Trakt'));
         }).catch(function (e) { toast('Trakt: ' + e.message); });
       });
       container.appendChild(b);
@@ -863,12 +1013,12 @@
 
     getJSON(isAnime ? ANIME + '/meta/anime/' + id + '.json' : CINEMETA + '/meta/' + type + '/' + id + '.json').then(function (res) {
       meta = res.meta;
-      if (!meta) throw new Error('sin datos');
+      if (!meta) throw new Error(tr('sin datos'));
       if (isAnime) type = meta.type === 'movie' ? 'movie' : 'series';
       render();
     }).catch(function (e) {
       d.innerHTML = '';
-      d.appendChild(el('div', 'loading', 'No se pudo cargar (' + esc(e.message) + ')'));
+      d.appendChild(el('div', 'loading', esc(tr('No se pudo cargar ({0})', e.message))));
     });
 
     function info() {
@@ -908,13 +1058,13 @@
     function renderMovieActions() {
       actions.innerHTML = '';
       var p = progress[meta.id];
-      var play = el('div', 'btn primary', p && !p.done && p.t > 60 ? '▶ Continuar (' + fmtTime(p.t) + ')' : '▶ Ver');
+      var play = el('div', 'btn primary', p && !p.done && p.t > 60 ? tr('▶ Continuar ({0})', fmtTime(p.t)) : tr('▶ Ver'));
       focusable(play, function () {
         push(streamsScreen(extend(base(), { videoId: meta.id, label: meta.name, startAt: p && !p.done ? p.t : 0 })));
       });
       actions.appendChild(play);
       if (p && !p.done && p.t > 60) {
-        var fromStart = el('div', 'btn', 'Desde el principio');
+        var fromStart = el('div', 'btn', tr('Desde el principio'));
         focusable(fromStart, function () {
           push(streamsScreen(extend(base(), { videoId: meta.id, label: meta.name, startAt: 0 })));
         });
@@ -964,7 +1114,7 @@
     // contexto de reproducción de un episodio; next() da el del siguiente para encadenarlos
     function epCtx(v) {
       var p = progress[v.id];
-      var label = 'T' + v.season + ':E' + v.episode + ' · ' + (v.name || v.title || ('Episodio ' + v.episode));
+      var label = tr('T{0}:E{1}', v.season, v.episode) + ' · ' + (v.name || v.title || tr('Episodio {0}', v.episode));
       return extend(base(), {
         videoId: v.id, label: meta.name + ' — ' + label, epLabel: label,
         imdb: v.imdb_id || imdbOf(),
@@ -987,7 +1137,7 @@
       actions.innerHTML = '';
       var seasons = seasonsOf();
       if (!seasons.nums.length) {
-        actions.appendChild(el('div', 'loading', 'Sin episodios disponibles'));
+        actions.appendChild(el('div', 'loading', tr('Sin episodios disponibles')));
         return null;
       }
       var seenCount = 0;
@@ -1005,12 +1155,12 @@
       watchlistButton(top);
       var toggle = null;
       if (settings.hideWatched && seenCount) {
-        toggle = el('div', 'btn', showSeen ? 'Ocultar vistos' : 'Mostrar ' + seenCount + ' visto' + (seenCount === 1 ? '' : 's'));
+        toggle = el('div', 'btn', showSeen ? tr('Ocultar vistos') : seenCount === 1 ? tr('Mostrar 1 visto') : tr('Mostrar {0} vistos', seenCount));
         focusable(toggle, function () {
           showSeen = !showSeen;
           renderSeries();
           var again = actions.querySelectorAll('.btn');
-          for (var i = 0; i < again.length; i++) if (/visto/.test(again[i].textContent)) { Nav.setRoot(root, again[i]); return; }
+          for (var i = 0; i < again.length; i++) if (/visto|watched/i.test(again[i].textContent)) { Nav.setRoot(root, again[i]); return; }
           Nav.setRoot(root);
         });
         top.appendChild(toggle);
@@ -1039,13 +1189,13 @@
       }
 
       if (curSeason === null) {
-        actions.appendChild(el('div', 'loading', '✓ Has visto todos los episodios emitidos.'));
+        actions.appendChild(el('div', 'loading', tr('✓ Has visto todos los episodios emitidos.')));
         return toggle;
       }
       var sRow = el('div', 'seasons hscroll');
       sRow.style.position = 'relative';
       nums.forEach(function (n) {
-        var b = el('div', 'btn' + (n === curSeason ? ' primary' : ''), n === 0 ? 'Especiales' : 'Temporada ' + n);
+        var b = el('div', 'btn' + (n === curSeason ? ' primary' : ''), n === 0 ? tr('Especiales') : tr('Temporada {0}', n));
         b._season = n;
         focusable(b, function () {
           curSeason = n;
@@ -1081,13 +1231,13 @@
         }
         row.appendChild(th);
         var txt = el('div');
-        var epTitle = v.name || v.title || ('Episodio ' + v.episode);
+        var epTitle = v.name || v.title || tr('Episodio {0}', v.episode);
         var seen = (p && p.done) || traktSeen[traktKey(v)];
-        txt.appendChild(el('div', 'ep-title', esc(v.episode + '. ' + epTitle) + (seen ? ' <span class="badge ok">Visto</span>' : '')));
+        txt.appendChild(el('div', 'ep-title', esc(v.episode + '. ' + epTitle) + (seen ? ' <span class="badge ok">' + tr('Visto') + '</span>' : '')));
         var date = v.released ? new Date(v.released) : null;
         var sub = [];
-        if (date && !isNaN(date)) sub.push(date.toLocaleDateString ? date.toLocaleDateString('es-ES') : date.toDateString());
-        if (p && !p.done && p.t > 60) sub.push('Continuar desde ' + fmtTime(p.t));
+        if (date && !isNaN(date)) sub.push(date.toLocaleDateString ? date.toLocaleDateString(settings.lang === 'en' ? 'en-GB' : 'es-ES') : date.toDateString());
+        if (p && !p.done && p.t > 60) sub.push(tr('Continuar desde {0}', fmtTime(p.t)));
         txt.appendChild(el('div', 'ep-sub', esc(sub.join(' · '))));
         row.appendChild(txt);
         focusable(row, function () { push(streamsScreen(epCtx(v))); });
@@ -1218,7 +1368,7 @@
   function streamsScreen(ctx) {
     var root = el('div', 'screen');
     root.appendChild(el('div', 'screen-title', esc(ctx.label)));
-    var sub = el('div', 'screen-sub', 'Buscando fuentes…');
+    var sub = el('div', 'screen-sub', tr('Buscando fuentes…'));
     root.appendChild(sub);
     var list = el('div', 'list vscroll');
     list.setAttribute('data-pad', '0');
@@ -1229,7 +1379,7 @@
       list.innerHTML = '';
       list.appendChild(el('div', 'loading', esc(text)));
       if (withSettings) {
-        var b = el('div', 'btn primary', 'Abrir ajustes');
+        var b = el('div', 'btn primary', tr('Abrir ajustes'));
         focusable(b, function () { push(settingsScreen()); });
         list.appendChild(b);
       }
@@ -1237,17 +1387,17 @@
     }
 
     function fetchStreams() {
-      sub.textContent = 'Buscando fuentes…';
+      sub.textContent = tr('Buscando fuentes…');
       getJSON(torrentioBase() + '/stream/' + ctx.type + '/' + ctx.videoId + '.json').then(function (d) {
         var streams = (d.streams || []).map(parseStream);
         if (streams.length === 1 && streams[0].error) {
           sub.textContent = '';
-          return message('La clave de ' + DEBRID_NAMES[settings.debrid] + ' no es válida o ha caducado. ' +
+          return message(tr('La clave de {0} no es válida o ha caducado.', DEBRID_NAMES[settings.debrid]) + ' ' +
             (streams[0].raw.title || ''), true);
         }
         if (!settings.key) {
-          sub.textContent = streams.length + ' torrents encontrados';
-          return message('Sin un servicio debrid configurado la tele no puede reproducir torrents. Añade tu clave de Real-Debrid o AllDebrid en Ajustes.', true);
+          sub.textContent = tr('{0} torrents encontrados', streams.length);
+          return message(tr('Sin un servicio debrid configurado la tele no puede reproducir torrents. Añade tu clave de Real-Debrid o AllDebrid en Ajustes.'), true);
         }
         streams = streams.filter(function (s) { return s.url && !s.error; });
         // tasa estimada (Mb/s) = tamaño / duración; las que no caben en la conexión van al final
@@ -1268,11 +1418,11 @@
         if (!streams.length) {
           sub.textContent = '';
           return message(settings.onlyCached
-            ? 'No hay fuentes en caché para este título. Puedes desactivar «Solo en caché» en Ajustes para ver más.'
-            : 'No se han encontrado fuentes.', settings.onlyCached);
+            ? tr('No hay fuentes en caché para este título. Puedes desactivar «Solo en caché» en Ajustes para ver más.')
+            : tr('No se han encontrado fuentes.'), settings.onlyCached);
         }
-        sub.textContent = streams.length + ' fuentes · ' + DEBRID_NAMES[settings.debrid] +
-          (limit ? ' · tu conexión: hasta ~' + limit + ' Mb/s' : '');
+        sub.textContent = tr(streams.length === 1 ? '1 fuente · {0}' : '{1} fuentes · {0}', DEBRID_NAMES[settings.debrid], streams.length) +
+          (limit ? tr(' · tu conexión: hasta ~{0} Mb/s', limit) : '');
         list.innerHTML = '';
         var auto = null;
         streams.forEach(function (s) {
@@ -1280,9 +1430,9 @@
           row.appendChild(el('div', 'q', esc(s.quality)));
           var info = el('div', 'info');
           var badges = '';
-          if (s.pref >= 2) badges += '<span class="badge ok">↺ Como el anterior</span>';
-          if (s.cached) badges += '<span class="badge ok">⚡ Instantáneo</span>';
-          else if (s.download) badges += '<span class="badge">Descargar en debrid</span>';
+          if (s.pref >= 2) badges += '<span class="badge ok">' + tr('↺ Como el anterior') + '</span>';
+          if (s.cached) badges += '<span class="badge ok">' + tr('⚡ Instantáneo') + '</span>';
+          else if (s.download) badges += '<span class="badge">' + tr('Descargar en debrid') + '</span>';
           if (s.es) badges += '<span class="badge es">ES</span>';
           var m = s.media;
           if (m.av1) badges += '<span class="badge warn">AV1</span>';
@@ -1291,7 +1441,7 @@
           if (m.dv) badges += '<span class="badge warn">Dolby Vision</span>';
           else if (m.tenbit) badges += '<span class="badge' + (Codecs.hevc10 ? '' : ' warn') + '">10-bit/HDR</span>';
           if (m.dts) badges += '<span class="badge' + (Codecs.dts ? '' : ' warn') + '">DTS/TrueHD</span>';
-          if (s.mbps) badges += '<span class="badge' + (s.heavy ? ' warn' : '') + '">~' + String(s.mbps).replace('.', ',') + ' Mb/s' + (s.heavy ? ' · pesada' : '') + '</span>';
+          if (s.mbps) badges += '<span class="badge' + (s.heavy ? ' warn' : '') + '">~' + num(s.mbps) + ' Mb/s' + (s.heavy ? tr(' · pesada') : '') + '</span>';
           info.appendChild(el('div', 't1', badges + esc(s.file)));
           info.appendChild(el('div', 't2', esc(s.stats + '   ' + s.langs)));
           row.appendChild(info);
@@ -1310,7 +1460,7 @@
         Nav.setRoot(root);
       }).catch(function (e) {
         sub.textContent = '';
-        message('No se pudieron obtener las fuentes (' + e.message + '). Pulsa Atrás e inténtalo de nuevo.');
+        message(tr('No se pudieron obtener las fuentes ({0}). Pulsa Atrás e inténtalo de nuevo.', e.message));
       });
     }
     fetchStreams();
@@ -1381,8 +1531,8 @@
       return getText(s.url).then(function (txt) {
         if (self.current !== s) return;
         self.cues = parseSubs(txt);
-        if (!self.cues.length) toast('El subtítulo está vacío o no se puede leer');
-      }).catch(function () { toast('No se pudo descargar el subtítulo'); });
+        if (!self.cues.length) toast(tr('El subtítulo está vacío o no se puede leer'));
+      }).catch(function () { toast(tr('No se pudo descargar el subtítulo')); });
     },
     update: function (t) {
       if (this.embedded || !this.cues.length) return;
@@ -1423,7 +1573,8 @@
       Subs.reset();
       this.syncMode = false;
       Subs.offset = subOffsets[ctx.videoId] ? subOffsets[ctx.videoId].o : 0;
-      this.spinner(true, 'Conectando con ' + DEBRID_NAMES[settings.debrid] + '…');
+      this.spinner(true, tr('Conectando con {0}…', DEBRID_NAMES[settings.debrid]));
+      $('#osd-help').textContent = tr('OK pausa · ◀ ▶ avanzar/retroceder · ▲ subtítulos · ▼ audio · Atrás salir');
       this.showOSD();
       this.screen = {
         el: el('div'),
@@ -1457,17 +1608,17 @@
     resolve: function (url) {
       var name = DEBRID_NAMES[settings.debrid];
       var notices = {
-        'blocked_access': name + ' ha bloqueado el acceso desde Torrentio. Revisa tu correo o la sección de autorizaciones de tu cuenta y aprueba el acceso.',
-        'failed_access': 'La clave de ' + name + ' no es válida o tu suscripción ha caducado.',
-        'downloading': name + ' aún está descargando este archivo. Prueba dentro de unos minutos o elige una fuente instantánea.',
-        'download_failed': name + ' no ha podido descargar este archivo. Prueba otra fuente.',
-        'limits_exceeded': 'Has alcanzado el límite de ' + name + '. Prueba más tarde.',
-        'failed_too_big': 'El archivo es demasiado grande para ' + name + '.',
-        'failed_rar': 'La fuente es un RAR y no se puede reproducir. Prueba otra.',
-        'failed_opening': name + ' no ha podido abrir este archivo. Prueba otra fuente.',
-        'failed_infringement': name + ' ha retirado este archivo. Prueba otra fuente.',
-        'failed_unavailable': 'Este archivo ya no está disponible. Prueba otra fuente.',
-        'failed_unexpected': 'Error inesperado de Torrentio. Prueba otra fuente.'
+        'blocked_access': tr('{0} ha bloqueado el acceso desde Torrentio. Revisa tu correo o la sección de autorizaciones de tu cuenta y aprueba el acceso.', name),
+        'failed_access': tr('La clave de {0} no es válida o tu suscripción ha caducado.', name),
+        'downloading': tr('{0} aún está descargando este archivo. Prueba dentro de unos minutos o elige una fuente instantánea.', name),
+        'download_failed': tr('{0} no ha podido descargar este archivo. Prueba otra fuente.', name),
+        'limits_exceeded': tr('Has alcanzado el límite de {0}. Prueba más tarde.', name),
+        'failed_too_big': tr('El archivo es demasiado grande para {0}.', name),
+        'failed_rar': tr('La fuente es un RAR y no se puede reproducir. Prueba otra.'),
+        'failed_opening': tr('{0} no ha podido abrir este archivo. Prueba otra fuente.', name),
+        'failed_infringement': tr('{0} ha retirado este archivo. Prueba otra fuente.', name),
+        'failed_unavailable': tr('Este archivo ya no está disponible. Prueba otra fuente.'),
+        'failed_unexpected': tr('Error inesperado de Torrentio. Prueba otra fuente.')
       };
       return new Promise(function (resolve, reject) {
         var x = new XMLHttpRequest();
@@ -1480,7 +1631,7 @@
           var m = /\/videos\/([a-z_]+?)(_v\d+)?\.mp4/.exec(final);
           x.onreadystatechange = null;
           try { x.abort(); } catch (e) { /* ya terminada */ }
-          if (m && final.indexOf('torrentio') >= 0) reject(notices[m[1]] || ('Aviso de Torrentio: ' + m[1]));
+          if (m && final.indexOf('torrentio') >= 0) reject(notices[m[1]] || tr('Aviso de Torrentio: {0}', m[1]));
           else resolve(final);
         };
         x.onerror = x.ontimeout = function () { resolve(url); }; // si no se puede comprobar, intentar igualmente
@@ -1507,12 +1658,12 @@
         try { av.setBufferingParam('PLAYER_BUFFER_FOR_PLAY', 'PLAYER_BUFFER_SIZE_IN_SECOND', 15); } catch (e) { /* no soportado */ }
         try { av.setBufferingParam('PLAYER_BUFFER_FOR_RESUME', 'PLAYER_BUFFER_SIZE_IN_SECOND', 20); } catch (e) { /* no soportado */ }
         av.setListener({
-          onbufferingstart: function () { self.buffering = true; self.spinner(true, 'Cargando…'); },
-          onbufferingprogress: function (p) { self.spinner(true, 'Cargando… ' + p + '%'); },
+          onbufferingstart: function () { self.buffering = true; self.spinner(true, tr('Cargando…')); },
+          onbufferingprogress: function (p) { self.spinner(true, tr('Cargando…') + ' ' + p + '%'); },
           onbufferingcomplete: function () { self.buffering = false; self.spinner(false); },
           oncurrentplaytime: function (ms) { self.time = ms / 1000; },
           onstreamcompleted: function () { self.finished(); },
-          onerror: function (e) { self.fail('Error del reproductor: ' + e); },
+          onerror: function (e) { self.fail(tr('Error del reproductor: {0}', e)); },
           onsubtitlechange: function (duration, text) {
             if (Subs.embedded) Subs.box.textContent = (text || '').replace(/<[^>]+>/g, '');
           }
@@ -1526,7 +1677,7 @@
           else go();
         }, function (e) {
           try { av.close(); } catch (x) { /* ya cerrado */ }
-          self.fail('El reproductor nativo no ha podido abrir esta fuente (' + (e && e.name ? e.name : e) + ').');
+          self.fail(tr('El reproductor nativo no ha podido abrir esta fuente ({0}).', e && e.name ? e.name : e));
         });
       } catch (e) {
         try { av.close(); } catch (x) { /* ya cerrado */ }
@@ -1544,12 +1695,12 @@
         self.duration = v.duration || 0;
         if (self.startAt > 5 && !self.started) v.currentTime = self.startAt;
       };
-      v.onwaiting = function () { self.buffering = true; self.spinner(true, 'Cargando…'); };
+      v.onwaiting = function () { self.buffering = true; self.spinner(true, tr('Cargando…')); };
       v.onplaying = function () { self.buffering = false; self.markStarted(); self.spinner(false); };
       v.onended = function () { self.finished(); };
       v.onerror = function () {
         var code = v.error ? v.error.code : 0;
-        self.fail(code === 4 ? 'No se pudo reproducir: el enlace ha fallado o la tele no admite el formato. Prueba otra fuente (mejor 1080p).' : 'Error de reproducción (' + code + ')');
+        self.fail(code === 4 ? tr('No se pudo reproducir: el enlace ha fallado o la tele no admite el formato. Prueba otra fuente (mejor 1080p).') : tr('Error de reproducción ({0})', code));
       };
       v.src = url;
       var p = v.play();
@@ -1583,7 +1734,7 @@
       $('#osd-dur').textContent = this.duration ? fmtTime(this.duration) : '--:--';
       $('#osd-progress').style.width = this.duration ? (shown / this.duration * 100) + '%' : '0';
       $('#osd-state').textContent = this.seekTarget !== null ? (this.seekTarget >= this.time ? '⏩ ' : '⏪ ') + fmtTime(this.seekTarget) :
-        (this.paused ? '⏸ Pausa' + (this.probeText ? ' · ' + this.probeText : '') : '');
+        (this.paused ? tr('⏸ Pausa') + (this.probeText ? ' · ' + this.probeText : '') : '');
       if (this.paused) this.showOSD(true);
       Subs.update(this.time);
       this.checkUpNext();
@@ -1625,9 +1776,9 @@
         $('#player').appendChild(box);
       }
       if (!this.upNext) { box.classList.add('hidden'); return; }
-      var html = '<div class="un-label">Siguiente episodio</div><div class="un-title">' + esc(this.nextCtx.epLabel) + '</div>' +
-        '<div class="un-help">' + (settings.autoNext ? 'Empieza en ' + Math.max(1, Math.ceil(this.upNext.left)) + ' s · ' : '') +
-        'OK ver ahora · Atrás seguir viendo</div>';
+      var html = '<div class="un-label">' + tr('Siguiente episodio') + '</div><div class="un-title">' + esc(this.nextCtx.epLabel) + '</div>' +
+        '<div class="un-help">' + (settings.autoNext ? tr('Empieza en {0} s · ', Math.max(1, Math.ceil(this.upNext.left))) : '') +
+        tr('OK ver ahora · Atrás seguir viendo') + '</div>';
       if (box.innerHTML !== html) box.innerHTML = html;
       box.classList.remove('hidden');
     },
@@ -1744,37 +1895,37 @@
     },
 
     audioMenu: function () {
-      if (this.backend !== 'av') { toast('Cambiar el audio solo es posible con el reproductor nativo'); return; }
+      if (this.backend !== 'av') { toast(tr('Cambiar el audio solo es posible con el reproductor nativo')); return; }
       var tracks = this.avTracks('AUDIO');
-      if (tracks.length < 2) { toast('Esta fuente solo tiene una pista de audio'); return; }
+      if (tracks.length < 2) { toast(tr('Esta fuente solo tiene una pista de audio')); return; }
       var cur = this.currentAudio(), c = this.ctx, self = this;
-      menu('Audio', tracks.map(function (t, i) {
-        return { label: (LANG_NAMES[langKey(t.lang)] || t.lang || ('Pista ' + (i + 1))) + (t.codec ? ' · ' + t.codec : '') + (t.channels ? ' · ' + t.channels + ' canales' : ''),
-          value: t.index, lang: langKey(t.lang), selected: t.index === cur };
+      menu('Audio', tracks.map(function (k, i) {
+        return { label: (tr(LANG_NAMES[langKey(k.lang)]) || k.lang || tr('Pista {0}', i + 1)) + (k.codec ? ' · ' + k.codec : '') + (k.channels ? tr(' · {0} canales', k.channels) : ''),
+          value: k.index, lang: langKey(k.lang), selected: k.index === cur };
       }), function (it) {
-        try { webapis.avplay.setSelectTrack('AUDIO', it.value); } catch (e) { toast('No se pudo cambiar el audio'); return; }
+        try { webapis.avplay.setSelectTrack('AUDIO', it.value); } catch (e) { toast(tr('No se pudo cambiar el audio')); return; }
         self.audioKey = it.lang;
         if (c.type === 'series' && it.lang) {
           saveSrcPref(c.metaId, { audio: it.lang });
-          toast('Audio cambiado (se usará en el resto de la serie)');
-        } else toast('Audio cambiado');
+          toast(tr('Audio cambiado (se usará en el resto de la serie)'));
+        } else toast(tr('Audio cambiado'));
       });
     },
 
     subsMenu: function () {
-      var self = this, items = [{ label: 'Sin subtítulos', value: 'off', selected: !Subs.current && !Subs.embedded }];
+      var self = this, items = [{ label: tr('Sin subtítulos'), value: 'off', selected: !Subs.current && !Subs.embedded }];
       if (this.backend === 'av') {
         this.avTracks('TEXT').forEach(function (t, i) {
-          items.push({ label: 'Incrustado: ' + (t.lang || ('pista ' + (i + 1))), value: 'emb', index: t.index });
+          items.push({ label: tr('Incrustado: {0}', t.lang || tr('pista {0}', i + 1)), value: 'emb', index: t.index });
         });
       }
       Subs.list.forEach(function (s) {
-        items.push({ label: (s.lang === 'spa' ? 'Español' : 'Inglés') + ' · ' + (s.subtitleFileName || s.id), value: 'ext', sub: s, selected: Subs.current === s });
+        items.push({ label: tr(s.lang === 'spa' ? 'Español' : 'Inglés') + ' · ' + (s.subtitleFileName || s.id), value: 'ext', sub: s, selected: Subs.current === s });
       });
       if (Subs.current || Subs.embedded) {
-        items.unshift({ label: 'Sincronizar subtítulos… (ahora ' + fmtOffset(Subs.offset) + ')', value: 'sync' });
+        items.unshift({ label: tr('Sincronizar subtítulos… (ahora {0})', fmtOffset(Subs.offset)), value: 'sync' });
       }
-      menu('Subtítulos', items, function (it) {
+      menu(tr('Subtítulos'), items, function (it) {
         if (it.value === 'sync') { self.startSync(); return; }
         Subs.auto = false;
         Subs.embedded = false;
@@ -1786,10 +1937,10 @@
             webapis.avplay.setSelectTrack('TEXT', it.index);
             webapis.avplay.setSilentSubtitle(false);
             Subs.embedded = true;
-          } catch (e) { toast('No se pudo activar el subtítulo incrustado'); }
+          } catch (e) { toast(tr('No se pudo activar el subtítulo incrustado')); }
           return;
         }
-        Subs.select(it.sub).then(function () { if (Subs.cues.length) toast('Subtítulos activados'); });
+        Subs.select(it.sub).then(function () { if (Subs.cues.length) toast(tr('Subtítulos activados')); });
       });
     },
 
@@ -1808,7 +1959,7 @@
       }
       if (!this.syncMode) { box.classList.add('hidden'); return; }
       box.innerHTML = '<div class="sync-val">' + fmtOffset(Subs.offset) + '</div>' +
-        '<div class="sync-help">◀ adelantar · ▶ retrasar (0,25 s) &nbsp;·&nbsp; ▲ ▼ 1 s &nbsp;·&nbsp; OK terminar</div>';
+        '<div class="sync-help">' + tr('◀ adelantar · ▶ retrasar (0,25 s) &nbsp;·&nbsp; ▲ ▼ 1 s &nbsp;·&nbsp; OK terminar') + '</div>';
       box.classList.remove('hidden');
     },
 
@@ -1832,7 +1983,7 @@
           case K.ENTER: case K.BACK: case K.ESC: case K.BKSP:
             this.syncMode = false;
             this.paintSync();
-            toast('Subtítulos: ' + fmtOffset(Subs.offset) + ' (se recordará para este vídeo)');
+            toast(tr('Subtítulos: {0} (se recordará para este vídeo)', fmtOffset(Subs.offset)));
             return true;
         }
       }
@@ -1863,7 +2014,7 @@
       var gb = parseSizeGB(st.stats), total = gb * 1073741824;
       var start = total && this.duration ? Math.floor(total * Math.min(0.95, this.time / this.duration)) : 0;
       var CHUNK = 4 * 1048576;
-      this.probeText = '↓ midiendo…';
+      this.probeText = tr('↓ midiendo…');
       var x = new XMLHttpRequest(), t0 = 0, done = false;
       x.open('GET', url, true);
       x.setRequestHeader('Range', 'bytes=' + start + '-' + (start + CHUNK - 1));
@@ -1873,18 +2024,18 @@
         if (done || id !== self.probeId) return;
         done = true;
         var secs = (Date.now() - t0) / 1000;
-        if (!t0 || secs <= 0 || bytes < 262144) { self.probeText = '↓ no se pudo medir'; return; }
+        if (!t0 || secs <= 0 || bytes < 262144) { self.probeText = tr('↓ no se pudo medir'); return; }
         var mbps = Math.round(bytes * 8 / secs / 1e5) / 10;
         var need = st.mbps || 0;
-        self.probeText = '↓ ' + String(mbps).replace('.', ',') + ' Mb/s' +
-          (need ? ' (necesita ~' + String(need).replace('.', ',') + ') ' + (mbps >= need * 1.3 ? '✓' : mbps >= need ? '⚠ justo' : '✗ lenta: prueba otra fuente') : '');
+        self.probeText = '↓ ' + num(mbps) + ' Mb/s' +
+          (need ? tr(' (necesita ~{0}) ', num(need)) + (mbps >= need * 1.3 ? '✓' : mbps >= need ? tr('⚠ justo') : tr('✗ lenta: prueba otra fuente')) : '');
       };
       x.onprogress = function (e) {
         if (!t0) t0 = Date.now();
         if (Date.now() - t0 > 6000) { finish(e.loaded); try { x.abort(); } catch (er) { /* ya cerrada */ } }
       };
       x.onload = function () { finish(x.response ? x.response.byteLength : 0); };
-      x.onerror = x.ontimeout = function () { if (!done && id === self.probeId) { done = true; self.probeText = '↓ no se pudo medir'; } };
+      x.onerror = x.ontimeout = function () { if (!done && id === self.probeId) { done = true; self.probeText = tr('↓ no se pudo medir'); } };
       x.send();
     },
 
@@ -1916,10 +2067,10 @@
       // volver a la lista con la siguiente fuente ya seleccionada
       if (row && row.parentNode) {
         var t1 = row.querySelector('.t1');
-        if (t1 && !row._failed) { row._failed = true; t1.innerHTML = '<span class="badge warn">✗ Falló</span>' + t1.innerHTML; }
+        if (t1 && !row._failed) { row._failed = true; t1.innerHTML = '<span class="badge warn">' + tr('✗ Falló') + '</span>' + t1.innerHTML; }
         var next = row.nextSibling;
         while (next && next._failed) next = next.nextSibling;
-        if (next) { Nav.focus(next); msg += ' Pulsa OK para probar la siguiente fuente.'; }
+        if (next) { Nav.focus(next); msg += tr(' Pulsa OK para probar la siguiente fuente.'); }
       }
       toast(msg, 7000);
     },
@@ -1964,11 +2115,11 @@
     var root = el('div', 'modal');
     var box = el('div', 'modal-box');
     box.style.cssText = 'left:410px;width:1100px;top:180px;text-align:center';
-    box.appendChild(el('h2', null, 'Vincular Trakt'));
-    var msg = el('div', null, 'Pidiendo código…');
+    box.appendChild(el('h2', null, tr('Vincular Trakt')));
+    var msg = el('div', null, tr('Pidiendo código…'));
     msg.style.cssText = 'font-size:30px;line-height:46px;margin-bottom:30px';
     box.appendChild(msg);
-    var cancel = el('div', 'btn', 'Cancelar');
+    var cancel = el('div', 'btn', tr('Cancelar'));
     focusable(cancel, function () { pop(); });
     box.appendChild(cancel);
     root.appendChild(box);
@@ -1977,13 +2128,13 @@
 
     traktReq('POST', '/oauth/device/code', { client_id: trakt.clientId }, false).then(function (d) {
       if (!alive) return;
-      msg.innerHTML = 'En el móvil o el ordenador entra en<br><b style="font-size:42px">' + esc(d.verification_url) +
-        '</b><br>e introduce este código:<div style="font-size:90px;letter-spacing:12px;margin:24px 0;color:#8a7dff;font-weight:bold">' +
-        esc(d.user_code) + '</div><span style="color:#99a">Esperando confirmación…</span>';
+      msg.innerHTML = tr('En el móvil o el ordenador entra en') + '<br><b style="font-size:42px">' + esc(d.verification_url) +
+        '</b><br>' + tr('e introduce este código:') + '<div style="font-size:90px;letter-spacing:12px;margin:24px 0;color:#8a7dff;font-weight:bold">' +
+        esc(d.user_code) + '</div><span style="color:#99a">' + tr('Esperando confirmación…') + '</span>';
       var interval = (d.interval || 5) * 1000, deadline = Date.now() + d.expires_in * 1000;
       var poll = function () {
         if (!alive) return;
-        if (Date.now() > deadline) { msg.textContent = 'El código ha caducado. Vuelve a intentarlo.'; return; }
+        if (Date.now() > deadline) { msg.textContent = tr('El código ha caducado. Vuelve a intentarlo.'); return; }
         traktReq('POST', '/oauth/device/token', withSecret({ code: d.device_code, client_id: trakt.clientId }), false)
           .then(function (t) {
             Trakt.storeTokens(t);
@@ -1995,21 +2146,21 @@
           .then(function () {
             if (!alive) return;
             pop();
-            toast('Trakt vinculado' + (trakt.user ? ' como ' + trakt.user : ''));
+            toast(tr('Trakt vinculado') + (trakt.user ? tr(' como {0}', trakt.user) : ''));
             if (onDone) onDone();
           }, function (e) {
             if (!alive) return;
             if (e.status === 400) { timer = setTimeout(poll, interval); return; } // aún no confirmado
             if (e.status === 429) { interval += 1000; timer = setTimeout(poll, interval); return; }
-            msg.textContent = e.status === 418 ? 'Has rechazado la vinculación.'
-              : e.status === 410 || e.status === 404 ? 'El código ha caducado. Vuelve a intentarlo.'
-              : e.status === 401 ? (trakt.clientSecret ? 'El Client Secret no es correcto. Prueba a dejarlo vacío.' : 'Trakt ha rechazado la vinculación. Revisa el Client ID.')
-              : 'Error al vincular (' + e.message + ')';
+            msg.textContent = e.status === 418 ? tr('Has rechazado la vinculación.')
+              : e.status === 410 || e.status === 404 ? tr('El código ha caducado. Vuelve a intentarlo.')
+              : e.status === 401 ? (trakt.clientSecret ? tr('El Client Secret no es correcto. Prueba a dejarlo vacío.') : tr('Trakt ha rechazado la vinculación. Revisa el Client ID.'))
+              : tr('Error al vincular ({0})', e.message);
           });
       };
       timer = setTimeout(poll, interval);
     }).catch(function (e) {
-      msg.textContent = e.status === 401 || e.status === 403 ? 'El Client ID no es válido.' : 'No se pudo contactar con Trakt (' + e.message + ')';
+      msg.textContent = e.status === 401 || e.status === 403 ? tr('El Client ID no es válido.') : tr('No se pudo contactar con Trakt ({0})', e.message);
     });
   }
 
@@ -2026,7 +2177,7 @@
 
     function opt(label, valueFn, onclick) {
       var o = el('div', 'opt');
-      var l = el('span', null, esc(label));
+      var l = el('span', null, esc(tr(label)));
       var v = el('span', 'val', esc(valueFn()));
       o.appendChild(l); o.appendChild(v);
       focusable(o, function () { onclick(); v.textContent = valueFn(); saveSettings(); });
@@ -2041,16 +2192,22 @@
       };
     }
 
-    box.appendChild(el('div', 'row-title', 'Servicio debrid'));
+    opt('Idioma de la app', function () { return LANGS[settings.lang]; }, function () {
+      settings.lang = settings.lang === 'en' ? 'es' : 'en';
+      saveSettings();
+      setTimeout(rebuildUI, 0);
+    });
+
+    box.appendChild(el('div', 'row-title', tr('Servicio debrid')));
     box.lastChild.style.padding = '10px 0 16px 0';
     opt('Servicio', function () { return DEBRID_NAMES[settings.debrid]; }, cycle('debrid', ['realdebrid', 'alldebrid']));
 
     var field = el('div', 'field');
-    field.appendChild(el('label', null, 'Clave API (pulsa OK para escribirla)'));
+    field.appendChild(el('label', null, tr('Clave API (pulsa OK para escribirla)')));
     var input = el('input');
     input.type = 'text';
     input.value = settings.key;
-    input.placeholder = 'Pega o escribe aquí tu clave';
+    input.placeholder = tr('Pega o escribe aquí tu clave');
     input.setAttribute('autocomplete', 'off');
     input.setAttribute('spellcheck', 'false');
     focusable(input, function () { input.focus(); });
@@ -2064,7 +2221,7 @@
     box.appendChild(field);
     box.appendChild(el('div', 'note', 'Real-Debrid: real-debrid.com/apitoken · AllDebrid: alldebrid.com/apikeys'));
 
-    var testBtn = el('div', 'btn', 'Probar clave');
+    var testBtn = el('div', 'btn', tr('Probar clave'));
     var status = el('span', 'note');
     status.style.marginLeft = '20px';
     focusable(testBtn, testKey);
@@ -2072,54 +2229,54 @@
     box.appendChild(status);
 
     function testKey() {
-      if (!settings.key) { status.textContent = 'Escribe primero la clave.'; return; }
-      status.textContent = 'Comprobando…';
+      if (!settings.key) { status.textContent = tr('Escribe primero la clave.'); return; }
+      status.textContent = tr('Comprobando…');
       getJSON(torrentioBase() + '/stream/movie/' + PROBE_ID + '.json').then(function (d) {
         var s = (d.streams || []).map(parseStream);
-        if (s.length === 1 && s[0].error) status.textContent = '✗ Clave no válida para ' + DEBRID_NAMES[settings.debrid];
-        else status.textContent = '✓ Clave válida · ' + s.filter(function (x) { return x.url; }).length + ' fuentes de prueba';
-      }).catch(function (e) { status.textContent = 'No se pudo comprobar (' + e.message + ')'; });
+        if (s.length === 1 && s[0].error) status.textContent = tr('✗ Clave no válida para {0}', DEBRID_NAMES[settings.debrid]);
+        else status.textContent = tr('✓ Clave válida · {0} fuentes de prueba', s.filter(function (x) { return x.url; }).length);
+      }).catch(function (e) { status.textContent = tr('No se pudo comprobar ({0})', e.message); });
     }
 
-    box.appendChild(el('div', 'row-title', 'Fuentes'));
+    box.appendChild(el('div', 'row-title', tr('Fuentes')));
     box.lastChild.style.padding = '30px 0 16px 0';
-    opt('Solo enlaces en caché (instantáneos)', function () { return settings.onlyCached ? 'Sí' : 'No'; }, function () { settings.onlyCached = !settings.onlyCached; });
-    opt('Calidad máxima', function () { return QUALITY_NAMES[settings.maxQ]; }, cycle('maxQ', ['all', '1080', '720']));
+    opt('Solo enlaces en caché (instantáneos)', function () { return yesNo(settings.onlyCached); }, function () { settings.onlyCached = !settings.onlyCached; });
+    opt('Calidad máxima', function () { return tr(QUALITY_NAMES[settings.maxQ]); }, cycle('maxQ', ['all', '1080', '720']));
     var rateOpt = opt('Tasa máxima de las fuentes', function () {
-      return RATE_NAMES[settings.maxRate] + (settings.maxRate === 'auto' ? (settings.measuredMbps ? ' (~' + rateLimit() + ' Mb/s)' : ' (sin medir)') : '');
+      return tr(RATE_NAMES[settings.maxRate]) + (settings.maxRate === 'auto' ? (settings.measuredMbps ? ' (~' + rateLimit() + ' Mb/s)' : tr(' (sin medir)')) : '');
     }, cycle('maxRate', ['auto', 'none', '10', '20', '40']));
-    var speedBtn = el('div', 'btn', 'Medir mi conexión');
-    var speedNote = el('span', 'note', settings.measuredMbps ? 'Última medida: ' + settings.measuredMbps + ' Mb/s' : 'Sin medir todavía');
+    var speedBtn = el('div', 'btn', tr('Medir mi conexión'));
+    var speedNote = el('span', 'note', settings.measuredMbps ? tr('Última medida: {0} Mb/s', num(settings.measuredMbps)) : tr('Sin medir todavía'));
     speedNote.style.marginLeft = '20px';
     focusable(speedBtn, function () {
-      speedNote.textContent = 'Midiendo… (unos segundos)';
+      speedNote.textContent = tr('Midiendo… (unos segundos)');
       measureSpeed().then(function (mbps) {
         settings.measuredMbps = mbps;
         settings.measuredAt = Date.now();
         saveSettings();
-        speedNote.textContent = 'Tu conexión: ' + String(mbps).replace('.', ',') + ' Mb/s → fuentes de hasta ~' + Math.round(mbps * 0.7) + ' Mb/s';
-        rateOpt.lastChild.textContent = RATE_NAMES[settings.maxRate] + (settings.maxRate === 'auto' ? ' (~' + rateLimit() + ' Mb/s)' : '');
-      }).catch(function (e) { speedNote.textContent = 'No se pudo medir (' + e.message + ')'; });
+        speedNote.textContent = tr('Tu conexión: {0} Mb/s → fuentes de hasta ~{1} Mb/s', num(mbps), Math.round(mbps * 0.7));
+        rateOpt.lastChild.textContent = tr(RATE_NAMES[settings.maxRate]) + (settings.maxRate === 'auto' ? ' (~' + rateLimit() + ' Mb/s)' : '');
+      }).catch(function (e) { speedNote.textContent = tr('No se pudo medir ({0})', e.message); });
     });
     box.appendChild(speedBtn);
     box.appendChild(speedNote);
-    box.appendChild(el('div', 'note', 'Las fuentes más pesadas que tu conexión salen al final, marcadas como «pesada»: suelen pararse a cargar.'));
-    opt('Mostrar primero las fuentes que la tele puede reproducir', function () { return settings.compatFirst ? 'Sí' : 'No'; }, function () { settings.compatFirst = !settings.compatFirst; });
-    opt('Ocultar lo que ya he visto (Trakt y esta app)', function () { return settings.hideWatched ? 'Sí' : 'No'; }, function () { settings.hideWatched = !settings.hideWatched; Seen.at = 0; });
-    opt('Mostrar primero las fuentes en español', function () { return settings.preferEs ? 'Sí' : 'No'; }, function () { settings.preferEs = !settings.preferEs; });
+    box.appendChild(el('div', 'note', tr('Las fuentes más pesadas que tu conexión salen al final, marcadas como «pesada»: suelen pararse a cargar.')));
+    opt('Mostrar primero las fuentes que la tele puede reproducir', function () { return yesNo(settings.compatFirst); }, function () { settings.compatFirst = !settings.compatFirst; });
+    opt('Ocultar lo que ya he visto (Trakt y esta app)', function () { return yesNo(settings.hideWatched); }, function () { settings.hideWatched = !settings.hideWatched; Seen.at = 0; });
+    opt('Mostrar primero las fuentes en español', function () { return yesNo(settings.preferEs); }, function () { settings.preferEs = !settings.preferEs; });
 
-    box.appendChild(el('div', 'row-title', 'Reproducción'));
+    box.appendChild(el('div', 'row-title', tr('Reproducción')));
     box.lastChild.style.padding = '30px 0 16px 0';
-    opt('Pasar solo al siguiente episodio', function () { return settings.autoNext ? 'Sí' : 'No'; }, function () { settings.autoNext = !settings.autoNext; });
+    opt('Pasar solo al siguiente episodio', function () { return yesNo(settings.autoNext); }, function () { settings.autoNext = !settings.autoNext; });
     opt('Idioma del audio', function () {
-      return settings.audioLang === 'orig' ? 'El que traiga el archivo' : LANG_NAMES[settings.audioLang] + ' si lo hay';
+      return settings.audioLang === 'orig' ? tr('El que traiga el archivo') : tr('{0} si lo hay', tr(LANG_NAMES[settings.audioLang]));
     }, cycle('audioLang', AUDIO_LANGS));
-    box.appendChild(el('div', 'note', 'Si cambias la pista con ▼ en una serie, se recuerda para el resto de episodios (y la fuente que elijas, también).'));
+    box.appendChild(el('div', 'note', tr('Si cambias la pista con ▼ en una serie, se recuerda para el resto de episodios (y la fuente que elijas, también).')));
 
-    box.appendChild(el('div', 'row-title', 'Subtítulos'));
+    box.appendChild(el('div', 'row-title', tr('Subtítulos')));
     box.lastChild.style.padding = '30px 0 16px 0';
-    opt('Idioma automático', function () { return SUB_NAMES[settings.subLang]; }, cycle('subLang', ['spa', 'eng', 'off']));
-    opt('Tamaño', function () { return settings.subSize === 'big' ? 'Grande' : 'Normal'; }, function () { settings.subSize = settings.subSize === 'big' ? 'normal' : 'big'; });
+    opt('Idioma automático', function () { return tr(SUB_NAMES[settings.subLang]); }, cycle('subLang', ['spa', 'eng', 'off']));
+    opt('Tamaño', function () { return settings.subSize === 'big' ? tr('Grande') : tr('Normal'); }, function () { settings.subSize = settings.subSize === 'big' ? 'normal' : 'big'; });
 
     box.appendChild(el('div', 'row-title', 'Trakt'));
     box.lastChild.style.padding = '30px 0 16px 0';
@@ -2128,11 +2285,11 @@
 
     function textField(label, key, placeholder) {
       var f = el('div', 'field');
-      f.appendChild(el('label', null, esc(label)));
+      f.appendChild(el('label', null, esc(tr(label))));
       var inp = el('input');
       inp.type = 'text';
       inp.value = trakt[key] || '';
-      inp.placeholder = placeholder;
+      inp.placeholder = tr(placeholder);
       inp.setAttribute('autocomplete', 'off');
       inp.setAttribute('spellcheck', 'false');
       focusable(inp, function () { inp.focus(); });
@@ -2147,49 +2304,49 @@
     }
     textField('Client ID de tu app de Trakt', 'clientId', 'Client ID');
     textField('Client Secret (solo apps antiguas de Trakt; déjalo vacío si no tienes)', 'clientSecret', 'Opcional');
-    box.appendChild(el('div', 'note', 'Créala gratis en trakt.tv/oauth/applications/new · Redirect URI: http://localhost'));
+    box.appendChild(el('div', 'note', tr('Créala gratis en trakt.tv/oauth/applications/new · Redirect URI: http://localhost')));
 
     var linkBtn = el('div', 'btn primary');
     focusable(linkBtn, function () {
       if (Trakt.linked()) {
         Trakt.unlink();
         paintTrakt();
-        toast('Trakt desvinculado');
+        toast(tr('Trakt desvinculado'));
         return;
       }
-      if (!trakt.clientId) { toast('Escribe primero el Client ID de tu app de Trakt'); return; }
+      if (!trakt.clientId) { toast(tr('Escribe primero el Client ID de tu app de Trakt')); return; }
       traktLinkScreen(paintTrakt);
     });
     box.appendChild(linkBtn);
 
     function paintTrakt() {
       tStatus.textContent = Trakt.linked()
-        ? '✓ Vinculado' + (trakt.user ? ' como ' + trakt.user : '') + '. Lo que veas se registra automáticamente (visto al pasar del 80 %).'
-        : 'Sin vincular. Registra lo que ves, tu lista y recomendaciones.';
-      linkBtn.textContent = Trakt.linked() ? 'Desvincular Trakt' : 'Vincular con Trakt';
+        ? tr('✓ Vinculado') + (trakt.user ? tr(' como {0}', trakt.user) : '') + tr('. Lo que veas se registra automáticamente (visto al pasar del 80 %).')
+        : tr('Sin vincular. Registra lo que ves, tu lista y recomendaciones.');
+      linkBtn.textContent = Trakt.linked() ? tr('Desvincular Trakt') : tr('Vincular con Trakt');
     }
     paintTrakt();
 
-    box.appendChild(el('div', 'row-title', 'Datos'));
+    box.appendChild(el('div', 'row-title', tr('Datos')));
     box.lastChild.style.padding = '30px 0 16px 0';
-    var clear = el('div', 'btn', 'Borrar historial de reproducción');
+    var clear = el('div', 'btn', tr('Borrar historial de reproducción'));
     focusable(clear, function () {
-      menu('¿Borrar «Continuar viendo» y el progreso?', [{ label: 'Borrar', value: 1 }, { label: 'Cancelar', value: 0, selected: true }], function (it) {
+      menu(tr('¿Borrar «Continuar viendo» y el progreso?'), [{ label: tr('Borrar'), value: 1 }, { label: tr('Cancelar'), value: 0, selected: true }], function (it) {
         if (!it.value) return;
         progress = {};
         save('progress', progress);
-        toast('Historial borrado');
+        toast(tr('Historial borrado'));
       });
     });
     box.appendChild(clear);
-    var diag = el('div', 'btn', 'Diagnóstico de reproducción');
+    var diag = el('div', 'btn', tr('Diagnóstico de reproducción'));
     focusable(diag, function () {
-      var yn = function (v) { return v ? 'sí (' + v + ')' : 'no'; };
+      var yn = function (v) { return v ? tr('sí ({0})', v) : tr('no'); };
       var chrome = (navigator.userAgent.match(/Chrome\/(\d+)/) || [])[1] || '?';
-      menu('Diagnóstico', [
-        { label: 'Reproductor: ' + (Player.hasAV() ? 'nativo (AVPlay)' : 'HTML5') },
-        { label: 'API tizen: ' + (window.tizen ? 'sí' : 'no') + ' · webapis: ' + (window.webapis ? 'sí' : 'no') },
-        { label: 'Navegador: Chromium ' + chrome },
+      menu(tr('Diagnóstico'), [
+        { label: tr('Reproductor: {0}', Player.hasAV() ? tr('nativo (AVPlay)') : 'HTML5') },
+        { label: 'API tizen: ' + yesNo(window.tizen) + ' · webapis: ' + yesNo(window.webapis) },
+        { label: tr('Navegador: Chromium {0}', chrome) },
         { label: 'H.264: ' + yn(Codecs.h264) },
         { label: 'HEVC 8-bit: ' + yn(Codecs.hevc) },
         { label: 'HEVC 10-bit: ' + yn(Codecs.hevc10) },
@@ -2200,14 +2357,26 @@
       ], function () { /* solo informativo */ });
     });
     box.appendChild(diag);
-    box.appendChild(el('div', 'note', 'StremTV ' + VERSION + ' · Catálogo: Cinemeta · Fuentes: Torrentio · Subtítulos: OpenSubtitles · Reproductor: ' + (Player.hasAV() ? 'nativo (AVPlay)' : 'HTML5')));
+    box.appendChild(el('div', 'note', 'StremTV ' + VERSION + tr(' · Catálogo: Cinemeta · Fuentes: Torrentio · Subtítulos: OpenSubtitles · Reproductor: {0}', Player.hasAV() ? tr('nativo (AVPlay)') : 'HTML5')));
 
     return { el: root, initialFocus: function () { return box.querySelector('.f'); } };
   }
 
+  // al cambiar el idioma, rehacer las pantallas (inicio + ajustes) con los textos nuevos
+  function rebuildUI() {
+    while (stack.length) {
+      var sc = stack.pop();
+      if (sc.onClose) sc.onClose();
+      if (sc.el.parentNode) sc.el.parentNode.removeChild(sc.el);
+    }
+    document.documentElement.lang = settings.lang;
+    push(homeScreen());
+    push(settingsScreen());
+  }
+
   // ---------------------------------------------------------------- arranque
 
-  var VERSION = '0.6.1';
+  var VERSION = '0.7.0';
 
   function fitScreen() {
     var z = window.innerWidth / 1920;
@@ -2242,6 +2411,7 @@
     fitScreen();
     window.addEventListener('resize', fitScreen);
     registerKeys();
+    document.documentElement.lang = settings.lang;
     push(homeScreen());
   }
 
@@ -2249,5 +2419,5 @@
   else start();
 
   // exponer para depurar desde la consola
-  window.StremTV = { bootLog: function () { return load('boot', []); }, settings: settings, Player: Player, Nav: Nav, stack: stack, toast: toast, open: function (type, id) { push(detailScreen(type, id)); } };
+  window.StremTV = { bootLog: function () { return load('boot', []); }, settings: settings, Player: Player, Nav: Nav, stack: stack, toast: function (m, ms) { toast(tr(m), ms); }, open: function (type, id) { push(detailScreen(type, id)); } };
 })();

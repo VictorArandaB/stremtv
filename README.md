@@ -14,6 +14,7 @@ Escrito en ES5 y CSS sin funciones modernas para que funcione en el motor web de
 - «Continuar viendo» y progreso por episodio (guardado en la propia tele).
 - **Siguiente episodio automático**: aviso en los últimos 40 s con cuenta atrás de 10 s (OK lo pone ya, Atrás lo descarta).
 - En cada serie recuerda la **fuente** (misma release o pack) y la **pista de audio** elegidas y las usa en los demás episodios.
+- **App en español o inglés** (Ajustes → Idioma de la app, primera opción).
 - **Idioma del audio elegible** (español, inglés, francés, alemán, italiano, portugués, japonés, coreano, catalán u original): se pone solo si el archivo lo trae, y si coincide con el de los subtítulos automáticos, no los pone.
 - **Trakt**: vinculación con código, scrobble automático (visto al pasar del 80 %), «Continuar», tu lista, recomendaciones y episodios vistos. El anime se registra usando su equivalencia en IMDb.
 
