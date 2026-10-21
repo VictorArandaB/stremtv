@@ -7,6 +7,8 @@ OUT="$ROOT/wgt-build"
 rm -rf "$OUT" "$ROOT/StremTV.wgt" && mkdir -p "$OUT"
 cp "$ROOT"/app/index.html "$ROOT"/app/app.js "$ROOT"/app/style.css "$OUT"/
 cp "$ROOT"/wgt/config.xml "$ROOT"/wgt/icon.png "$OUT"/
+VERSION=$(sed -n 's/.*"version": "\([0-9.]*\)".*/\1/p' "$ROOT/package.json" | head -1)
+sed -i '' "s/__PKG_VERSION__/$VERSION/" "$OUT/index.html"
 # tizen.js empaqueta el directorio actual (ignora el argumento), así que se ejecuta desde $OUT
 cd "$OUT"
 node "$ROOT/tools/node_modules/tizen/cli.js" build . -t wgt -o "$ROOT/StremTV.wgt" \

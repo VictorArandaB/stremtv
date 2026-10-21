@@ -1193,7 +1193,13 @@
         if (window.webapis && webapis.appcommon) webapis.appcommon.setScreenSaver(webapis.appcommon.AppCommonScreenSaverState.SCREEN_SAVER_OFF);
       } catch (e) { /* sin control del salvapantallas */ }
 
-      if (this.hasAV()) this.openAV(stream.url); else this.openHTML(stream.url);
+      // Torrentio redirige a un vídeo de aviso cuando el debrid falla: comprobarlo antes de reproducir
+      this.resolve(stream.url).then(function (finalUrl) {
+        if (self.stream !== stream) return;
+        if (self.hasAV()) self.openAV(finalUrl); else self.openHTML(finalUrl);
+      }, function (msg) {
+        if (self.stream === stream) self.fail(msg);
+      });
 
       Subs.fetchList(ctx).then(function (list) {
         if (settings.subLang === 'off') return;
@@ -1203,6 +1209,40 @@
       });
       this.tickTimer = setInterval(function () { self.tick(); }, 250);
       this.saveTimer = setInterval(function () { self.saveProgress(); }, 10000);
+    },
+
+    resolve: function (url) {
+      var name = DEBRID_NAMES[settings.debrid];
+      var notices = {
+        'blocked_access': name + ' ha bloqueado el acceso desde Torrentio. Revisa tu correo o la sección de autorizaciones de tu cuenta y aprueba el acceso.',
+        'failed_access': 'La clave de ' + name + ' no es válida o tu suscripción ha caducado.',
+        'downloading': name + ' aún está descargando este archivo. Prueba dentro de unos minutos o elige una fuente instantánea.',
+        'download_failed': name + ' no ha podido descargar este archivo. Prueba otra fuente.',
+        'limits_exceeded': 'Has alcanzado el límite de ' + name + '. Prueba más tarde.',
+        'failed_too_big': 'El archivo es demasiado grande para ' + name + '.',
+        'failed_rar': 'La fuente es un RAR y no se puede reproducir. Prueba otra.',
+        'failed_opening': name + ' no ha podido abrir este archivo. Prueba otra fuente.',
+        'failed_infringement': name + ' ha retirado este archivo. Prueba otra fuente.',
+        'failed_unavailable': 'Este archivo ya no está disponible. Prueba otra fuente.',
+        'failed_unexpected': 'Error inesperado de Torrentio. Prueba otra fuente.'
+      };
+      return new Promise(function (resolve, reject) {
+        var x = new XMLHttpRequest();
+        x.open('GET', url, true);
+        x.setRequestHeader('Range', 'bytes=0-0');
+        x.timeout = 30000;
+        x.onreadystatechange = function () {
+          if (x.readyState < 2) return; // con las cabeceras basta: no hace falta descargar nada
+          var final = x.responseURL || url;
+          var m = /\/videos\/([a-z_]+?)(_v\d+)?\.mp4/.exec(final);
+          x.onreadystatechange = null;
+          try { x.abort(); } catch (e) { /* ya terminada */ }
+          if (m && final.indexOf('torrentio') >= 0) reject(notices[m[1]] || ('Aviso de Torrentio: ' + m[1]));
+          else resolve(final);
+        };
+        x.onerror = x.ontimeout = function () { resolve(url); }; // si no se puede comprobar, intentar igualmente
+        x.send();
+      });
     },
 
     // --- backend AVPlay (reproductor nativo de Samsung: MKV, HEVC, varias pistas)
@@ -1716,7 +1756,7 @@
 
   // ---------------------------------------------------------------- arranque
 
-  var VERSION = '0.4.2';
+  var VERSION = '0.4.3';
 
   function fitScreen() {
     var z = window.innerWidth / 1920;
