@@ -202,7 +202,7 @@
     '¿Borrar «Continuar viendo» y el progreso?': 'Clear “Continue watching” and progress?', 'Borrar': 'Clear', 'Historial borrado': 'History cleared',
     'Diagnóstico de reproducción': 'Playback diagnostics',
     'Fuentes y debrid': 'Sources and debrid', 'Cuentas': 'Accounts', 'General': 'General', 'Datos y diagnóstico': 'Data and diagnostics',
-    '{0} addons de fuentes': '{0} source add-ons', '✗ Falta un addon de fuentes': '✗ No source add-on', 'sin clave de debrid': 'no debrid key',
+    '{0} addons de fuentes': '{0} source add-ons', '1 addon de fuentes': '1 source add-on', 'ocultar lo visto: {0}': 'hide watched: {0}', '✗ Falta un addon de fuentes': '✗ No source add-on', 'sin clave de debrid': 'no debrid key',
     'Audio: {0}': 'Audio: {0}', 'siguiente episodio: {0}': 'next episode: {0}', 'Opciones de fuentes': 'Source options',
     'Títulos en español (TMDB)': 'Spanish titles (TMDB)', 'Copia de seguridad (GitHub)': 'Backup (GitHub)',
     'Añade primero un addon de fuentes (arriba, en Addons).': 'Add a sources add-on first (above, in Add-ons).',
@@ -251,8 +251,8 @@
     'Ninguno añadido. Sin un addon de fuentes no se puede reproducir nada. Cinemeta, Kitsu y OpenSubtitles ya vienen incluidos.':
       'None added. Without a sources add-on nothing can be played. Cinemeta, Kitsu and OpenSubtitles are built in.',
     'fuentes con tu debrid': 'sources with your debrid',
-    'No tienes ningún addon de fuentes. Añádelo en Ajustes → Addons pegando la URL de su manifest.': 'You have no sources add-on. Add one in Settings → Add-ons by pasting its manifest URL.',
-    'Añade un addon de fuentes en Ajustes → Addons para poder reproducir': 'Add a sources add-on in Settings → Add-ons to be able to play',
+    'No tienes ningún addon de fuentes. Añádelo en Ajustes → Fuentes y debrid pegando la URL de su manifest.': 'You have no sources add-on. Add one in Settings → Sources and debrid by pasting its manifest URL.',
+    'Añade un addon de fuentes en Ajustes → Fuentes y debrid para poder reproducir': 'Add a sources add-on in Settings → Sources and debrid to be able to play',
     'fuentes': 'sources', 'catálogos': 'catalogs', 'subtítulos': 'subtitles', 'Quitar este addon': 'Remove this add-on',
     'Addon quitado': 'Add-on removed', 'Añadir addon: URL de su manifest (pulsa OK para escribirla)': 'Add an add-on: its manifest URL (press OK to type it)',
     '✓ Añadido: {0}': '✓ Added: {0}', '✗ No se pudo añadir ({0})': '✗ Could not add it ({0})',
@@ -374,6 +374,8 @@
     jpn: 'Japonés', kor: 'Coreano', cat: 'Catalán' };
   // idiomas que se pueden elegir como audio preferido (orig = el que traiga el archivo por defecto)
   var AUDIO_LANGS = ['spa', 'eng', 'fre', 'ger', 'ita', 'por', 'jpn', 'kor', 'cat', 'orig'];
+  // nombre de un idioma de audio/subtítulos; un código desconocido (copias de versiones antiguas) se muestra tal cual
+  function langName(names, k) { return tr(names[k] || k || '—'); }
 
   // código de idioma de una pista (es, spa, Spanish, cas… → spa; fr, fra, French → fre…)
   var LANG_RE = {
@@ -387,7 +389,7 @@
     return l === 'und' ? '' : l.slice(0, 3);
   }
 
-  // Como en Stremio, la app no trae ningún proveedor de fuentes: se añaden en Ajustes → Addons.
+  // Como en Stremio, la app no trae ningún proveedor de fuentes: se añaden en Ajustes → Fuentes y debrid.
   // Los addons de este formato aceptan la configuración del debrid en su dirección; con clave en Ajustes,
   // la app pone la suya (calidad, solo en caché…). Sin clave, se usa la dirección tal cual (configurada en su web)
   var DEBRID_ADDON_IDS = ['com.stremio.torrentio.addon'];
@@ -1391,13 +1393,13 @@
 
     function renderTop() {
       contWrap.innerHTML = '';
-      var noSources = !debridAddon() && !addonsFor('stream').length;
+      var noSources = !hasSources();
       if (noSources || !settings.key) {
         var warn = el('div', 'row');
-        var b = el('div', 'btn primary', noSources ? tr('Añade un addon de fuentes en Ajustes → Addons para poder reproducir')
+        var b = el('div', 'btn primary', noSources ? tr('Añade un addon de fuentes en Ajustes → Fuentes y debrid para poder reproducir')
           : tr('Configura tu Real-Debrid o AllDebrid para poder reproducir'));
         b.style.marginLeft = '80px';
-        focusable(b, function () { push(settingsScreen('sources')); });
+        focusable(b, function () { openSettings('sources'); });
         warn.appendChild(b);
         contWrap.appendChild(warn);
       }
@@ -2315,7 +2317,7 @@
       list.appendChild(el('div', 'loading', esc(text)));
       if (withSettings) {
         var b = el('div', 'btn primary', tr('Abrir ajustes'));
-        focusable(b, function () { push(settingsScreen('sources')); });
+        focusable(b, function () { openSettings('sources'); });
         list.appendChild(b);
       }
       Nav.setRoot(root);
@@ -2327,7 +2329,7 @@
       var others = addonsFor('stream', ctx.type, ctx.videoId).filter(function (a) { return a !== dAddon; });
       if (!dAddon && !others.length) {
         sub.textContent = '';
-        message(tr('No tienes ningún addon de fuentes. Añádelo en Ajustes → Addons pegando la URL de su manifest.'), true);
+        message(tr('No tienes ningún addon de fuentes. Añádelo en Ajustes → Fuentes y debrid pegando la URL de su manifest.'), true);
         return;
       }
       var fromAddons = Promise.all(others.map(function (a) {
@@ -3286,30 +3288,34 @@
 
   function sectionSummary(id) {
     if (id === 'sources') {
+      // la clave de debrid solo se usa con un addon que la acepte (debridAddon); con otros, no se menciona
       var da = debridAddon(), n = addonsFor('stream').length;
-      return (da ? da.manifest.name : n ? tr('{0} addons de fuentes', n) : tr('✗ Falta un addon de fuentes')) + ' · ' +
-        (settings.key ? DEBRID_NAMES[settings.debrid] + ' ✓' : tr('sin clave de debrid'));
+      if (da) return da.manifest.name + ' · ' + (settings.key ? DEBRID_NAMES[settings.debrid] + ' ✓' : tr('sin clave de debrid'));
+      return n === 1 ? tr('1 addon de fuentes') : n ? tr('{0} addons de fuentes', n) : tr('✗ Falta un addon de fuentes');
     }
     if (id === 'playback') {
-      return tr('Audio: {0}', settings.audioLang === 'orig' ? tr('El que traiga el archivo') : tr(LANG_NAMES[settings.audioLang])) +
+      return tr('Audio: {0}', settings.audioLang === 'orig' ? tr('El que traiga el archivo') : langName(LANG_NAMES, settings.audioLang)) +
         ' · ' + tr('siguiente episodio: {0}', yesNo(settings.autoNext));
     }
-    if (id === 'subs') return tr(SUB_NAMES[settings.subLang]) + ' · ' + (settings.subColor === 'yellow' ? tr('Amarillo') : tr('Blanco'));
+    if (id === 'subs') return langName(SUB_NAMES, settings.subLang) + ' · ' + (settings.subColor === 'yellow' ? tr('Amarillo') : tr('Blanco'));
     if (id === 'accounts') {
       var mark = function (on) { return on ? ' ✓' : ' ✗'; };
       return 'Trakt' + mark(Trakt.linked()) + ' · TMDB' + mark(settings.tmdbKey) + ' · GitHub' + mark(backup.token);
     }
-    if (id === 'general') return LANGS[settings.lang];
+    if (id === 'general') return LANGS[settings.lang] + ' · ' + tr('ocultar lo visto: {0}', yesNo(settings.hideWatched));
     return 'StremTV ' + VERSION;
   }
 
-  // la pestaña Ajustes: sin addon de fuentes, se abre directamente en «Fuentes y debrid»
-  function openSettings() {
+  // abre Ajustes siempre con el menú debajo (Atrás vuelve a él) y, encima, la categoría pedida;
+  // la pestaña Ajustes, sin addon de fuentes, se abre directamente en «Fuentes y debrid»
+  function openSettings(section) {
     push(settingsScreen());
-    if (!hasSources()) push(settingsScreen('sources'));
+    if (SETTINGS_SECTIONS.indexOf(section) < 0) section = hasSources() ? '' : 'sources';
+    if (section) push(settingsScreen(section));
   }
 
   function settingsScreen(section) {
+    if (SETTINGS_SECTIONS.indexOf(section) < 0) section = ''; // id desconocido → menú
     var root = el('div', 'screen');
     var vs = el('div', 'vscroll');
     root.appendChild(vs);
@@ -3358,6 +3364,23 @@
       };
     }
 
+    // campo de texto: OK lo abre para escribir; al terminar, ondone(valor) (inp.value se puede corregir dentro)
+    function textField(label, value, placeholder, ondone, onfocus) {
+      var f = el('div', 'field');
+      f.appendChild(el('label', null, esc(tr(label))));
+      var inp = el('input');
+      inp.type = 'text';
+      inp.value = value || '';
+      inp.placeholder = tr(placeholder);
+      inp.setAttribute('autocomplete', 'off');
+      inp.setAttribute('spellcheck', 'false');
+      focusable(inp, function () { if (onfocus) onfocus(); inp.focus(); });
+      inp._ondone = ondone;
+      f.appendChild(inp);
+      box.appendChild(f);
+      return inp;
+    }
+
     var build = {};
     function heading(t) {
       var h = el('div', 'row-title', esc(t));
@@ -3395,16 +3418,8 @@
         });
       }
       paintAddons();
-      var af = el('div', 'field');
-      af.appendChild(el('label', null, esc(tr('Añadir addon: URL de su manifest (pulsa OK para escribirla)'))));
-      var addonInput = el('input');
-      addonInput.type = 'text';
-      addonInput.placeholder = 'https://…/manifest.json';
-      addonInput.setAttribute('autocomplete', 'off');
-      addonInput.setAttribute('spellcheck', 'false');
-      focusable(addonInput, function () { addonInput.focus(); });
       var addonStatus = el('div', 'note');
-      addonInput._ondone = function (v) {
+      var addonInput = textField('Añadir addon: URL de su manifest (pulsa OK para escribirla)', '', 'https://…/manifest.json', function (v) {
         if (!v || !v.replace(/\s+/g, '')) return;
         addonStatus.textContent = tr('Comprobando…');
         installAddon(v).then(function (a) {
@@ -3412,32 +3427,19 @@
           addonStatus.textContent = tr('✓ Añadido: {0}', a.manifest.name);
           paintAddons();
         }).catch(function (e) { addonStatus.textContent = tr('✗ No se pudo añadir ({0})', e.message); });
-      };
-      af.appendChild(addonInput);
-      box.appendChild(af);
+      });
       box.appendChild(addonStatus);
       box.appendChild(el('div', 'note', esc(tr('Los addons de fuentes que piden configuración (Comet, MediaFusion…) se configuran en su web con tu debrid y se pega aquí la URL que dan. Sus catálogos salen en Inicio y en la búsqueda.'))));
 
       heading(tr('Servicio debrid'));
       opt('Servicio', function () { return DEBRID_NAMES[settings.debrid]; }, cycle('debrid', ['realdebrid', 'alldebrid']));
 
-      var field = el('div', 'field');
-      field.appendChild(el('label', null, tr('Clave API (pulsa OK para escribirla)')));
-      var input = el('input');
-      input.type = 'text';
-      input.value = settings.key;
-      input.placeholder = tr('Pega o escribe aquí tu clave');
-      input.setAttribute('autocomplete', 'off');
-      input.setAttribute('spellcheck', 'false');
-      focusable(input, function () { input.focus(); });
-      input._ondone = function (v) {
+      var input = textField('Clave API (pulsa OK para escribirla)', settings.key, 'Pega o escribe aquí tu clave', function (v) {
         settings.key = (v || '').replace(/\s+/g, '');
         input.value = settings.key;
         saveSettings();
         if (settings.key) testKey();
-      };
-      field.appendChild(input);
-      box.appendChild(field);
+      });
       box.appendChild(el('div', 'note', 'Real-Debrid: real-debrid.com/apitoken · AllDebrid: alldebrid.com/apikeys'));
 
       var testBtn = el('div', 'btn', tr('Probar clave'));
@@ -3491,14 +3493,14 @@
       opt('Saltar solo las intros de anime', function () { return yesNo(settings.autoSkip); }, function () { settings.autoSkip = !settings.autoSkip; });
       opt('Pasar solo al siguiente episodio', function () { return yesNo(settings.autoNext); }, function () { settings.autoNext = !settings.autoNext; });
       opt('Idioma del audio', function () {
-        return settings.audioLang === 'orig' ? tr('El que traiga el archivo') : tr('{0} si lo hay', tr(LANG_NAMES[settings.audioLang]));
+        return settings.audioLang === 'orig' ? tr('El que traiga el archivo') : tr('{0} si lo hay', langName(LANG_NAMES, settings.audioLang));
       }, cycle('audioLang', AUDIO_LANGS));
       box.appendChild(el('div', 'note', tr('La pista que elijas con ▼ se recuerda en esa película o serie. Si un archivo no trae tu idioma, se prueba el último que elegiste y después inglés.')));
 
     };
 
     build.subs = function () {
-      opt('Idioma automático', function () { return tr(SUB_NAMES[settings.subLang]); }, cycle('subLang', ['spa', 'eng', 'fre', 'ger', 'ita', 'por', 'off']));
+      opt('Idioma automático', function () { return langName(SUB_NAMES, settings.subLang); }, cycle('subLang', ['spa', 'eng', 'fre', 'ger', 'ita', 'por', 'off']));
       opt('Color', function () { return settings.subColor === 'yellow' ? tr('Amarillo') : tr('Blanco'); }, function () { settings.subColor = settings.subColor === 'yellow' ? 'white' : 'yellow'; });
       opt('Posición', function () { return settings.subPos === 'high' ? tr('Más arriba') : tr('Abajo'); }, function () { settings.subPos = settings.subPos === 'high' ? 'low' : 'high'; });
       opt('Fondo detrás del texto', function () { return yesNo(settings.subBg); }, function () { settings.subBg = !settings.subBg; });
@@ -3511,27 +3513,16 @@
       var tStatus = el('div', 'note');
       box.appendChild(tStatus);
 
-      function textField(label, key, placeholder) {
-        var f = el('div', 'field');
-        f.appendChild(el('label', null, esc(tr(label))));
-        var inp = el('input');
-        inp.type = 'text';
-        inp.value = trakt[key] || '';
-        inp.placeholder = tr(placeholder);
-        inp.setAttribute('autocomplete', 'off');
-        inp.setAttribute('spellcheck', 'false');
-        focusable(inp, function () { inp.focus(); });
-        inp._ondone = function (v) {
+      function traktField(label, key, placeholder) {
+        var inp = textField(label, trakt[key], placeholder, function (v) {
           trakt[key] = (v || '').replace(/\s+/g, '');
           inp.value = trakt[key];
           saveTrakt();
           paintTrakt();
-        };
-        f.appendChild(inp);
-        box.appendChild(f);
+        });
       }
-      textField('Client ID de tu app de Trakt', 'clientId', 'Client ID');
-      textField('Client Secret (solo apps antiguas de Trakt; déjalo vacío si no tienes)', 'clientSecret', 'Opcional');
+      traktField('Client ID de tu app de Trakt', 'clientId', 'Client ID');
+      traktField('Client Secret (solo apps antiguas de Trakt; déjalo vacío si no tienes)', 'clientSecret', 'Opcional');
       box.appendChild(el('div', 'note', tr('Créala gratis en trakt.tv/oauth/applications/new · Redirect URI: http://localhost')));
 
       var linkBtn = el('div', 'btn primary');
@@ -3556,17 +3547,7 @@
       paintTrakt();
 
       heading(tr('Títulos en español (TMDB)'));
-      var tf = el('div', 'field');
-      tf.appendChild(el('label', null, esc(tr('Títulos y sinopsis en español: clave de TMDB (pulsa OK para escribirla)'))));
-      var tmdbInput = el('input');
-      tmdbInput.type = 'text';
-      tmdbInput.value = settings.tmdbKey;
-      tmdbInput.placeholder = tr('Clave de la API o token de lectura de themoviedb.org');
-      tmdbInput.setAttribute('autocomplete', 'off');
-      tmdbInput.setAttribute('spellcheck', 'false');
-      focusable(tmdbInput, function () { tmdbInput.focus(); });
-      var tmdbStatus = el('div', 'note', esc(tr('Gratis en themoviedb.org → Ajustes → API. Solo se usa con la app en español.')));
-      tmdbInput._ondone = function (v) {
+      var tmdbInput = textField('Títulos y sinopsis en español: clave de TMDB (pulsa OK para escribirla)', settings.tmdbKey, 'Clave de la API o token de lectura de themoviedb.org', function (v) {
         settings.tmdbKey = (v || '').replace(/\s+/g, '');
         tmdbInput.value = settings.tmdbKey;
         saveSettings();
@@ -3575,23 +3556,13 @@
         tmdbGet('/movie/278').then(function (d) {
           tmdbStatus.textContent = tr('✓ Clave válida («{0}»). Los cambios se ven al volver a Inicio.', d.title);
         }).catch(function (e) { tmdbStatus.textContent = '✗ ' + e.message; });
-      };
-      tf.appendChild(tmdbInput);
-      box.appendChild(tf);
+      });
+      var tmdbStatus = el('div', 'note', esc(tr('Gratis en themoviedb.org → Ajustes → API. Solo se usa con la app en español.')));
       box.appendChild(tmdbStatus);
 
       heading(tr('Copia de seguridad (GitHub)'));
       box.appendChild(el('div', 'note', esc(tr('Guarda tus ajustes, claves, Trakt, progreso y addons en un Gist secreto de tu cuenta de GitHub, una vez al día. Si se borran los datos de la app, escribe el token y pulsa Restaurar.'))));
-      var bf = el('div', 'field');
-      bf.appendChild(el('label', null, esc(tr('Token de GitHub con permiso «gist» (pulsa OK para escribirlo)'))));
-      var tokenInput = el('input');
-      tokenInput.type = 'text';
-      tokenInput.value = backup.token ? backup.token.slice(0, 8) + '…' : '';
-      tokenInput.placeholder = 'ghp_…';
-      tokenInput.setAttribute('autocomplete', 'off');
-      tokenInput.setAttribute('spellcheck', 'false');
-      focusable(tokenInput, function () { if (backup.token) tokenInput.value = ''; tokenInput.focus(); });
-      tokenInput._ondone = function (v) {
+      var tokenInput = textField('Token de GitHub con permiso «gist» (pulsa OK para escribirlo)', backup.token ? backup.token.slice(0, 8) + '…' : '', 'ghp_…', function (v) {
         v = (v || '').replace(/\s+/g, '');
         if (!v || v.indexOf('…') >= 0) { tokenInput.value = backup.token ? backup.token.slice(0, 8) + '…' : ''; return; }
         backup.token = v;
@@ -3602,9 +3573,7 @@
         findBackupGist().then(function (id) {
           paintBackup(id ? tr('Hay una copia en GitHub: pulsa Restaurar para recuperarla o Guardar para sustituirla.') : tr('No hay copias todavía: pulsa Guardar copia ahora.'));
         }).catch(function (e) { paintBackup('✗ ' + e.message); });
-      };
-      bf.appendChild(tokenInput);
-      box.appendChild(bf);
+      }, function () { if (backup.token) tokenInput.value = ''; });
       box.appendChild(el('div', 'note', esc(tr('Créalo en github.com/settings/tokens/new marcando solo «gist».'))));
       var saveBtn = el('div', 'btn', tr('Guardar copia ahora'));
       var restoreBtn = el('div', 'btn', tr('Restaurar copia'));
@@ -3715,7 +3684,7 @@
 
   // ---------------------------------------------------------------- arranque
 
-  var VERSION = '0.16.0';
+  var VERSION = '0.16.1';
 
   function fitScreen() {
     var z = window.innerWidth / 1920;
@@ -3761,5 +3730,5 @@
   else start();
 
   // exponer para depurar desde la consola
-  window.StremTV = { bootLog: function () { return load('boot', []); }, settings: settings, Player: Player, Nav: Nav, stack: stack, toast: function (m, ms) { toast(tr(m), ms); }, open: function (type, id) { push(detailScreen(type, id)); }, openSettings: function (id) { push(settingsScreen(id)); } };
+  window.StremTV = { bootLog: function () { return load('boot', []); }, settings: settings, Player: Player, Nav: Nav, stack: stack, toast: function (m, ms) { toast(tr(m), ms); }, open: function (type, id) { push(detailScreen(type, id)); }, openSettings: openSettings };
 })();
