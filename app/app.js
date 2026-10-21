@@ -180,7 +180,7 @@
       if (!trakt.refresh || Date.now() < (trakt.expires || 0) - 86400000) return Promise.resolve();
       return traktReq('POST', '/oauth/token', {
         refresh_token: trakt.refresh, client_id: trakt.clientId, client_secret: trakt.clientSecret,
-        redirect_uri: 'urn:ietf:wg:oauth:2.0:oob', grant_type: 'refresh_token'
+        redirect_uri: 'http://localhost', grant_type: 'refresh_token'
       }, false).then(Trakt.storeTokens);
     },
 
@@ -1584,7 +1584,7 @@
     }
     textField('Client ID de tu app de Trakt', 'clientId', 'Client ID');
     textField('Client Secret de tu app de Trakt', 'clientSecret', 'Client Secret');
-    box.appendChild(el('div', 'note', 'Créala gratis en trakt.tv/oauth/applications/new · Redirect URI: urn:ietf:wg:oauth:2.0:oob'));
+    box.appendChild(el('div', 'note', 'Créala gratis en trakt.tv/oauth/applications/new · Redirect URI: http://localhost'));
 
     var linkBtn = el('div', 'btn primary');
     focusable(linkBtn, function () {
@@ -1626,7 +1626,7 @@
 
   // ---------------------------------------------------------------- arranque
 
-  var VERSION = '0.2.0';
+  var VERSION = '0.2.1';
 
   function fitScreen() {
     var z = window.innerWidth / 1920;
