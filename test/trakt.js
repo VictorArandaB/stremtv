@@ -36,7 +36,7 @@ const VIDEO = 'https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/1080/Big_Buc
   const focused = () => page.evaluate(() => { const f = document.querySelector('.focused'); return f ? (f.textContent || f.value || '').replace(/\s+/g, ' ').slice(0, 80) : null; });
 
   await page.goto('http://127.0.0.1:8090/', { waitUntil: 'networkidle2' });
-  await page.evaluate(() => { localStorage.clear(); localStorage.setItem('stv.settings', JSON.stringify({ key: 'FAKE' })); localStorage.setItem('stv.trakt', JSON.stringify({ clientId: 'cid' })); });
+  await page.evaluate(() => { localStorage.clear(); localStorage.setItem('stv.addons', JSON.stringify([{ url: 'https://torrentio.strem.fun', manifest: { id: 'com.stremio.torrentio.addon', name: 'Torrentio', resources: ['stream'], types: ['movie', 'series', 'anime', 'other'], idPrefixes: null, catalogs: [] } }])); localStorage.setItem('stv.settings', JSON.stringify({ key: 'FAKE' })); localStorage.setItem('stv.trakt', JSON.stringify({ clientId: 'cid' })); });
   await page.reload({ waitUntil: 'networkidle2' }); await sleep(1500);
 
   // Ajustes -> Vincular

@@ -7,7 +7,7 @@ Escrito en ES5 y CSS sin funciones modernas para que funcione en el motor web de
 ## Qué hace
 - Catálogo y búsqueda de películas y series (Cinemeta).
 - **Anime**: en emisión, tendencias, populares y mejor valorados, con búsqueda (addon Kitsu; acepta IDs de AniDB/MAL/AniList).
-- Fuentes de Torrentio a través de **Real-Debrid** o **AllDebrid** (enlaces directos: la tele solo reproduce).
+- **Sin fuentes de serie, como Stremio**: reproduce lo que den los addons que añadas en Ajustes → Addons. Con addons que aceptan debrid en su dirección, usa tu **Real-Debrid** o **AllDebrid** y las opciones de Ajustes (calidad, solo en caché…).
 - Prioriza fuentes en español y marca las instantáneas (en caché).
 - Reproductor nativo de Samsung (AVPlay) si está disponible, con HTML5 como alternativa. Cambio de pista de audio con AVPlay.
 - Subtítulos en español/inglés de OpenSubtitles, con ajuste de sincronía.
@@ -20,7 +20,7 @@ Escrito en ES5 y CSS sin funciones modernas para que funcione en el motor web de
 - **Títulos y sinopsis en español** con una clave gratuita de TMDB (Ajustes, debajo del idioma): tarjetas, fichas, géneros, nombres de episodio y búsqueda en español.
 - **Retomar desde Trakt** lo dejado a medias en otro dispositivo («▶ Continuar (35 %)»).
 - **Copia de seguridad** en un Gist secreto de GitHub (Ajustes → Copia de seguridad): diaria y automática; para restaurar basta con escribir el token.
-- **Addons de Stremio**: en Ajustes → Addons se pega la URL de un manifest; sus fuentes se suman a las de Torrentio, sus catálogos salen en Inicio (hasta 4 filas) y en la búsqueda, y sus subtítulos en el menú ▲.
+- **Addons de Stremio**: en Ajustes → Addons se pega la URL de un manifest; sus fuentes se suman entre sí, sus catálogos salen en Inicio (hasta 4 filas) y en la búsqueda, y sus subtítulos en el menú ▲.
 - **Explorar**: películas o series por género y año, populares o mejor valoradas.
 - **Esta semana en tus series** (Trakt): episodios de las series que sigues, de hace dos días a una semana vista.
 - **Reproducción directa**: «▶ Ver» arranca la mejor fuente (instantánea, que quepa en la conexión, o la misma release que en el episodio anterior); Atrás lleva a la lista para elegir otra.
@@ -32,7 +32,9 @@ Escrito en ES5 y CSS sin funciones modernas para que funcione en el motor web de
 ## Instalar en TizenBrew
 Módulos → Añadir módulo GitHub → `<usuario>/stremtv`
 
-Después, en **Ajustes** de la app, elige el servicio y escribe tu clave API:
+Después, en **Ajustes** de la app:
+1. En **Addons**, pega la URL del manifest del addon de fuentes que uses (el mismo que en Stremio).
+2. Si es un addon con debrid, elige el servicio y escribe tu clave API:
 - Real-Debrid: https://real-debrid.com/apitoken
 - AllDebrid: https://alldebrid.com/apikeys
 
@@ -55,3 +57,6 @@ La clave solo se guarda en la tele.
 cd app && python3 -m http.server 8090   # abrir http://127.0.0.1:8090 (flechas, Intro, Esc)
 cd test && npm i && node ui.js && node player.js && node trakt.js   # pruebas headless con capturas en test/shots
 ```
+
+## Aviso
+StremTV no aloja, indexa ni proporciona contenido, y no incluye ningún addon de fuentes. Solo muestra lo que devuelven los addons que añada cada usuario, que es responsable de usarlos conforme a la ley y a los derechos de autor de su país.

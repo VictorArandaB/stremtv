@@ -22,7 +22,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const key = async (k, n = 1) => { for (let i = 0; i < n; i++) { await p.keyboard.press(k); await sleep(250); } };
   const grid = () => p.evaluate(() => ({ n: document.querySelectorAll('.grid .card').length, first: Array.from(document.querySelectorAll('.grid .card .name')).slice(0, 3).map((x) => x.textContent).join(' | '), more: !!Array.from(document.querySelectorAll('.grid .btn')).filter((x) => /más|more/.test(x.textContent)).length, empty: (document.querySelector('.grid .empty') || {}).textContent }));
   await p.goto('http://127.0.0.1:8090/', { waitUntil: 'networkidle2' });
-  await p.evaluate(() => { localStorage.clear(); localStorage.setItem('stv.settings', JSON.stringify({ key: 'K', debrid: 'alldebrid', hideWatched: false }));
+  await p.evaluate(() => { localStorage.clear(); localStorage.setItem('stv.addons', JSON.stringify([{ url: 'https://torrentio.strem.fun', manifest: { id: 'com.stremio.torrentio.addon', name: 'Torrentio', resources: ['stream'], types: ['movie', 'series', 'anime', 'other'], idPrefixes: null, catalogs: [] } }])); localStorage.setItem('stv.settings', JSON.stringify({ key: 'K', debrid: 'alldebrid', hideWatched: false }));
     localStorage.setItem('stv.trakt', JSON.stringify({ clientId: 'c', access: 'a', refresh: 'r', expires: Date.now() + 9e9 })); });
   await p.reload({ waitUntil: 'networkidle2' }); await sleep(3000);
   console.log('calendario:', await p.evaluate(() => { const r = Array.from(document.querySelectorAll('.row')).filter((x) => /Esta semana/.test(x.textContent))[0]; return r ? Array.from(r.querySelectorAll('.name')).map((x) => x.textContent).join(' | ') : 'NO'; }));

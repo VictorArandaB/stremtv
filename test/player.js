@@ -27,7 +27,7 @@ const VIDEO = 'https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/1080/Big_Buc
   const focused = () => page.evaluate(() => { const f = document.querySelector('.focused'); return f ? (f.textContent || f.value || '').slice(0, 70) : null; });
 
   await page.goto('http://127.0.0.1:8090/', { waitUntil: 'networkidle2' });
-  await page.evaluate(() => { localStorage.setItem('stv.settings', JSON.stringify({ key: 'FAKE', debrid: 'realdebrid', quickPlay: false })); });
+  await page.evaluate(() => { localStorage.setItem('stv.addons', JSON.stringify([{ url: 'https://torrentio.strem.fun', manifest: { id: 'com.stremio.torrentio.addon', name: 'Torrentio', resources: ['stream'], types: ['movie', 'series', 'anime', 'other'], idPrefixes: null, catalogs: [] } }])); localStorage.setItem('stv.settings', JSON.stringify({ key: 'FAKE', debrid: 'realdebrid', quickPlay: false })); });
   await page.reload({ waitUntil: 'networkidle2' }); await sleep(2000);
   console.log('inicio con clave (sin aviso):', await focused());
   await key('ArrowDown'); await key('Enter'); await sleep(2500);   // Cadena perpetua? primera película

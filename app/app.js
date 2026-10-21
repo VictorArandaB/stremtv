@@ -6,7 +6,6 @@
 
   var CINEMETA = 'https://v3-cinemeta.strem.io';
   var ANIME = 'https://anime-kitsu.strem.fun'; // catálogo de anime (Kitsu, acepta IDs de AniDB/MAL/AniList)
-  var TORRENTIO = 'https://torrentio.strem.fun';
   var SUBS_ADDON = 'https://opensubtitles-v3.strem.io';
   // el certificado con el que se firma la app (y la Tizen Developers CA) caduca ese día: actualizar al volver a firmarla
   var CERT_EXPIRES = new Date(2027, 0, 1);
@@ -115,8 +114,8 @@
     // reproductor
     'Conectando con {0}…': 'Connecting to {0}…',
     'OK pausa · ◀ ▶ avanzar/retroceder · ▲ subtítulos · ▼ audio y temporizador · Atrás salir': 'OK pause · ◀ ▶ seek · ▲ subtitles · ▼ audio and sleep timer · Back exit',
-    '{0} ha bloqueado el acceso desde Torrentio. Revisa tu correo o la sección de autorizaciones de tu cuenta y aprueba el acceso.':
-      '{0} has blocked access from Torrentio. Check your email or the authorizations section of your account and approve it.',
+    '{0} ha bloqueado el acceso desde {1}. Revisa tu correo o la sección de autorizaciones de tu cuenta y aprueba el acceso.':
+      '{0} has blocked access from {1}. Check your email or the authorizations section of your account and approve it.',
     'La clave de {0} no es válida o tu suscripción ha caducado.': 'The {0} key is invalid or your subscription has expired.',
     '{0} aún está descargando este archivo. Prueba dentro de unos minutos o elige una fuente instantánea.':
       '{0} is still downloading this file. Try again in a few minutes or pick an instant source.',
@@ -127,8 +126,8 @@
     '{0} no ha podido abrir este archivo. Prueba otra fuente.': '{0} could not open this file. Try another source.',
     '{0} ha retirado este archivo. Prueba otra fuente.': '{0} has removed this file. Try another source.',
     'Este archivo ya no está disponible. Prueba otra fuente.': 'This file is no longer available. Try another source.',
-    'Error inesperado de Torrentio. Prueba otra fuente.': 'Unexpected Torrentio error. Try another source.',
-    'Aviso de Torrentio: {0}': 'Torrentio notice: {0}',
+    'Error inesperado de {0}. Prueba otra fuente.': 'Unexpected {0} error. Try another source.',
+    'Aviso de {0}: {1}': '{0} notice: {1}',
     'Error del reproductor: {0}': 'Player error: {0}',
     'El reproductor nativo no ha podido abrir esta fuente ({0}).': 'The native player could not open this source ({0}).',
     'No se pudo reproducir: el enlace ha fallado o la tele no admite el formato. Prueba otra fuente (mejor 1080p).':
@@ -244,7 +243,12 @@
     'Addons': 'Add-ons', 'la URL debe empezar por https://': 'the URL must start with https://',
     'no es un addon de Stremio': 'it is not a Stremio add-on', '{0} ya viene incluido en StremTV': '{0} is already built into StremTV',
     'hay que configurarlo primero en su web y pegar la URL que te dé': 'configure it on its website first and paste the URL it gives you',
-    'Ninguno añadido. Torrentio, Cinemeta, Kitsu y OpenSubtitles ya vienen incluidos.': 'None added. Torrentio, Cinemeta, Kitsu and OpenSubtitles are built in.',
+    'Ninguno añadido. Sin un addon de fuentes no se puede reproducir nada. Cinemeta, Kitsu y OpenSubtitles ya vienen incluidos.':
+      'None added. Without a sources add-on nothing can be played. Cinemeta, Kitsu and OpenSubtitles are built in.',
+    'fuentes con tu debrid': 'sources with your debrid',
+    'No tienes ningún addon de fuentes. Añádelo en Ajustes → Addons pegando la URL de su manifest.': 'You have no sources add-on. Add one in Settings → Add-ons by pasting its manifest URL.',
+    'Añade primero un addon de fuentes (más abajo, en Addons).': 'Add a sources add-on first (below, in Add-ons).',
+    'Añade un addon de fuentes en Ajustes → Addons para poder reproducir': 'Add a sources add-on in Settings → Add-ons to be able to play',
     'fuentes': 'sources', 'catálogos': 'catalogs', 'subtítulos': 'subtitles', 'Quitar este addon': 'Remove this add-on',
     'Addon quitado': 'Add-on removed', 'Añadir addon: URL de su manifest (pulsa OK para escribirla)': 'Add an add-on: its manifest URL (press OK to type it)',
     '✓ Añadido: {0}': '✓ Added: {0}', '✗ No se pudo añadir ({0})': '✗ Could not add it ({0})',
@@ -261,8 +265,8 @@
       '⚠ The StremTV certificate expires on {0}. If it stops opening, it has to be signed and installed again from the Mac.',
     'Certificado de la app válido hasta el {0}': 'App certificate valid until {0}', 'Diagnóstico': 'Diagnostics',
     'Reproductor: {0}': 'Player: {0}', 'nativo (AVPlay)': 'native (AVPlay)', 'Navegador: Chromium {0}': 'Browser: Chromium {0}',
-    ' · Catálogo: Cinemeta · Fuentes: Torrentio · Subtítulos: OpenSubtitles · Reproductor: {0}':
-      ' · Catalog: Cinemeta · Sources: Torrentio · Subtitles: OpenSubtitles · Player: {0}'
+    ' · Catálogo: Cinemeta · Fuentes: tus addons · Subtítulos: OpenSubtitles · Reproductor: {0}':
+      ' · Catalog: Cinemeta · Sources: your add-ons · Subtitles: OpenSubtitles · Player: {0}'
   };
 
   function tr(s) {
@@ -379,7 +383,18 @@
     return l === 'und' ? '' : l.slice(0, 3);
   }
 
-  function torrentioBase() {
+  // Como en Stremio, la app no trae ningún proveedor de fuentes: se añaden en Ajustes → Addons.
+  // Los addons de este formato aceptan la configuración del debrid en su dirección; con clave en Ajustes,
+  // la app pone la suya (calidad, solo en caché…). Sin clave, se usa la dirección tal cual (configurada en su web)
+  var DEBRID_ADDON_IDS = ['com.stremio.torrentio.addon'];
+  function debridAddon() {
+    for (var i = 0; i < addons.length; i++) if (DEBRID_ADDON_IDS.indexOf(addons[i].manifest.id) >= 0) return addons[i];
+    return null;
+  }
+  function originOf(url) { return (/^https?:\/\/[^\/]+/.exec(url) || [url])[0]; }
+
+  function sourcesBase(a) {
+    if (!settings.key) return a.url;
     var filter = ['scr', 'cam', 'unknown'];
     if (settings.maxQ === '1080') filter.push('4k');
     if (settings.maxQ === '720') filter.push('4k', '1080p');
@@ -388,14 +403,14 @@
       parts.push('debridoptions=' + (settings.onlyCached ? 'nodownloadlinks,nocatalog' : 'nocatalog'));
       parts.push(settings.debrid + '=' + settings.key);
     }
-    return TORRENTIO + '/' + parts.join('|');
+    return originOf(a.url) + '/' + parts.join('|');
   }
 
   // ---------------------------------------------------------------- addons de Stremio añadidos en Ajustes
 
   // [{ url: base sin /manifest.json, manifest: {id, name, resources, types, idPrefixes, catalogs} }]
   var addons = load('addons', []);
-  var BUILTIN_ADDONS = ['com.stremio.torrentio.addon', 'com.linvo.cinemeta', 'org.stremio.opensubtitlesv3'];
+  var BUILTIN_ADDONS = ['com.linvo.cinemeta', 'org.stremio.opensubtitlesv3'];
 
   function addonBase(u) {
     return String(u || '').replace(/^\s+|\s+$/g, '').replace(/^stremio:\/\//, 'https://')
@@ -726,7 +741,7 @@
         var metas = [];
         (items || []).forEach(function (it) {
           var o = it.movie || it.show;
-          if (!o || !o.ids || !o.ids.imdb) return; // sin IMDb, Cinemeta y Torrentio no lo encuentran
+          if (!o || !o.ids || !o.ids.imdb) return; // sin IMDb, Cinemeta y los addons de fuentes no lo encuentran
           Trakt.watchlist[o.ids.imdb] = true;
           metas.push({ id: o.ids.imdb, type: it.movie ? 'movie' : 'series', name: o.title, poster: metahubPoster(o.ids.imdb) });
         });
@@ -1372,9 +1387,11 @@
 
     function renderTop() {
       contWrap.innerHTML = '';
-      if (!settings.key) {
+      var noSources = !debridAddon() && !addonsFor('stream').length;
+      if (noSources || !settings.key) {
         var warn = el('div', 'row');
-        var b = el('div', 'btn primary', tr('Configura tu Real-Debrid o AllDebrid para poder reproducir'));
+        var b = el('div', 'btn primary', noSources ? tr('Añade un addon de fuentes en Ajustes → Addons para poder reproducir')
+          : tr('Configura tu Real-Debrid o AllDebrid para poder reproducir'));
         b.style.marginLeft = '80px';
         focusable(b, function () { push(settingsScreen()); });
         warn.appendChild(b);
@@ -2272,7 +2289,7 @@
     }
     save('srcprefs', srcPrefs);
   }
-  // 4 = mismo torrent (pack de temporada), 2 = mismo bingeGroup de Torrentio, 1 = mismo grupo
+  // 4 = mismo torrent (pack de temporada), 2 = mismo bingeGroup del addon, 1 = mismo grupo
   function prefScore(s, pref) {
     if (!pref) return 0;
     return (pref.hash && s.hash === pref.hash ? 4 : 0) + (pref.binge && s.binge === pref.binge ? 2 : 0) +
@@ -2302,14 +2319,22 @@
 
     function fetchStreams() {
       sub.textContent = tr('Buscando fuentes…');
-      var fromAddons = Promise.all(addonsFor('stream', ctx.type, ctx.videoId).map(function (a) {
+      var dAddon = debridAddon();
+      var others = addonsFor('stream', ctx.type, ctx.videoId).filter(function (a) { return a !== dAddon; });
+      if (!dAddon && !others.length) {
+        sub.textContent = '';
+        message(tr('No tienes ningún addon de fuentes. Añádelo en Ajustes → Addons pegando la URL de su manifest.'), true);
+        return;
+      }
+      var fromAddons = Promise.all(others.map(function (a) {
         return getJSON(a.url + '/stream/' + ctx.type + '/' + ctx.videoId + '.json').then(function (d) {
           return (d.streams || []).map(function (x) { var st = parseStream(x); st.addon = a.manifest.name; return st; })
             .filter(function (st) { return st.url && !st.error; });
         }).catch(function () { return []; }); // un addon caído no estropea el resto
       }));
-      var fromTorrentio = getJSON(torrentioBase() + '/stream/' + ctx.type + '/' + ctx.videoId + '.json').catch(function (e) { return { failed: e }; });
-      Promise.all([fromTorrentio, fromAddons]).then(function (r) {
+      var fromDebrid = dAddon ? getJSON(sourcesBase(dAddon) + '/stream/' + ctx.type + '/' + ctx.videoId + '.json').catch(function (e) { return { failed: e }; })
+        : Promise.resolve({ streams: [] });
+      Promise.all([fromDebrid, fromAddons]).then(function (r) {
         var d = r[0], extra = [].concat.apply([], r[1]);
         if (d.failed && !extra.length) throw d.failed;
         var streams = (d.streams || []).map(parseStream);
@@ -2318,7 +2343,7 @@
           return message(tr('La clave de {0} no es válida o ha caducado.', DEBRID_NAMES[settings.debrid]) + ' ' +
             (streams[0].raw.title || ''), true);
         }
-        if (!settings.key && !extra.length) {
+        if (!settings.key && !extra.length && !streams.some(function (x) { return x.url && !x.error; })) {
           sub.textContent = tr('{0} torrents encontrados', streams.length);
           return message(tr('Sin un servicio debrid configurado la tele no puede reproducir torrents. Añade tu clave de Real-Debrid o AllDebrid en Ajustes.'), true);
         }
@@ -2330,7 +2355,7 @@
           x.mbps = gb && ctx.runtime ? Math.round(gb * 8192 / (ctx.runtime * 60) * 10) / 10 : 0;
           x.heavy = !!(limit && x.mbps && x.mbps > limit);
         });
-        // orden: primero lo que la tele puede reproducir y cabe en la conexión, después español, después Torrentio
+        // orden: primero lo que la tele puede reproducir y cabe en la conexión, después español, después el del addon
         var tier = function (x) { return (x.heavy ? 3 : 0) + (!settings.compatFirst ? 0 : x.media.risk <= 1 ? 0 : x.media.risk <= 3 ? 1 : 2); };
         // en series, antes que nada la misma release que se vio en el episodio anterior
         var pref = ctx.type === 'series' ? srcPrefs[ctx.metaId] : null;
@@ -2525,7 +2550,7 @@
         if (window.webapis && webapis.appcommon) webapis.appcommon.setScreenSaver(webapis.appcommon.AppCommonScreenSaverState.SCREEN_SAVER_OFF);
       } catch (e) { /* sin control del salvapantallas */ }
 
-      // Torrentio redirige a un vídeo de aviso cuando el debrid falla: comprobarlo antes de reproducir
+      // el addon de fuentes redirige a un vídeo de aviso cuando el debrid falla: comprobarlo antes de reproducir
       this.resolve(stream.url).then(function (finalUrl) {
         if (self.stream !== stream) return;
         self.finalUrl = finalUrl;
@@ -2545,9 +2570,9 @@
     },
 
     resolve: function (url) {
-      var name = DEBRID_NAMES[settings.debrid];
+      var name = DEBRID_NAMES[settings.debrid], da = debridAddon(), src = da ? da.manifest.name : '', srcOrigin = da ? originOf(da.url) : '';
       var notices = {
-        'blocked_access': tr('{0} ha bloqueado el acceso desde Torrentio. Revisa tu correo o la sección de autorizaciones de tu cuenta y aprueba el acceso.', name),
+        'blocked_access': tr('{0} ha bloqueado el acceso desde {1}. Revisa tu correo o la sección de autorizaciones de tu cuenta y aprueba el acceso.', name, src),
         'failed_access': tr('La clave de {0} no es válida o tu suscripción ha caducado.', name),
         'downloading': tr('{0} aún está descargando este archivo. Prueba dentro de unos minutos o elige una fuente instantánea.', name),
         'download_failed': tr('{0} no ha podido descargar este archivo. Prueba otra fuente.', name),
@@ -2557,7 +2582,7 @@
         'failed_opening': tr('{0} no ha podido abrir este archivo. Prueba otra fuente.', name),
         'failed_infringement': tr('{0} ha retirado este archivo. Prueba otra fuente.', name),
         'failed_unavailable': tr('Este archivo ya no está disponible. Prueba otra fuente.'),
-        'failed_unexpected': tr('Error inesperado de Torrentio. Prueba otra fuente.')
+        'failed_unexpected': tr('Error inesperado de {0}. Prueba otra fuente.', src)
       };
       return new Promise(function (resolve, reject) {
         var x = new XMLHttpRequest();
@@ -2570,7 +2595,7 @@
           var m = /\/videos\/([a-z_]+?)(_v\d+)?\.mp4/.exec(final);
           x.onreadystatechange = null;
           try { x.abort(); } catch (e) { /* ya terminada */ }
-          if (m && final.indexOf('torrentio') >= 0) reject(notices[m[1]] || tr('Aviso de Torrentio: {0}', m[1]));
+          if (m && srcOrigin && final.indexOf(srcOrigin) === 0) reject(notices[m[1]] || tr('Aviso de {0}: {1}', src, m[1]));
           else resolve(final);
         };
         x.onerror = x.ontimeout = function () { resolve(url); }; // si no se puede comprobar, intentar igualmente
@@ -3336,8 +3361,10 @@
 
     function testKey() {
       if (!settings.key) { status.textContent = tr('Escribe primero la clave.'); return; }
+      var da = debridAddon();
+      if (!da) { status.textContent = tr('Añade primero un addon de fuentes (más abajo, en Addons).'); return; }
       status.textContent = tr('Comprobando…');
-      getJSON(torrentioBase() + '/stream/movie/' + PROBE_ID + '.json').then(function (d) {
+      getJSON(sourcesBase(da) + '/stream/movie/' + PROBE_ID + '.json').then(function (d) {
         var s = (d.streams || []).map(parseStream);
         if (s.length === 1 && s[0].error) status.textContent = tr('✗ Clave no válida para {0}', DEBRID_NAMES[settings.debrid]);
         else status.textContent = tr('✓ Clave válida · {0} fuentes de prueba', s.filter(function (x) { return x.url; }).length);
@@ -3444,10 +3471,11 @@
     box.appendChild(addonList);
     function paintAddons() {
       addonList.innerHTML = '';
-      if (!addons.length) addonList.appendChild(el('div', 'note', esc(tr('Ninguno añadido. Torrentio, Cinemeta, Kitsu y OpenSubtitles ya vienen incluidos.'))));
+      if (!addons.length) addonList.appendChild(el('div', 'note', esc(tr('Ninguno añadido. Sin un addon de fuentes no se puede reproducir nada. Cinemeta, Kitsu y OpenSubtitles ya vienen incluidos.'))));
       addons.forEach(function (a) {
         var what = [];
-        if (addonHas(a, 'stream')) what.push(tr('fuentes'));
+        if (a === debridAddon()) what.push(tr('fuentes con tu debrid'));
+        else if (addonHas(a, 'stream')) what.push(tr('fuentes'));
         if ((a.manifest.catalogs || []).length) what.push(tr('catálogos'));
         if (addonHas(a, 'subtitles')) what.push(tr('subtítulos'));
         var o = el('div', 'opt');
@@ -3591,7 +3619,7 @@
     });
     box.appendChild(diag);
     box.appendChild(el('div', 'note', esc(tr('Certificado de la app válido hasta el {0}', fmtDate(CERT_EXPIRES)))));
-    box.appendChild(el('div', 'note', 'StremTV ' + VERSION + tr(' · Catálogo: Cinemeta · Fuentes: Torrentio · Subtítulos: OpenSubtitles · Reproductor: {0}', Player.hasAV() ? tr('nativo (AVPlay)') : 'HTML5')));
+    box.appendChild(el('div', 'note', 'StremTV ' + VERSION + tr(' · Catálogo: Cinemeta · Fuentes: tus addons · Subtítulos: OpenSubtitles · Reproductor: {0}', Player.hasAV() ? tr('nativo (AVPlay)') : 'HTML5')));
 
     return { el: root, initialFocus: function () { return box.querySelector('.f'); } };
   }
@@ -3610,7 +3638,7 @@
 
   // ---------------------------------------------------------------- arranque
 
-  var VERSION = '0.14.1';
+  var VERSION = '0.15.0';
 
   function fitScreen() {
     var z = window.innerWidth / 1920;

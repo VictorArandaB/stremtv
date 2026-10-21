@@ -31,7 +31,7 @@ const newJs = fs.readFileSync(__dirname + '/../app/app.js', 'utf8'), newCss = fs
   await p.goto('http://127.0.0.1:8092/', { waitUntil: 'domcontentloaded' });
   await p.evaluate((js, css) => { localStorage.clear();
     localStorage.setItem('stv.code', JSON.stringify({ sha: '61ae4c9', js, css, ts: Date.now() }));
-    localStorage.setItem('stv.settings', JSON.stringify({ key: 'CLAVE', debrid: 'alldebrid', subLang: 'spa' }));
+    localStorage.setItem('stv.addons', JSON.stringify([{ url: 'https://torrentio.strem.fun', manifest: { id: 'com.stremio.torrentio.addon', name: 'Torrentio', resources: ['stream'], types: ['movie', 'series', 'anime', 'other'], idPrefixes: null, catalogs: [] } }])); localStorage.setItem('stv.settings', JSON.stringify({ key: 'CLAVE', debrid: 'alldebrid', subLang: 'spa' }));
     localStorage.setItem('stv.progress', JSON.stringify({ tt1: { videoId: 'tt1', metaId: 'tt1', type: 'movie', name: 'Peli', t: 600, d: 6000, ts: Date.now() } })); }, oldJs, oldCss);
   await p.reload({ waitUntil: 'domcontentloaded' }); await ready();
   console.log('arranque 1:', JSON.stringify(await state()));

@@ -38,7 +38,7 @@ const manifest = { id: 'test.addon', name: 'Prueba', version: '1.0.0', types: ['
   await typeUrl('stremio://addon.test/cfg/manifest.json');
   console.log('añadido:', await p.evaluate(() => Array.from(document.querySelectorAll('.note')).map((x) => x.textContent).filter((t) => /Añadido|No se pudo/.test(t)).join(' | ')), '· lista:', await p.evaluate(() => Array.from(document.querySelectorAll('.opt')).filter((x) => /Prueba/.test(x.textContent)).map((x) => x.textContent).join()));
   await typeUrl('https://torrentio.strem.fun/manifest.json');
-  console.log('torrentio otra vez:', await p.evaluate(() => Array.from(document.querySelectorAll('.note')).map((x) => x.textContent).filter((t) => /No se pudo/.test(t)).join()));
+  console.log('addon de fuentes (debrid):', await p.evaluate(() => Array.from(document.querySelectorAll('.opt')).filter((x) => /Torrentio/.test(x.textContent)).map((x) => x.textContent).join() || Array.from(document.querySelectorAll('.note')).map((x) => x.textContent).filter((t) => /No se pudo/.test(t)).join()));
   await typeUrl('https://94c8cb9f702d-tmdb-addon.baby-beamup.club/manifest.json');
   console.log('TMDB real:', await p.evaluate(() => Array.from(document.querySelectorAll('.note')).map((x) => x.textContent).filter((t) => /Añadido|No se pudo/.test(t)).join()));
   // Inicio: filas de catálogos

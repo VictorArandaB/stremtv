@@ -14,7 +14,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     req.continue();
   });
   await p.goto('http://127.0.0.1:8090/', { waitUntil: 'networkidle2' });
-  await p.evaluate(() => { localStorage.clear(); localStorage.setItem('stv.settings', JSON.stringify({ key: 'K', debrid: 'alldebrid', measuredMbps: 20, measuredAt: Date.now() })); });
+  await p.evaluate(() => { localStorage.clear(); localStorage.setItem('stv.addons', JSON.stringify([{ url: 'https://torrentio.strem.fun', manifest: { id: 'com.stremio.torrentio.addon', name: 'Torrentio', resources: ['stream'], types: ['movie', 'series', 'anime', 'other'], idPrefixes: null, catalogs: [] } }])); localStorage.setItem('stv.settings', JSON.stringify({ key: 'K', debrid: 'alldebrid', measuredMbps: 20, measuredAt: Date.now() })); });
   await p.reload({ waitUntil: 'networkidle2' }); await sleep(1000);
   await p.evaluate(() => StremTV.open('movie', 'tt0111161')); await sleep(2500);
   await p.keyboard.press('Enter'); await sleep(2500);
