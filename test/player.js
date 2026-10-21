@@ -51,7 +51,7 @@ const VIDEO = 'https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/1080/Big_Buc
   await key('Escape'); await key('Escape'); await sleep(1500);
   await page.screenshot({ path: OUT + '/13-home-continue.png' });
   // ajustes
-  await key('ArrowUp', 4); await key('ArrowRight', 3); await key('Enter'); await sleep(800);
+  await key('ArrowUp', 4); await key('ArrowRight', 4); await key('Enter'); await sleep(800);
   await page.screenshot({ path: OUT + '/14-settings.png' });
   console.log('ajustes foco:', await focused());
   console.log('\nERRORES:', errors.length ? errors.join('\n') : 'ninguno');
