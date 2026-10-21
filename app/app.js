@@ -87,7 +87,7 @@
 
   var DEFAULTS = {
     debrid: 'realdebrid', key: '', onlyCached: true, maxQ: 'all',
-    preferEs: true, subLang: 'spa', subSize: 'normal'
+    preferEs: true, compatFirst: true, subLang: 'spa', subSize: 'normal'
   };
   var settings = extend(extend({}, DEFAULTS), load('settings', {}));
   function saveSettings() { save('settings', settings); }
@@ -944,6 +944,42 @@
 
   // ---------------------------------------------------------------- pantalla: fuentes
 
+  // Qué formatos dice admitir el reproductor HTML5 de esta tele (se pregunta una vez)
+  var Codecs = (function () {
+    var v = document.createElement('video');
+    function can(t) { try { return v.canPlayType(t) || ''; } catch (e) { return ''; } }
+    return {
+      h264: can('video/mp4; codecs="avc1.640028"'),
+      hevc: can('video/mp4; codecs="hev1.1.6.L120.90"') || can('video/mp4; codecs="hvc1.1.6.L120.90"'),
+      hevc10: can('video/mp4; codecs="hvc1.2.4.L153.B0"') || can('video/mp4; codecs="hev1.2.4.L153.B0"'),
+      av1: can('video/mp4; codecs="av01.0.05M.08"'),
+      mkv: can('video/x-matroska'),
+      ac3: can('audio/mp4; codecs="ac-3"'),
+      eac3: can('audio/mp4; codecs="ec-3"'),
+      dts: can('audio/mp4; codecs="dtsc"') || can('audio/vnd.dts')
+    };
+  })();
+
+  // Formato a partir del nombre del archivo; risk alto = probable error de descodificación
+  function mediaInfo(name) {
+    var hevc = /x\.?265|h\.?265|hevc/i.test(name);
+    var av1 = /(^|[^a-z0-9])av1([^a-z0-9]|$)/i.test(name);
+    var dv = /(^|[^a-z0-9])(dv|dovi)([^a-z0-9]|$)|dolby.?vision/i.test(name);
+    var tenbit = dv || /10.?bit|hdr/i.test(name);
+    var dts = /(^|[^a-z0-9])dts|truehd|true-hd|atmos/i.test(name);
+    var eac3 = /ddp|eac3|e-ac-3|dd\+/i.test(name);
+    var remux = /remux/i.test(name);
+    var risk = 0;
+    if (av1) risk += Codecs.av1 ? 1 : 6;
+    if (hevc) risk += Codecs.hevc ? 1 : 4;
+    if (tenbit) risk += Codecs.hevc10 ? 1 : 3;
+    if (dv) risk += 3;
+    if (dts) risk += Codecs.dts ? 1 : 4;
+    if (eac3 && !Codecs.eac3) risk += 2;
+    if (remux) risk += 2;
+    return { hevc: hevc, av1: av1, dv: dv, tenbit: tenbit, dts: dts, h264: !hevc && !av1, risk: risk };
+  }
+
   function parseStream(s) {
     var nameLines = (s.name || '').split('\n');
     var head = nameLines[0] || '';
@@ -965,6 +1001,7 @@
       file: (s.behaviorHints && s.behaviorHints.filename) || lines[0],
       stats: stats.join('  '),
       langs: langs,
+      media: mediaInfo(((s.behaviorHints && s.behaviorHints.filename) || '') + ' ' + title + ' ' + quality),
       es: title.indexOf(FLAG_ES) >= 0 || title.indexOf(FLAG_MX) >= 0 ||
         /(^|[^a-z])(spa|spanish|castellano|espa[nñ]ol|latino|esp)([^a-z]|$)/i.test(title),
       raw: s
@@ -1006,11 +1043,11 @@
           return message('Sin un servicio debrid configurado la tele no puede reproducir torrents. Añade tu clave de Real-Debrid o AllDebrid en Ajustes.', true);
         }
         streams = streams.filter(function (s) { return s.url && !s.error; });
-        if (settings.preferEs) {
-          streams = streams.map(function (s, i) { s._i = i; return s; }).sort(function (a, b) {
-            return (b.es - a.es) || (a._i - b._i);
-          });
-        }
+        // orden: primero lo que la tele puede reproducir, después español, después el orden de Torrentio
+        var tier = function (x) { return !settings.compatFirst ? 0 : x.media.risk <= 1 ? 0 : x.media.risk <= 3 ? 1 : 2; };
+        streams = streams.map(function (s, i) { s._i = i; return s; }).sort(function (a, b) {
+          return (tier(a) - tier(b)) || (settings.preferEs ? b.es - a.es : 0) || (a._i - b._i);
+        });
         if (!streams.length) {
           sub.textContent = '';
           return message(settings.onlyCached
@@ -1027,10 +1064,17 @@
           if (s.cached) badges += '<span class="badge ok">⚡ Instantáneo</span>';
           else if (s.download) badges += '<span class="badge">Descargar en debrid</span>';
           if (s.es) badges += '<span class="badge es">ES</span>';
+          var m = s.media;
+          if (m.av1) badges += '<span class="badge warn">AV1</span>';
+          else if (m.hevc) badges += '<span class="badge' + (Codecs.hevc ? '' : ' warn') + '">HEVC</span>';
+          else badges += '<span class="badge ok">H.264</span>';
+          if (m.dv) badges += '<span class="badge warn">Dolby Vision</span>';
+          else if (m.tenbit) badges += '<span class="badge' + (Codecs.hevc10 ? '' : ' warn') + '">10-bit/HDR</span>';
+          if (m.dts) badges += '<span class="badge' + (Codecs.dts ? '' : ' warn') + '">DTS/TrueHD</span>';
           info.appendChild(el('div', 't1', badges + esc(s.file)));
           info.appendChild(el('div', 't2', esc(s.stats + '   ' + s.langs)));
           row.appendChild(info);
-          focusable(row, function () { Player.open(s, ctx); });
+          focusable(row, function () { Player.open(s, ctx, row); });
           list.appendChild(row);
         });
         Nav.setRoot(root);
@@ -1121,9 +1165,9 @@
       try { return !!(window.webapis && webapis.avplay && webapis.avplay.open); } catch (e) { return false; }
     },
 
-    open: function (stream, ctx) {
+    open: function (stream, ctx, row) {
       var self = this;
-      this.ctx = ctx; this.stream = stream;
+      this.ctx = ctx; this.stream = stream; this.row = row || null;
       this.duration = 0; this.time = 0; this.paused = false; this.started = false; this.lastPaused = null;
       this.startAt = ctx.startAt || 0;
       this.seekTarget = null;
@@ -1398,9 +1442,18 @@
     },
 
     fail: function (msg) {
+      var row = this.row;
       this.spinner(false);
-      toast(msg, 6000);
       pop();
+      // volver a la lista con la siguiente fuente ya seleccionada
+      if (row && row.parentNode) {
+        var t1 = row.querySelector('.t1');
+        if (t1 && !row._failed) { row._failed = true; t1.innerHTML = '<span class="badge warn">✗ Falló</span>' + t1.innerHTML; }
+        var next = row.nextSibling;
+        while (next && next._failed) next = next.nextSibling;
+        if (next) { Nav.focus(next); msg += ' Pulsa OK para probar la siguiente fuente.'; }
+      }
+      toast(msg, 7000);
     },
 
     close: function () {
@@ -1556,6 +1609,7 @@
     box.lastChild.style.padding = '30px 0 16px 0';
     opt('Solo enlaces en caché (instantáneos)', function () { return settings.onlyCached ? 'Sí' : 'No'; }, function () { settings.onlyCached = !settings.onlyCached; });
     opt('Calidad máxima', function () { return QUALITY_NAMES[settings.maxQ]; }, cycle('maxQ', ['all', '1080', '720']));
+    opt('Mostrar primero las fuentes que la tele puede reproducir', function () { return settings.compatFirst ? 'Sí' : 'No'; }, function () { settings.compatFirst = !settings.compatFirst; });
     opt('Mostrar primero las fuentes en español', function () { return settings.preferEs ? 'Sí' : 'No'; }, function () { settings.preferEs = !settings.preferEs; });
 
     box.appendChild(el('div', 'row-title', 'Subtítulos'));
@@ -1624,6 +1678,24 @@
       });
     });
     box.appendChild(clear);
+    var diag = el('div', 'btn', 'Diagnóstico de reproducción');
+    focusable(diag, function () {
+      var yn = function (v) { return v ? 'sí (' + v + ')' : 'no'; };
+      var chrome = (navigator.userAgent.match(/Chrome\/(\d+)/) || [])[1] || '?';
+      menu('Diagnóstico', [
+        { label: 'Reproductor: ' + (Player.hasAV() ? 'nativo (AVPlay)' : 'HTML5') },
+        { label: 'API tizen: ' + (window.tizen ? 'sí' : 'no') + ' · webapis: ' + (window.webapis ? 'sí' : 'no') },
+        { label: 'Navegador: Chromium ' + chrome },
+        { label: 'H.264: ' + yn(Codecs.h264) },
+        { label: 'HEVC 8-bit: ' + yn(Codecs.hevc) },
+        { label: 'HEVC 10-bit: ' + yn(Codecs.hevc10) },
+        { label: 'AV1: ' + yn(Codecs.av1) },
+        { label: 'MKV: ' + yn(Codecs.mkv) },
+        { label: 'Audio AC3: ' + yn(Codecs.ac3) + ' · EAC3: ' + yn(Codecs.eac3) },
+        { label: 'Audio DTS: ' + yn(Codecs.dts) }
+      ], function () { /* solo informativo */ });
+    });
+    box.appendChild(diag);
     box.appendChild(el('div', 'note', 'StremTV ' + VERSION + ' · Catálogo: Cinemeta · Fuentes: Torrentio · Subtítulos: OpenSubtitles · Reproductor: ' + (Player.hasAV() ? 'nativo (AVPlay)' : 'HTML5')));
 
     return { el: root, initialFocus: function () { return box.querySelector('.f'); } };
@@ -1631,7 +1703,7 @@
 
   // ---------------------------------------------------------------- arranque
 
-  var VERSION = '0.2.3';
+  var VERSION = '0.3.0';
 
   function fitScreen() {
     var z = window.innerWidth / 1920;

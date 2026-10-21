@@ -130,3 +130,4 @@ html, body { width: 1920px; height: 1080px; overflow: hidden; background: #0d0f1
 #toast { z-index: 100; }
 .seasons.hscroll { padding: 10px 0; }
 .list .loading { padding: 20px 0; }
+.badge.warn { background: #8a5a12; color: #fff; }
