@@ -151,15 +151,20 @@
   }
 
   var SUB_NAMES = { spa: 'Español', eng: 'Inglés', off: 'Desactivados' };
-  var LANG_NAMES = { spa: 'Español', eng: 'Inglés', jpn: 'Japonés', fre: 'Francés', fra: 'Francés', ger: 'Alemán', deu: 'Alemán',
-    ita: 'Italiano', por: 'Portugués', kor: 'Coreano', cat: 'Catalán' };
+  var LANG_NAMES = { spa: 'Español', eng: 'Inglés', fre: 'Francés', ger: 'Alemán', ita: 'Italiano', por: 'Portugués',
+    jpn: 'Japonés', kor: 'Coreano', cat: 'Catalán' };
+  // idiomas que se pueden elegir como audio preferido (orig = el que traiga el archivo por defecto)
+  var AUDIO_LANGS = ['spa', 'eng', 'fre', 'ger', 'ita', 'por', 'jpn', 'kor', 'cat', 'orig'];
 
-  // código de idioma de una pista (es, spa, Spanish, cas… → spa)
+  // código de idioma de una pista (es, spa, Spanish, cas… → spa; fr, fra, French → fre…)
+  var LANG_RE = {
+    spa: /^(es($|[-_])|spa|esp|spanish|cas|lat)/, eng: /^(en($|[-_])|eng)/, fre: /^(fr($|[-_])|fre|fra)/,
+    ger: /^(de($|[-_])|ger|deu)/, ita: /^(it($|[-_])|ita)/, por: /^(pt($|[-_])|por)/,
+    jpn: /^(ja($|[-_])|jpn|jap)/, kor: /^(ko($|[-_])|kor)/, cat: /^(ca($|[-_])|cat)/
+  };
   function langKey(l) {
     l = String(l || '').toLowerCase();
-    if (/^(es($|[-_])|spa|esp|spanish|cas|lat)/.test(l)) return 'spa';
-    if (/^(en($|[-_])|eng)/.test(l)) return 'eng';
-    if (/^(ja($|[-_])|jpn|jap)/.test(l)) return 'jpn';
+    for (var k in LANG_RE) if (LANG_RE[k].test(l)) return k;
     return l === 'und' ? '' : l.slice(0, 3);
   }
 
@@ -1656,7 +1661,7 @@
 
     autoAudio: function () {
       var c = this.ctx, pref = c.type === 'series' ? srcPrefs[c.metaId] : null;
-      var want = (pref && pref.audio) || (settings.audioLang === 'spa' ? 'spa' : '');
+      var want = (pref && pref.audio) || (settings.audioLang !== 'orig' ? settings.audioLang : '');
       var tracks = this.avTracks('AUDIO'), cur = this.currentAudio(), i;
       for (i = 0; want && tracks.length > 1 && i < tracks.length; i++) {
         if (langKey(tracks[i].lang) !== want) continue;
@@ -1667,11 +1672,11 @@
       }
       this.audioKey = '';
       for (i = 0; i < tracks.length; i++) if (tracks[i].index === cur || tracks.length === 1) this.audioKey = langKey(tracks[i].lang);
-      // con audio en español no hacen falta subtítulos en español
+      // con el audio en el mismo idioma que los subtítulos automáticos, sobran
       if (Subs.auto && this.skipAutoSubs()) { Subs.auto = false; Subs.select(null); }
     },
 
-    skipAutoSubs: function () { return settings.subLang === 'spa' && this.audioKey === 'spa'; },
+    skipAutoSubs: function () { return settings.subLang !== 'off' && this.audioKey === settings.subLang; },
 
     showOSD: function (sticky) {
       var osd = $('#osd');
@@ -2106,8 +2111,10 @@
     box.appendChild(el('div', 'row-title', 'Reproducción'));
     box.lastChild.style.padding = '30px 0 16px 0';
     opt('Pasar solo al siguiente episodio', function () { return settings.autoNext ? 'Sí' : 'No'; }, function () { settings.autoNext = !settings.autoNext; });
-    opt('Audio preferido', function () { return settings.audioLang === 'spa' ? 'Español si lo hay' : 'El que traiga el archivo'; }, cycle('audioLang', ['spa', 'orig']));
-    box.appendChild(el('div', 'note', 'En las series se recuerdan la fuente y el audio que elijas, para usarlos en los demás episodios.'));
+    opt('Idioma del audio', function () {
+      return settings.audioLang === 'orig' ? 'El que traiga el archivo' : LANG_NAMES[settings.audioLang] + ' si lo hay';
+    }, cycle('audioLang', AUDIO_LANGS));
+    box.appendChild(el('div', 'note', 'Si cambias la pista con ▼ en una serie, se recuerda para el resto de episodios (y la fuente que elijas, también).'));
 
     box.appendChild(el('div', 'row-title', 'Subtítulos'));
     box.lastChild.style.padding = '30px 0 16px 0';
@@ -2200,7 +2207,7 @@
 
   // ---------------------------------------------------------------- arranque
 
-  var VERSION = '0.6.0';
+  var VERSION = '0.6.1';
 
   function fitScreen() {
     var z = window.innerWidth / 1920;
