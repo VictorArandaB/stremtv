@@ -150,3 +150,10 @@ html, body { width: 1920px; height: 1080px; overflow: hidden; background: #0d0f1
 #subs.bg span { background: rgba(0,0,0,0.62); padding: 2px 16px; border-radius: 8px;
   -webkit-box-decoration-break: clone; box-decoration-break: clone; }
 .cert-warn { margin: 0 80px; padding: 18px 24px; border-radius: 12px; background: #3a2a10; color: #ffd28a; font-size: 26px; }
+
+/* Explorar: filas de filtros compactas */
+.chips-row { margin: 0 0 4px 0; }
+.chips-row .row-title { font-size: 24px; padding-bottom: 0; color: #aab; }
+.chips.hscroll { padding: 10px 80px; }
+.chips .btn { padding: 10px 26px; font-size: 24px; margin-right: 12px; }
+.grid { padding-top: 24px; }

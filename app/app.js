@@ -202,6 +202,9 @@
     'Datos': 'Data', 'Borrar historial de reproducción': 'Clear playback history',
     '¿Borrar «Continuar viendo» y el progreso?': 'Clear “Continue watching” and progress?', 'Borrar': 'Clear', 'Historial borrado': 'History cleared',
     'Diagnóstico de reproducción': 'Playback diagnostics',
+    'Explorar': 'Explore', 'Tipo': 'Type', 'Género': 'Genre', 'Año': 'Year', 'Orden': 'Sort', 'Todos': 'All',
+    'Populares': 'Popular', 'Mejor valoradas': 'Top rated', 'Cargar más': 'Load more',
+    'Esta semana en tus series': 'This week in your shows', 'Hoy': 'Today', 'Mañana': 'Tomorrow', 'Ayer': 'Yesterday',
     ' · elegida automáticamente: pulsa OK en otra para cambiar': ' · picked automatically: press OK on another one to switch',
     'termina a las {0}': 'ends at {0}', 'Fondo detrás del texto': 'Background behind the text',
     'Al pulsar Ver, reproducir directamente la mejor fuente': 'When pressing Watch, play the best source directly',
@@ -397,6 +400,17 @@
     return body;
   }
 
+  // Hoy / Mañana / Ayer o «jue 23»
+  function dayLabel(d) {
+    var today = new Date(); today.setHours(0, 0, 0, 0);
+    var day = new Date(d.getTime()); day.setHours(0, 0, 0, 0);
+    var diff = Math.round((day - today) / 86400000);
+    if (diff === 0) return tr('Hoy');
+    if (diff === 1) return tr('Mañana');
+    if (diff === -1) return tr('Ayer');
+    try { return d.toLocaleDateString(settings.lang === 'en' ? 'en-GB' : 'es-ES', { weekday: 'short', day: 'numeric' }); } catch (e) { return fmtDate(d); }
+  }
+
   function metahubPoster(imdb) { return 'https://images.metahub.space/poster/small/' + imdb + '/img'; }
 
   var Trakt = {
@@ -486,6 +500,20 @@
           }
         });
         return out;
+      });
+    },
+
+    // episodios de tus series de hace dos días a una semana vista
+    calendar: function () {
+      var d = new Date(Date.now() - 2 * 86400000);
+      var pad = function (n) { return (n < 10 ? '0' : '') + n; };
+      var start = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+      return Trakt.call('GET', '/calendars/my/shows/' + start + '/10').then(function (items) {
+        return (items || []).filter(function (it) { return it.show && it.show.ids && it.show.ids.imdb && it.episode; }).map(function (it) {
+          var imdb = it.show.ids.imdb;
+          return { id: imdb, type: 'series', name: it.show.title, poster: metahubPoster(imdb),
+            label: dayLabel(new Date(it.first_aired)) + ' · ' + it.show.title + ' ' + tr('T{0}:E{1}', it.episode.season, it.episode.number) };
+        });
       });
     },
 
@@ -858,12 +886,13 @@
   function header(active) {
     var h = el('div', 'header');
     h.appendChild(el('div', 'logo', 'StremTV'));
-    [['home', 'Inicio'], ['anime', 'Anime'], ['search', 'Buscar'], ['settings', 'Ajustes']].forEach(function (t) {
+    [['home', 'Inicio'], ['anime', 'Anime'], ['explore', 'Explorar'], ['search', 'Buscar'], ['settings', 'Ajustes']].forEach(function (t) {
       var tab = el('div', 'tab', tr(t[1]));
       focusable(tab, function () {
         if (t[0] === active) return;
         if (t[0] === 'search') push(searchScreen());
         else if (t[0] === 'anime') push(animeScreen());
+        else if (t[0] === 'explore') push(exploreScreen());
         else if (t[0] === 'settings') push(settingsScreen());
         else while (stack.length > 1) pop();
       });
@@ -926,6 +955,7 @@
           return true;
         });
       }), openMeta, true);
+      promiseRow(traktWrap, tr('Esta semana en tus series'), Trakt.calendar(), openMeta, true);
       promiseRow(traktWrap, tr('Mi lista (Trakt)'), Trakt.loadWatchlist(), openMeta, true);
       var seenThen = function (pr) { return Promise.all([pr, seenReady()]).then(function (r) { return filterSeen(r[0]); }); };
       promiseRow(traktWrap, tr('Recomendadas para ti: películas'), seenThen(Trakt.recommendations('movies')), openMeta, true);
@@ -958,6 +988,120 @@
     asyncRow(vs, tr('Más populares'), ANIME + '/catalog/anime/kitsu-anime-popular.json', openMeta);
     asyncRow(vs, tr('Mejor valorados'), ANIME + '/catalog/anime/kitsu-anime-rating.json', openMeta);
     return { el: root, initialFocus: function () { return vs.querySelectorAll('.tab')[1]; } };
+  }
+
+  // ---------------------------------------------------------------- pantalla: explorar (tipo, género, año)
+
+  var GENRES = ['Action', 'Adventure', 'Animation', 'Biography', 'Comedy', 'Crime', 'Documentary', 'Drama', 'Family', 'Fantasy',
+    'History', 'Horror', 'Mystery', 'Romance', 'Sci-Fi', 'Sport', 'Thriller', 'War', 'Western'];
+  var GENRES_ES = { Action: 'Acción', Adventure: 'Aventura', Animation: 'Animación', Biography: 'Biografía', Comedy: 'Comedia',
+    Crime: 'Crimen', Documentary: 'Documental', Drama: 'Drama', Family: 'Familia', Fantasy: 'Fantasía', History: 'Historia',
+    Horror: 'Terror', Mystery: 'Misterio', Romance: 'Romance', 'Sci-Fi': 'Ciencia ficción', Sport: 'Deporte', Thriller: 'Suspense',
+    War: 'Bélica', Western: 'Western' };
+
+  function exploreScreen() {
+    var f = extend({ type: 'movie', genre: '', year: '', sort: 'top' }, load('explore', {}));
+    var root = el('div', 'screen');
+    var vs = el('div', 'vscroll');
+    root.appendChild(vs);
+    vs.appendChild(header('explore'));
+    var filters = el('div');
+    vs.appendChild(filters);
+    var results = el('div', 'grid');
+    vs.appendChild(results);
+    var cards = [], fetched = 0, loading = false, more = null, emptyPages = 0, gen = 0;
+
+    function chips(title, values, key, label) {
+      var row = el('div', 'row chips-row');
+      row.appendChild(el('div', 'row-title', esc(title)));
+      var sc = el('div', 'hscroll chips');
+      sc.style.position = 'relative';
+      values.forEach(function (v) {
+        var b = el('div', 'btn' + (f[key] === v ? ' primary' : ''), esc(label(v)));
+        focusable(b, function () {
+          if (f[key] === v) return;
+          f[key] = v;
+          save('explore', f);
+          Array.prototype.forEach.call(sc.children, function (x) { x.classList.remove('primary'); });
+          b.classList.add('primary');
+          reload();
+        });
+        sc.appendChild(b);
+        if (f[key] === v) sc._last = b; // al bajar a esta fila, ir a la opción elegida
+      });
+      row.appendChild(sc);
+      filters.appendChild(row);
+    }
+
+    var years = [''];
+    for (var y = new Date().getFullYear(); y >= 1987; y--) years.push(String(y));
+    chips(tr('Tipo'), ['movie', 'series'], 'type', function (v) { return v === 'movie' ? tr('Películas') : tr('Series'); });
+    chips(tr('Género'), [''].concat(GENRES), 'genre', function (v) { return !v ? tr('Todos') : settings.lang === 'en' ? v : GENRES_ES[v] || v; });
+    chips(tr('Año'), years, 'year', function (v) { return v || tr('Todos'); });
+    chips(tr('Orden'), ['top', 'imdbRating'], 'sort', function (v) { return v === 'top' ? tr('Populares') : tr('Mejor valoradas'); });
+
+    // Cinemeta no combina género y año: con año se pide el catálogo del año y el género se filtra aquí
+    function url() {
+      var extra = [];
+      if (f.year) extra.push('genre=' + f.year);
+      else if (f.genre) extra.push('genre=' + encodeURIComponent(f.genre));
+      if (fetched) extra.push('skip=' + fetched);
+      return CINEMETA + '/catalog/' + f.type + '/' + (f.year ? 'year' : f.sort) + (extra.length ? '/' + extra.join('&') : '') + '.json';
+    }
+
+    function reload() {
+      results.innerHTML = '';
+      cards = []; fetched = 0; more = null; emptyPages = 0;
+      loading = false;
+      gen++; // las respuestas de los filtros anteriores se descartan
+      loadPage();
+    }
+
+    function loadPage() {
+      if (loading) return;
+      loading = true;
+      var hadFocus = more && Nav.cur === more;
+      if (more && more.parentNode) more.parentNode.removeChild(more);
+      more = null;
+      var status = el('div', 'empty', tr('Cargando…'));
+      results.appendChild(status);
+      var g = gen, first = cards.length;
+      Promise.all([getJSON(url()), seenReady()]).then(function (r) {
+        if (g !== gen) return; // filtros cambiados mientras cargaba
+        loading = false;
+        results.removeChild(status);
+        var raw = r[0].metas || [];
+        fetched += raw.length;
+        var metas = filterSeen(raw);
+        if (f.year && f.genre) metas = metas.filter(function (m) { return (m.genre || m.genres || []).indexOf(f.genre) >= 0; });
+        if (f.year && f.sort === 'imdbRating') metas.sort(function (a, b) { return (parseFloat(b.imdbRating) || 0) - (parseFloat(a.imdbRating) || 0); });
+        metas.forEach(function (m) {
+          var i = cards.length;
+          var c = card(m, function () { openMeta(m); });
+          c._onfocus = function () { loadImages(cards, i + 14); };
+          cards.push(c);
+          results.appendChild(c);
+        });
+        loadImages(cards, first + 13);
+        var hasMore = raw.length >= 20;
+        // con año y género puede que una página entera no tenga ninguno: seguir buscando un poco
+        if (!metas.length && hasMore && ++emptyPages < 4) { loadPage(); return; }
+        if (hasMore) {
+          more = el('div', 'btn', tr('Cargar más'));
+          focusable(more, loadPage);
+          results.appendChild(more);
+        }
+        if (!cards.length) results.appendChild(el('div', 'empty', tr('Sin resultados')));
+        if (hadFocus) Nav.focus(cards[first] || more);
+      }).catch(function (e) {
+        if (g !== gen) return;
+        loading = false;
+        status.textContent = tr('No se pudo cargar ({0})', e.message);
+      });
+    }
+    loadPage();
+
+    return { el: root, initialFocus: function () { return vs.querySelectorAll('.tab')[2]; } };
   }
 
   // ---------------------------------------------------------------- pantalla: búsqueda
@@ -2414,7 +2558,7 @@
 
   // ---------------------------------------------------------------- arranque
 
-  var VERSION = '0.8.0';
+  var VERSION = '0.9.0';
 
   function fitScreen() {
     var z = window.innerWidth / 1920;
