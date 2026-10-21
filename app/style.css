@@ -144,3 +144,9 @@ html, body { width: 1920px; height: 1080px; overflow: hidden; background: #0d0f1
 #upnext .un-label { font-size: 24px; color: #aab; }
 #upnext .un-title { font-size: 34px; font-weight: bold; color: #fff; margin: 8px 0 12px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #upnext .un-help { font-size: 24px; color: #ccd; }
+
+/* Subtítulos con fondo (ajuste) y aviso del certificado */
+#subs.bg { text-shadow: none; }
+#subs.bg span { background: rgba(0,0,0,0.62); padding: 2px 16px; border-radius: 8px;
+  -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+.cert-warn { margin: 0 80px; padding: 18px 24px; border-radius: 12px; background: #3a2a10; color: #ffd28a; font-size: 26px; }

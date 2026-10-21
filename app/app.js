@@ -8,6 +8,8 @@
   var ANIME = 'https://anime-kitsu.strem.fun'; // catálogo de anime (Kitsu, acepta IDs de AniDB/MAL/AniList)
   var TORRENTIO = 'https://torrentio.strem.fun';
   var SUBS_ADDON = 'https://opensubtitles-v3.strem.io';
+  // el certificado con el que se firma la app (y la Tizen Developers CA) caduca ese día: actualizar al volver a firmarla
+  var CERT_EXPIRES = new Date(2027, 0, 1);
   var PROBE_ID = 'tt0111161'; // Cadena perpetua: siempre tiene fuentes, sirve para probar la clave
 
   var K = {
@@ -199,7 +201,13 @@
     'Desvincular Trakt': 'Unlink Trakt', 'Vincular con Trakt': 'Link with Trakt',
     'Datos': 'Data', 'Borrar historial de reproducción': 'Clear playback history',
     '¿Borrar «Continuar viendo» y el progreso?': 'Clear “Continue watching” and progress?', 'Borrar': 'Clear', 'Historial borrado': 'History cleared',
-    'Diagnóstico de reproducción': 'Playback diagnostics', 'Diagnóstico': 'Diagnostics',
+    'Diagnóstico de reproducción': 'Playback diagnostics',
+    ' · elegida automáticamente: pulsa OK en otra para cambiar': ' · picked automatically: press OK on another one to switch',
+    'termina a las {0}': 'ends at {0}', 'Fondo detrás del texto': 'Background behind the text',
+    'Al pulsar Ver, reproducir directamente la mejor fuente': 'When pressing Watch, play the best source directly',
+    '⚠ El certificado de StremTV caduca el {0}. Si deja de abrirse, hay que volver a firmarla e instalarla desde el Mac.':
+      '⚠ The StremTV certificate expires on {0}. If it stops opening, it has to be signed and installed again from the Mac.',
+    'Certificado de la app válido hasta el {0}': 'App certificate valid until {0}', 'Diagnóstico': 'Diagnostics',
     'Reproductor: {0}': 'Player: {0}', 'nativo (AVPlay)': 'native (AVPlay)', 'Navegador: Chromium {0}': 'Browser: Chromium {0}',
     ' · Catálogo: Cinemeta · Fuentes: Torrentio · Subtítulos: OpenSubtitles · Reproductor: {0}':
       ' · Catalog: Cinemeta · Sources: Torrentio · Subtitles: OpenSubtitles · Player: {0}'
@@ -211,6 +219,7 @@
     for (var i = 1; i < arguments.length; i++) out = out.split('{' + (i - 1) + '}').join(arguments[i]);
     return out;
   }
+  function fmtDate(d) { return d.toLocaleDateString(settings.lang === 'en' ? 'en-GB' : 'es-ES'); }
   // decimales con coma en español y con punto en inglés
   function num(x) { return settings.lang === 'en' ? String(x) : String(x).replace('.', ','); }
   function yesNo(v) { return v ? tr('Sí') : tr('No'); }
@@ -244,7 +253,7 @@
   var DEFAULTS = {
     debrid: 'realdebrid', key: '', onlyCached: true, maxQ: 'all',
     preferEs: true, compatFirst: true, hideWatched: true, maxRate: 'auto', measuredMbps: 0, measuredAt: 0,
-    subLang: 'spa', subSize: 'normal', autoNext: true, audioLang: 'spa', lang: 'es'
+    subLang: 'spa', subSize: 'normal', autoNext: true, audioLang: 'spa', lang: 'es', quickPlay: true, subBg: true
   };
   var settings = extend(extend({}, DEFAULTS), load('settings', {}));
   function saveSettings() { save('settings', settings); }
@@ -881,6 +890,11 @@
         warn.appendChild(b);
         contWrap.appendChild(warn);
       }
+      if (CERT_EXPIRES - Date.now() < 30 * 86400000) {
+        var cw = el('div', 'row');
+        cw.appendChild(el('div', 'note cert-warn', esc(tr('⚠ El certificado de StremTV caduca el {0}. Si deja de abrirse, hay que volver a firmarla e instalarla desde el Mac.', fmtDate(CERT_EXPIRES)))));
+        contWrap.appendChild(cw);
+      }
       var cont = continueList();
       if (cont.length) {
         contWrap.appendChild(posterRow(tr('Continuar viendo'), cont.map(function (p) {
@@ -1060,13 +1074,13 @@
       var p = progress[meta.id];
       var play = el('div', 'btn primary', p && !p.done && p.t > 60 ? tr('▶ Continuar ({0})', fmtTime(p.t)) : tr('▶ Ver'));
       focusable(play, function () {
-        push(streamsScreen(extend(base(), { videoId: meta.id, label: meta.name, startAt: p && !p.done ? p.t : 0 })));
+        push(streamsScreen(extend(base(), { videoId: meta.id, label: meta.name, startAt: p && !p.done ? p.t : 0, autoPlay: settings.quickPlay })));
       });
       actions.appendChild(play);
       if (p && !p.done && p.t > 60) {
         var fromStart = el('div', 'btn', tr('Desde el principio'));
         focusable(fromStart, function () {
-          push(streamsScreen(extend(base(), { videoId: meta.id, label: meta.name, startAt: 0 })));
+          push(streamsScreen(extend(base(), { videoId: meta.id, label: meta.name, startAt: 0, autoPlay: settings.quickPlay })));
         });
         actions.appendChild(fromStart);
       }
@@ -1236,11 +1250,11 @@
         txt.appendChild(el('div', 'ep-title', esc(v.episode + '. ' + epTitle) + (seen ? ' <span class="badge ok">' + tr('Visto') + '</span>' : '')));
         var date = v.released ? new Date(v.released) : null;
         var sub = [];
-        if (date && !isNaN(date)) sub.push(date.toLocaleDateString ? date.toLocaleDateString(settings.lang === 'en' ? 'en-GB' : 'es-ES') : date.toDateString());
+        if (date && !isNaN(date)) sub.push(date.toLocaleDateString ? fmtDate(date) : date.toDateString());
         if (p && !p.done && p.t > 60) sub.push(tr('Continuar desde {0}', fmtTime(p.t)));
         txt.appendChild(el('div', 'ep-sub', esc(sub.join(' · '))));
         row.appendChild(txt);
-        focusable(row, function () { push(streamsScreen(epCtx(v))); });
+        focusable(row, function () { push(streamsScreen(extend(epCtx(v), { autoPlay: settings.quickPlay }))); });
         episodesBox.appendChild(row);
         if (!focusTarget && ((p && !p.done) || traktNext === traktKey(v))) focusTarget = row;
       });
@@ -1447,11 +1461,12 @@
           row.appendChild(info);
           focusable(row, function () { Player.open(s, ctx, row); });
           list.appendChild(row);
-          // siguiente episodio automático: la misma release que antes o, si no, la primera instantánea que quepa
+          // reproducción directa: la misma release que antes en esta serie o, si no, la primera instantánea que quepa
           if (ctx.autoPlay && !auto && (s.pref >= 2 || (s.cached && !s.heavy))) auto = { s: s, row: row };
         });
         if (ctx.autoPlay && !auto) auto = { s: streams[0], row: list.firstChild };
         if (auto) {
+          sub.textContent += tr(' · elegida automáticamente: pulsa OK en otra para cambiar');
           Nav.setRoot(root, auto.row);
           ctx.autoPlay = false; // al volver a esta lista no arrancar otra vez
           Player.open(auto.s, ctx, auto.row);
@@ -1505,12 +1520,12 @@
   }
 
   var Subs = {
-    cues: [], idx: 0, offset: 0, list: [], current: null, embedded: false, auto: false,
+    cues: [], idx: 0, offset: 0, list: [], current: null, embedded: false, auto: false, manual: false,
     box: null,
     reset: function () {
-      this.cues = []; this.idx = 0; this.offset = 0; this.list = []; this.current = null; this.embedded = false; this.auto = false;
+      this.cues = []; this.idx = 0; this.offset = 0; this.list = []; this.current = null; this.embedded = false; this.auto = false; this.manual = false;
       this.box.textContent = '';
-      this.box.className = settings.subSize === 'big' ? 'big' : '';
+      this.box.className = (settings.subSize === 'big' ? 'big' : '') + (settings.subBg ? ' bg' : '');
     },
     fetchList: function (ctx) {
       var self = this;
@@ -1534,6 +1549,8 @@
         if (!self.cues.length) toast(tr('El subtítulo está vacío o no se puede leer'));
       }).catch(function () { toast(tr('No se pudo descargar el subtítulo')); });
     },
+    // el texto va en un <span> para que el fondo se ajuste a cada línea
+    show: function (text) { this.box.innerHTML = text ? '<span>' + esc(text) + '</span>' : ''; },
     update: function (t) {
       if (this.embedded || !this.cues.length) return;
       t -= this.offset;
@@ -1543,7 +1560,7 @@
       this.idx = i;
       var cue = c[i];
       var text = cue && cue.s <= t && cue.e >= t ? cue.t : '';
-      if (this.box.textContent !== text) this.box.textContent = text;
+      if (this.box.textContent !== text) this.show(text);
     }
   };
 
@@ -1596,7 +1613,7 @@
       });
 
       Subs.fetchList(ctx).then(function (list) {
-        if (self.ctx !== ctx || settings.subLang === 'off' || self.skipAutoSubs()) return;
+        if (self.ctx !== ctx || settings.subLang === 'off' || self.skipAutoSubs() || Subs.embedded || Subs.manual) return;
         for (var i = 0; i < list.length; i++) {
           if (list[i].lang === settings.subLang) { Subs.auto = true; Subs.select(list[i]); return; }
         }
@@ -1665,7 +1682,7 @@
           onstreamcompleted: function () { self.finished(); },
           onerror: function (e) { self.fail(tr('Error del reproductor: {0}', e)); },
           onsubtitlechange: function (duration, text) {
-            if (Subs.embedded) Subs.box.textContent = (text || '').replace(/<[^>]+>/g, '');
+            if (Subs.embedded) Subs.show((text || '').replace(/<[^>]+>/g, ''));
           }
         });
         av.prepareAsync(function () {
@@ -1731,7 +1748,9 @@
       }
       var shown = this.seekTarget !== null ? this.seekTarget : this.time;
       $('#osd-cur').textContent = fmtTime(shown);
-      $('#osd-dur').textContent = this.duration ? fmtTime(this.duration) : '--:--';
+      var end = new Date(Date.now() + Math.max(0, this.duration - shown) * 1000);
+      $('#osd-dur').textContent = this.duration ? tr('termina a las {0}', end.getHours() + ':' + (end.getMinutes() < 10 ? '0' : '') + end.getMinutes()) +
+        ' · ' + fmtTime(this.duration) : '--:--';
       $('#osd-progress').style.width = this.duration ? (shown / this.duration * 100) + '%' : '0';
       $('#osd-state').textContent = this.seekTarget !== null ? (this.seekTarget >= this.time ? '⏩ ' : '⏪ ') + fmtTime(this.seekTarget) :
         (this.paused ? tr('⏸ Pausa') + (this.probeText ? ' · ' + this.probeText : '') : '');
@@ -1825,6 +1844,21 @@
       for (i = 0; i < tracks.length; i++) if (tracks[i].index === cur || tracks.length === 1) this.audioKey = langKey(tracks[i].lang);
       // con el audio en el mismo idioma que los subtítulos automáticos, sobran
       if (Subs.auto && this.skipAutoSubs()) { Subs.auto = false; Subs.select(null); }
+      // subtítulos que trae el propio archivo en el idioma elegido: van sincronizados, mejor que los de OpenSubtitles
+      if (!Subs.embedded && !Subs.manual && settings.subLang !== 'off' && !this.skipAutoSubs()) {
+        var texts = this.avTracks('TEXT');
+        for (i = 0; i < texts.length; i++) {
+          if (langKey(texts[i].lang) !== settings.subLang) continue;
+          try {
+            webapis.avplay.setSelectTrack('TEXT', texts[i].index);
+            webapis.avplay.setSilentSubtitle(false);
+            Subs.select(null);
+            Subs.embedded = true;
+            Subs.auto = true;
+          } catch (e) { /* se quedan los de OpenSubtitles */ }
+          break;
+        }
+      }
     },
 
     skipAutoSubs: function () { return settings.subLang !== 'off' && this.audioKey === settings.subLang; },
@@ -1928,6 +1962,7 @@
       menu(tr('Subtítulos'), items, function (it) {
         if (it.value === 'sync') { self.startSync(); return; }
         Subs.auto = false;
+        Subs.manual = true;
         Subs.embedded = false;
         try { if (self.backend === 'av') webapis.avplay.setSilentSubtitle(true); } catch (e) { /* no soportado */ }
         if (it.value === 'off') { Subs.select(null); return; }
@@ -2267,6 +2302,7 @@
 
     box.appendChild(el('div', 'row-title', tr('Reproducción')));
     box.lastChild.style.padding = '30px 0 16px 0';
+    opt('Al pulsar Ver, reproducir directamente la mejor fuente', function () { return yesNo(settings.quickPlay); }, function () { settings.quickPlay = !settings.quickPlay; });
     opt('Pasar solo al siguiente episodio', function () { return yesNo(settings.autoNext); }, function () { settings.autoNext = !settings.autoNext; });
     opt('Idioma del audio', function () {
       return settings.audioLang === 'orig' ? tr('El que traiga el archivo') : tr('{0} si lo hay', tr(LANG_NAMES[settings.audioLang]));
@@ -2276,6 +2312,7 @@
     box.appendChild(el('div', 'row-title', tr('Subtítulos')));
     box.lastChild.style.padding = '30px 0 16px 0';
     opt('Idioma automático', function () { return tr(SUB_NAMES[settings.subLang]); }, cycle('subLang', ['spa', 'eng', 'off']));
+    opt('Fondo detrás del texto', function () { return yesNo(settings.subBg); }, function () { settings.subBg = !settings.subBg; });
     opt('Tamaño', function () { return settings.subSize === 'big' ? tr('Grande') : tr('Normal'); }, function () { settings.subSize = settings.subSize === 'big' ? 'normal' : 'big'; });
 
     box.appendChild(el('div', 'row-title', 'Trakt'));
@@ -2357,6 +2394,7 @@
       ], function () { /* solo informativo */ });
     });
     box.appendChild(diag);
+    box.appendChild(el('div', 'note', esc(tr('Certificado de la app válido hasta el {0}', fmtDate(CERT_EXPIRES)))));
     box.appendChild(el('div', 'note', 'StremTV ' + VERSION + tr(' · Catálogo: Cinemeta · Fuentes: Torrentio · Subtítulos: OpenSubtitles · Reproductor: {0}', Player.hasAV() ? tr('nativo (AVPlay)') : 'HTML5')));
 
     return { el: root, initialFocus: function () { return box.querySelector('.f'); } };
@@ -2376,7 +2414,7 @@
 
   // ---------------------------------------------------------------- arranque
 
-  var VERSION = '0.7.0';
+  var VERSION = '0.8.0';
 
   function fitScreen() {
     var z = window.innerWidth / 1920;

@@ -16,7 +16,7 @@ const VIDEO = 'https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/1080/Big_Buc
   const key = async (k, n = 1) => { for (let i = 0; i < n; i++) { await p.keyboard.press(k); await sleep(300); } };
   const st = () => p.evaluate(() => ({ sync: !document.getElementById('syncbox') || document.getElementById('syncbox').className, txt: (document.getElementById('syncbox') || {}).textContent, player: document.getElementById('player').className, saved: localStorage.getItem('stv.suboffsets') }));
   await p.goto('http://127.0.0.1:8090/', { waitUntil: 'networkidle2' });
-  await p.evaluate(() => { localStorage.clear(); localStorage.setItem('stv.settings', JSON.stringify({ key: 'K', debrid: 'alldebrid' })); });
+  await p.evaluate(() => { localStorage.clear(); localStorage.setItem('stv.settings', JSON.stringify({ key: 'K', debrid: 'alldebrid', quickPlay: false })); });
   await p.reload({ waitUntil: 'networkidle2' }); await sleep(1000);
   await p.evaluate(() => StremTV.open('movie', 'tt0111161')); await sleep(2500);
   await key('Enter'); await sleep(2500); await key('Enter'); await sleep(4000);

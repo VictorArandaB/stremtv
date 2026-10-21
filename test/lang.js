@@ -18,7 +18,7 @@ const OUT = __dirname + '/shots';
   const key = async (k, n = 1) => { for (let i = 0; i < n; i++) { await p.keyboard.press(k); await sleep(300); } };
   const text = (sel) => p.evaluate((sel) => Array.from(document.querySelectorAll(sel)).map((x) => x.textContent).join(' | '), sel);
   await p.goto('http://127.0.0.1:8090/', { waitUntil: 'networkidle2' });
-  await p.evaluate(() => { localStorage.clear(); localStorage.setItem('stv.settings', JSON.stringify({ key: 'K', debrid: 'alldebrid' })); });
+  await p.evaluate(() => { localStorage.clear(); localStorage.setItem('stv.settings', JSON.stringify({ key: 'K', debrid: 'alldebrid', quickPlay: false })); });
   await p.reload({ waitUntil: 'networkidle2' }); await sleep(1500);
   console.log('ES pestañas:', await text('.tab'));
   // ir a Ajustes y cambiar el idioma (primera opción)
