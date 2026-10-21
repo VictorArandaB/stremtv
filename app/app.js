@@ -543,7 +543,12 @@
         saveTmdbIds();
         delete tmdbPending[imdb];
         return r;
-      }, function (e) { delete tmdbPending[imdb]; throw e; });
+      }, function (e) {
+        delete tmdbPending[imdb];
+        if (!c) throw e;
+        c.ts = Date.now() - 6 * 86400000; // sin respuesta: vale lo guardado y se vuelve a mirar en un día, no en cada render
+        return c;
+      });
     }
     return tmdbPending[imdb];
   }
@@ -687,17 +692,28 @@
       if (!trakt.refresh || Date.now() < (trakt.expires || 0) - margin) return Promise.resolve();
       // el refresh_token solo vale una vez: las llamadas que llegan a la vez esperan a la misma renovación
       if (!Trakt.refreshing) {
+        var gen = Trakt.gen;
         Trakt.refreshing = traktReq('POST', '/oauth/token', withSecret({
           refresh_token: trakt.refresh, client_id: trakt.clientId,
           redirect_uri: 'http://localhost', grant_type: 'refresh_token'
-        }), false).then(function (t) { Trakt.refreshing = null; Trakt.storeTokens(t); }, function (e) { Trakt.refreshing = null; throw e; });
+        }), false).then(function (t) {
+          if (gen !== Trakt.gen) throw new Error(tr('Trakt no vinculado')); // otra cuenta: no pisar sus tokens
+          Trakt.refreshing = null; Trakt.storeTokens(t);
+        }, function (e) { if (gen === Trakt.gen) Trakt.refreshing = null; throw e; });
       }
       return Trakt.refreshing;
     },
 
     call: function (method, path, body) {
       if (!Trakt.linked()) return Promise.reject(new Error(tr('Trakt no vinculado')));
-      return Trakt.ensureFresh().then(function () { return traktReq(method, path, body); }).catch(function (e) {
+      var gen = Trakt.gen;
+      // la respuesta de una cuenta ya desvinculada no se usa ni puede desvincular la nueva
+      var stale = function () { return gen !== Trakt.gen; };
+      return Trakt.ensureFresh().then(function () { return traktReq(method, path, body); }).then(function (r) {
+        if (stale()) throw new Error(tr('Trakt no vinculado'));
+        return r;
+      }, function (e) {
+        if (stale()) throw e;
         if (e.status === 401) { trakt.access = ''; saveTrakt(); toast(tr('La sesión de Trakt ha caducado. Vuelve a vincularla en Ajustes.')); }
         throw e;
       });
@@ -706,8 +722,19 @@
     unlink: function () {
       if (trakt.access) traktReq('POST', '/oauth/revoke', withSecret({ token: trakt.access, client_id: trakt.clientId }), false).catch(function () { /* da igual */ });
       trakt.access = ''; trakt.refresh = ''; trakt.expires = 0; trakt.user = '';
-      Trakt.watchlist = {};
+      Trakt.forget();
       saveTrakt();
+    },
+
+    // lo descargado de la cuenta anterior (al desvincular o vincular otra)
+    // gen cambia con cada cuenta: lo que llegue después de la anterior se descarta (Trakt.call y la renovación del token)
+    gen: 0,
+    forget: function () {
+      Trakt.gen++;
+      Trakt.refreshing = null;
+      Trakt.watchlist = {};
+      Trakt.watchedCache = null; Trakt.upNextCache = null; Trakt.resumeCache = null;
+      Seen.movies = {}; Seen.shows = {}; Seen.at = 0; Seen.loading = null;
     },
 
     body: function (ctx) {
@@ -1337,18 +1364,22 @@
     }), onPick);
   }
 
+  var metaOpening = {}; // tmdb:… -> consulta de su id de IMDb en curso
   function openMeta(meta) {
     var id = String(meta.id || meta.metaId || '');
     var tm = /^tmdb:(movie|tv):(\d+)$/.exec(id);
     if (tm) { // resultado de la búsqueda en español: abrir por su id de IMDb
       // solo si sigue delante la pantalla desde la que se pidió (ni tras Atrás ni dos veces por pulsar OK otra vez)
-      var from = stack[stack.length - 1];
+      var job = metaOpening[id];
+      if (job) { job.from = stack[stack.length - 1]; return; } // ya se está pidiendo: vale la misma respuesta
+      job = metaOpening[id] = { from: stack[stack.length - 1] };
       toast(tr('Cargando…'), 1500);
       tmdbGet('/' + tm[1] + '/' + tm[2] + '/external_ids').then(function (x) {
-        if (!isTop(from)) return;
+        delete metaOpening[id];
+        if (!isTop(job.from)) return;
         if (x.imdb_id) push(detailScreen(meta.type, x.imdb_id));
         else toast(tr('Este título no tiene ID de IMDb y no se puede reproducir'));
-      }).catch(function (e) { if (isTop(from)) toast(tr('No se pudo cargar ({0})', e.message)); });
+      }).catch(function (e) { delete metaOpening[id]; if (isTop(job.from)) toast(tr('No se pudo cargar ({0})', e.message)); });
       return;
     }
     if (meta.imdb_id && id.indexOf('tt') !== 0 && id.indexOf('kitsu:') !== 0) id = meta.imdb_id;
@@ -2460,7 +2491,7 @@
         (settings.subColor === 'yellow' ? ' yellow' : '') + (settings.subPos === 'high' ? ' high' : '');
     },
     fetchList: function (ctx) {
-      var self = this;
+      var self = this, mine = Player.session;
       if (!ctx.imdb) { self.list = []; return Promise.resolve([]); }
       var sid = ctx.type === 'movie' ? ctx.imdb : ctx.imdb + ':' + ctx.imdbS + ':' + ctx.imdbE;
       var sources = [{ url: SUBS_ADDON, name: '' }].concat(addonsFor('subtitles', ctx.type, sid).map(function (a) { return { url: a.url, name: a.manifest.name }; }));
@@ -2471,7 +2502,7 @@
       })).then(function (r) {
         // el idioma de Ajustes primero, después español e inglés
         var rank = function (l) { return l === settings.subLang ? 0 : l === 'spa' ? 1 : l === 'eng' ? 2 : 3; };
-        if (Player.ctx !== ctx) return []; // llegó tarde: ya suena otro vídeo
+        if (Player.session !== mine) return []; // llegó tarde: el reproductor se ha cerrado o se ha vuelto a abrir
         self.list = [].concat.apply([], r).filter(function (x) { return rank(x.lang) < 3; })
           .sort(function (a, b) { return rank(a.lang) - rank(b.lang); }).slice(0, 40);
         return self.list;
@@ -2506,7 +2537,7 @@
   // ---------------------------------------------------------------- reproductor
 
   var Player = {
-    backend: null, ctx: null, stream: null,
+    backend: null, ctx: null, stream: null, session: 0, // session: sube al abrir y al cerrar
     duration: 0, time: 0, paused: false, buffering: false,
     seekTarget: null, seekTimer: null, seekStep: 0, lastSeekKey: 0,
     osdTimer: null, tickTimer: null, saveTimer: null, startAt: 0, started: false,
@@ -2517,7 +2548,9 @@
 
     open: function (stream, ctx, row) {
       var self = this;
+      if (this.stream) this.close(); // por si aún sigue abierto otro vídeo: AVPlay no admite dos a la vez
       this.ctx = ctx; this.stream = stream; this.row = row || null;
+      var session = ++this.session;
       this.duration = 0; this.time = 0; this.paused = false; this.started = false; this.lastPaused = null;
       this.finalUrl = null; this.probeText = ''; this.probeId = 0;
       this.startAt = ctx.startAt || 0;
@@ -2558,7 +2591,7 @@
       });
 
       Subs.fetchList(ctx).then(function (list) {
-        if (self.ctx !== ctx || settings.subLang === 'off' || self.skipAutoSubs() || Subs.embedded || Subs.manual) return;
+        if (self.session !== session || settings.subLang === 'off' || self.skipAutoSubs() || Subs.embedded || Subs.manual) return;
         for (var i = 0; i < list.length; i++) {
           if (list[i].lang === settings.subLang) { Subs.auto = true; Subs.select(list[i]); return; }
         }
@@ -3227,6 +3260,7 @@
       $('#player').style.background = '';
       $('#player').classList.add('hidden');
       this.spinner(false);
+      this.session++;
       this.stream = null; // las respuestas que lleguen tarde (comprobación del enlace, AVPlay) ya no son de este vídeo
       try {
         if (window.webapis && webapis.appcommon) webapis.appcommon.setScreenSaver(webapis.appcommon.AppCommonScreenSaverState.SCREEN_SAVER_ON);
@@ -3262,6 +3296,7 @@
         if (Date.now() > deadline) { msg.textContent = tr('El código ha caducado. Vuelve a intentarlo.'); return; }
         traktReq('POST', '/oauth/device/token', withSecret({ code: d.device_code, client_id: trakt.clientId }), false)
           .then(function (t) {
+            Trakt.forget();
             Trakt.storeTokens(t);
             return Trakt.call('GET', '/users/settings').then(function (st) {
               trakt.user = st && st.user ? st.user.username : '';
@@ -3697,7 +3732,7 @@
 
   // ---------------------------------------------------------------- arranque
 
-  var VERSION = '0.16.3';
+  var VERSION = '0.16.4';
 
   function fitScreen() {
     var z = window.innerWidth / 1920;
