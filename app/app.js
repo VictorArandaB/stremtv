@@ -161,6 +161,11 @@
     });
   }
 
+  function withSecret(body) {
+    if (trakt.clientSecret) body.client_secret = trakt.clientSecret;
+    return body;
+  }
+
   function metahubPoster(imdb) { return 'https://images.metahub.space/poster/small/' + imdb + '/img'; }
 
   var Trakt = {
@@ -178,10 +183,10 @@
     ensureFresh: function () {
       // renovar el token si caduca en menos de un día
       if (!trakt.refresh || Date.now() < (trakt.expires || 0) - 86400000) return Promise.resolve();
-      return traktReq('POST', '/oauth/token', {
-        refresh_token: trakt.refresh, client_id: trakt.clientId, client_secret: trakt.clientSecret,
+      return traktReq('POST', '/oauth/token', withSecret({
+        refresh_token: trakt.refresh, client_id: trakt.clientId,
         redirect_uri: 'http://localhost', grant_type: 'refresh_token'
-      }, false).then(Trakt.storeTokens);
+      }), false).then(Trakt.storeTokens);
     },
 
     call: function (method, path, body) {
@@ -193,7 +198,7 @@
     },
 
     unlink: function () {
-      if (trakt.access) traktReq('POST', '/oauth/revoke', { token: trakt.access, client_id: trakt.clientId, client_secret: trakt.clientSecret }, false).catch(function () { /* da igual */ });
+      if (trakt.access) traktReq('POST', '/oauth/revoke', withSecret({ token: trakt.access, client_id: trakt.clientId }), false).catch(function () { /* da igual */ });
       trakt.access = ''; trakt.refresh = ''; trakt.expires = 0; trakt.user = '';
       Trakt.watchlist = {};
       saveTrakt();
@@ -1450,7 +1455,7 @@
       var poll = function () {
         if (!alive) return;
         if (Date.now() > deadline) { msg.textContent = 'El código ha caducado. Vuelve a intentarlo.'; return; }
-        traktReq('POST', '/oauth/device/token', { code: d.device_code, client_id: trakt.clientId, client_secret: trakt.clientSecret }, false)
+        traktReq('POST', '/oauth/device/token', withSecret({ code: d.device_code, client_id: trakt.clientId }), false)
           .then(function (t) {
             Trakt.storeTokens(t);
             return Trakt.call('GET', '/users/settings').then(function (st) {
@@ -1469,7 +1474,7 @@
             if (e.status === 429) { interval += 1000; timer = setTimeout(poll, interval); return; }
             msg.textContent = e.status === 418 ? 'Has rechazado la vinculación.'
               : e.status === 410 || e.status === 404 ? 'El código ha caducado. Vuelve a intentarlo.'
-              : e.status === 401 ? 'El Client Secret no es correcto.'
+              : e.status === 401 ? (trakt.clientSecret ? 'El Client Secret no es correcto. Prueba a dejarlo vacío.' : 'Trakt ha rechazado la vinculación. Revisa el Client ID.')
               : 'Error al vincular (' + e.message + ')';
           });
       };
@@ -1583,7 +1588,7 @@
       box.appendChild(f);
     }
     textField('Client ID de tu app de Trakt', 'clientId', 'Client ID');
-    textField('Client Secret de tu app de Trakt', 'clientSecret', 'Client Secret');
+    textField('Client Secret (solo apps antiguas de Trakt; déjalo vacío si no tienes)', 'clientSecret', 'Opcional');
     box.appendChild(el('div', 'note', 'Créala gratis en trakt.tv/oauth/applications/new · Redirect URI: http://localhost'));
 
     var linkBtn = el('div', 'btn primary');
@@ -1594,7 +1599,7 @@
         toast('Trakt desvinculado');
         return;
       }
-      if (!trakt.clientId || !trakt.clientSecret) { toast('Escribe primero el Client ID y el Client Secret'); return; }
+      if (!trakt.clientId) { toast('Escribe primero el Client ID de tu app de Trakt'); return; }
       traktLinkScreen(paintTrakt);
     });
     box.appendChild(linkBtn);
@@ -1626,7 +1631,7 @@
 
   // ---------------------------------------------------------------- arranque
 
-  var VERSION = '0.2.1';
+  var VERSION = '0.2.2';
 
   function fitScreen() {
     var z = window.innerWidth / 1920;

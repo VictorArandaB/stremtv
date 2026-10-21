@@ -25,7 +25,7 @@ La clave solo se guarda en la tele.
 
 ### Trakt
 1. Crea una app en https://trakt.tv/oauth/applications/new (nombre libre, Redirect URI `http://localhost`).
-2. En Ajustes → Trakt escribe el Client ID y el Client Secret y pulsa «Vincular con Trakt».
+2. En Ajustes → Trakt escribe el Client ID (el Client Secret solo si tu app es antigua y lo tiene) y pulsa «Vincular con Trakt».
 3. Entra en trakt.tv/activate e introduce el código que aparece en la tele.
 
 ## Mando

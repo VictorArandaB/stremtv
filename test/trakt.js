@@ -16,7 +16,7 @@ const VIDEO = 'https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/1080/Big_Buc
     if (req.method() === 'OPTIONS') return req.respond({ status: 204, headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': '*' } });
     if (u.indexOf('api.trakt.tv') >= 0) {
       if (u.endsWith('/oauth/device/code')) return json(req, 200, { device_code: 'dev', user_code: 'AB12CD34', verification_url: 'https://trakt.tv/activate', expires_in: 600, interval: 1 });
-      if (u.endsWith('/oauth/device/token')) return ++tokenPolls < 2 ? json(req, 400, null) : json(req, 200, { access_token: 'acc', refresh_token: 'ref', expires_in: 7776000, created_at: Math.floor(Date.now() / 1000) });
+      if (u.endsWith('/oauth/device/token')) { console.log('device/token body:', req.postData()); } if (u.endsWith('/oauth/device/token')) return ++tokenPolls < 2 ? json(req, 400, null) : json(req, 200, { access_token: 'acc', refresh_token: 'ref', expires_in: 7776000, created_at: Math.floor(Date.now() / 1000) });
       if (u.endsWith('/users/settings')) return json(req, 200, { user: { username: 'victor' } });
       if (u.indexOf('/sync/watchlist') >= 0 && req.method() === 'GET') return json(req, 200, [{ type: 'movie', movie: { title: 'Dune: Part Two', ids: { imdb: 'tt15239678' } } }, { type: 'show', show: { title: 'Shogun', ids: { imdb: 'tt2788316' } } }]);
       if (u.indexOf('/sync/watchlist') >= 0) return json(req, 201, {});
@@ -36,7 +36,7 @@ const VIDEO = 'https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/1080/Big_Buc
   const focused = () => page.evaluate(() => { const f = document.querySelector('.focused'); return f ? (f.textContent || f.value || '').replace(/\s+/g, ' ').slice(0, 80) : null; });
 
   await page.goto('http://127.0.0.1:8090/', { waitUntil: 'networkidle2' });
-  await page.evaluate(() => { localStorage.clear(); localStorage.setItem('stv.settings', JSON.stringify({ key: 'FAKE' })); localStorage.setItem('stv.trakt', JSON.stringify({ clientId: 'cid', clientSecret: 'sec' })); });
+  await page.evaluate(() => { localStorage.clear(); localStorage.setItem('stv.settings', JSON.stringify({ key: 'FAKE' })); localStorage.setItem('stv.trakt', JSON.stringify({ clientId: 'cid' })); });
   await page.reload({ waitUntil: 'networkidle2' }); await sleep(1500);
 
   // Ajustes -> Vincular
