@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1920, initial-scale=1">
+<title>StremTV</title>
+<link rel="stylesheet" href="style.css">
+<script src="$WEBAPIS/webapis/webapis.js"></script>
+</head>
+<body>
+<div id="screens"></div>
+<div id="player" class="hidden">
+  <object id="avplayer" type="application/avplayer"></object>
+  <video id="video" preload="auto"></video>
+  <div id="subs"></div>
+  <div id="osd">
+    <div id="osd-title"></div>
+    <div id="osd-bar"><div id="osd-buffer"></div><div id="osd-progress"></div></div>
+    <div id="osd-time"><span id="osd-cur">0:00</span><span id="osd-state"></span><span id="osd-dur">0:00</span></div>
+    <div id="osd-help">OK pausa · ◀ ▶ avanzar/retroceder · ▲ subtítulos · ▼ audio · Atrás salir</div>
+  </div>
+  <div id="spinner" class="hidden"><div class="ring"></div><div id="spinner-text">Cargando…</div></div>
+</div>
+<div id="toast" class="hidden"></div>
+<script src="app.js"></script>
+</body>
+</html>
