@@ -14,7 +14,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       getCurrentStreamInfo: () => [{ type: 'AUDIO', index: cur }],
       setSelectTrack: (k, i) => { calls.push(i); cur = i; } } };
     const P = StremTV.Player;
-    P.ctx = { type: 'series', metaId };
+    P.ctx = { type: 'series', metaId }; P.audioChosen = false;
     document.getElementById('subs').textContent = '';
     P.autoAudio();
     return { cur, calls, audioKey: P.audioKey };
@@ -49,6 +49,18 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   console.log('elegido a mano en película:', JSON.stringify(picked));
   console.log('volver a poner peli2 (rus+ger) → ger:', JSON.stringify(await run([{ index: 1, lang: 'rus' }, { index: 2, lang: 'ger' }], 'peli2')));
   console.log('otra peli sin español ni alemán recordado → último (ger):', JSON.stringify(await run([{ index: 1, lang: 'rus' }, { index: 2, lang: 'eng' }, { index: 3, lang: 'deu' }], 'peli3')));
+  // tras elegir a mano con ▼, los reintentos automáticos no la cambian
+  const keep = await p.evaluate(() => {
+    let cur = 2, calls = [];
+    window.webapis = { avplay: {
+      getTotalTrackInfo: () => [{ type: 'AUDIO', index: 1, extra_info: '{"language":"rus"}' }, { type: 'AUDIO', index: 2, extra_info: '{"lang":"eng"}' }],
+      getCurrentStreamInfo: () => [{ type: 'AUDIO', index: cur }], setSelectTrack: (k, i) => { calls.push(i); cur = i; } } };
+    const P = StremTV.Player; P.ctx = { type: 'movie', metaId: 'peli9' }; P.audioChosen = true;
+    P.autoAudio();
+    return { cur, calls };
+  });
+  console.log('elegida a mano (ruso) y reintento → no la toca:', JSON.stringify(keep));
+  console.log('idioma en el campo «lang» → eng:', JSON.stringify(await run([{ index: 1, lang: 'rus' }, { index: 2, lang: 'eng' }], 'peli10')));
   console.log('ERRORES:', errs.length ? errs : 'ninguno');
   await b.close();
 })();

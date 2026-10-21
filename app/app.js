@@ -2371,7 +2371,7 @@
       this.startAt = ctx.startAt || 0;
       this.startPct = this.startAt ? 0 : ctx.startPct || 0;
       this.seekTarget = null;
-      this.upNext = null; this.upNextOff = false; this.nextCtx = undefined; this.audioKey = '';
+      this.upNext = null; this.upNextOff = false; this.nextCtx = undefined; this.audioKey = ''; this.audioRetried = false; this.audioChosen = false;
       this.skips = []; this.skipNow = null;
       skipTimes(ctx).then(function (list) { if (self.ctx === ctx) self.skips = list; });
       $('#player').classList.remove('hidden');
@@ -2468,7 +2468,17 @@
           onbufferingstart: function () { self.buffering = true; self.spinner(true, tr('Cargando…')); },
           onbufferingprogress: function (p) { self.spinner(true, tr('Cargando…') + ' ' + p + '%'); },
           onbufferingcomplete: function () { self.buffering = false; self.spinner(false); },
-          oncurrentplaytime: function (ms) { self.time = ms / 1000; },
+          oncurrentplaytime: function (ms) {
+            self.time = ms / 1000;
+            // Tizen 3 puede ignorar el cambio de pista antes de que el vídeo arranque de verdad:
+            // repetirlo con el primer avance de tiempo y otra vez a los 3 s
+            if (self.started && !self.audioRetried) {
+              self.audioRetried = true;
+              var mine = self.stream;
+              self.autoAudio();
+              setTimeout(function () { if (self.stream === mine && self.backend === 'av') self.autoAudio(); }, 3000);
+            }
+          },
           onstreamcompleted: function () { self.finished(); },
           onerror: function (e) { self.fail(tr('Error del reproductor: {0}', e)); },
           onsubtitlechange: function (duration, text) {
@@ -2664,6 +2674,7 @@
     },
 
     autoAudio: function () {
+      if (this.audioChosen) return; // ya elegida a mano con ▼
       var c = this.ctx, pref = srcPrefs[c.metaId];
       // por orden: lo elegido en esta película o serie, el idioma de Ajustes, el último elegido a mano y, si no, inglés
       // (muchos archivos traen primero una pista en ruso u otro doblaje)
@@ -2760,7 +2771,7 @@
         return webapis.avplay.getTotalTrackInfo().filter(function (t) { return t.type === kind; }).map(function (t) {
           var info = {};
           try { info = JSON.parse(t.extra_info || '{}'); } catch (e) { /* sin metadatos */ }
-          return { index: t.index, lang: info.language || info.track_lang || '', codec: info.fourCC || '', channels: info.channels || '' };
+          return { index: t.index, lang: info.language || info.track_lang || info.lang || info.track_language || '', codec: info.fourCC || '', channels: info.channels || '' };
         });
       } catch (e) { return []; }
     },
@@ -2783,6 +2794,7 @@
         if (it.value === 'none') return;
         try { webapis.avplay.setSelectTrack('AUDIO', it.value); } catch (e) { toast(tr('No se pudo cambiar el audio')); return; }
         self.audioKey = it.lang;
+        self.audioChosen = true;
         if (it.lang) {
           // se recuerda en esta película o serie, y como idioma de reserva para las demás
           saveSrcPref(c.metaId, { audio: it.lang });
@@ -3429,7 +3441,7 @@
 
   // ---------------------------------------------------------------- arranque
 
-  var VERSION = '0.13.1';
+  var VERSION = '0.13.2';
 
   function fitScreen() {
     var z = window.innerWidth / 1920;
