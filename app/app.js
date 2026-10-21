@@ -948,6 +948,13 @@
   var Codecs = (function () {
     var v = document.createElement('video');
     function can(t) { try { return v.canPlayType(t) || ''; } catch (e) { return ''; } }
+    // con el reproductor nativo (app instalada) MKV, HEVC 10-bit y AC3/EAC3 funcionan aunque HTML5 diga que no
+    var nativeAV = false;
+    try { nativeAV = !!(window.webapis && webapis.avplay && webapis.avplay.open); } catch (e) { /* fuera de Tizen */ }
+    if (nativeAV) {
+      return { h264: 'nativo', hevc: 'nativo', hevc10: 'nativo', av1: '', mkv: 'nativo', ac3: 'nativo', eac3: 'nativo',
+        dts: can('audio/mp4; codecs="dtsc"') || can('audio/vnd.dts') };
+    }
     return {
       h264: can('video/mp4; codecs="avc1.640028"'),
       hevc: can('video/mp4; codecs="hev1.1.6.L120.90"') || can('video/mp4; codecs="hvc1.1.6.L120.90"'),
@@ -1709,7 +1716,7 @@
 
   // ---------------------------------------------------------------- arranque
 
-  var VERSION = '0.4.0';
+  var VERSION = '0.4.1';
 
   function fitScreen() {
     var z = window.innerWidth / 1920;
