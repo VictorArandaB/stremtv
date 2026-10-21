@@ -4,7 +4,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=1920, initial-scale=1">
 <title>StremTV</title>
-<link rel="stylesheet" href="style.css">
 <script src="$WEBAPIS/webapis/webapis.js"></script>
 </head>
 <body>
@@ -22,6 +21,46 @@
   <div id="spinner" class="hidden"><div class="ring"></div><div id="spinner-text">Cargando…</div></div>
 </div>
 <div id="toast" class="hidden"></div>
-<script src="app.js"></script>
+<script>
+// Cargador: jsDelivr cachea la rama durante horas, así que se pide a GitHub el último commit
+// y se cargan app.js/style.css fijados a ese commit (se sirven al momento).
+// Si GitHub no responde, se usan los archivos que vienen junto a esta página.
+(function () {
+  var REPO = 'VictorArandaB/stremtv';
+  var done = false;
+  function load(base) {
+    if (done) return;
+    done = true;
+    var css = document.createElement('link');
+    css.rel = 'stylesheet';
+    css.href = base + 'style.css';
+    document.head.appendChild(css);
+    var js = document.createElement('script');
+    js.src = base + 'app.js';
+    js.onerror = function () {
+      if (!base) return;
+      css.href = 'style.css';
+      var local = document.createElement('script');
+      local.src = 'app.js';
+      document.body.appendChild(local);
+    };
+    document.body.appendChild(js);
+  }
+  if (location.port === '8090') { load(''); return; } // desarrollo local
+  setTimeout(function () { load(''); }, 4000);
+  try {
+    var x = new XMLHttpRequest();
+    x.open('GET', 'https://api.github.com/repos/' + REPO + '/commits/main', true);
+    x.setRequestHeader('Accept', 'application/vnd.github.sha');
+    x.timeout = 3500;
+    x.onload = function () {
+      var sha = (x.responseText || '').replace(/\s+/g, '');
+      load(/^[0-9a-f]{40}$/.test(sha) ? 'https://cdn.jsdelivr.net/gh/' + REPO + '@' + sha + '/app/' : '');
+    };
+    x.onerror = x.ontimeout = function () { load(''); };
+    x.send();
+  } catch (e) { load(''); }
+})();
+</script>
 </body>
 </html>
