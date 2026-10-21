@@ -87,7 +87,7 @@
 
   var DEFAULTS = {
     debrid: 'realdebrid', key: '', onlyCached: true, maxQ: 'all',
-    preferEs: true, compatFirst: true, subLang: 'spa', subSize: 'normal'
+    preferEs: true, compatFirst: true, hideWatched: true, subLang: 'spa', subSize: 'normal'
   };
   var settings = extend(extend({}, DEFAULTS), load('settings', {}));
   function saveSettings() { save('settings', settings); }
@@ -266,6 +266,27 @@
       });
     },
 
+    // películas vistas y series sin episodios emitidos pendientes
+    loadWatched: function () {
+      return Promise.all([
+        Trakt.call('GET', '/sync/watched/movies'),
+        Trakt.call('GET', '/sync/watched/shows?extended=full')
+      ]).then(function (r) {
+        var movies = {}, shows = {};
+        (r[0] || []).forEach(function (it) { if (it.movie && it.movie.ids && it.movie.ids.imdb) movies[it.movie.ids.imdb] = true; });
+        (r[1] || []).forEach(function (it) {
+          var sh = it.show;
+          if (!sh || !sh.ids || !sh.ids.imdb) return;
+          var n = 0;
+          (it.seasons || []).forEach(function (se) { if (se.number > 0) n += (se.episodes || []).length; });
+          if (sh.aired_episodes && n >= sh.aired_episodes) shows[sh.ids.imdb] = true;
+        });
+        Seen.movies = movies;
+        Seen.shows = shows;
+        Seen.at = Date.now();
+      });
+    },
+
     showProgress: function (imdb) {
       return Trakt.call('GET', '/shows/' + imdb + '/progress/watched?hidden=false&specials=false').then(function (d) {
         var seen = {};
@@ -276,6 +297,32 @@
       });
     }
   };
+
+  // ---------------------------------------------------------------- ocultar lo ya visto
+
+  var Seen = { movies: {}, shows: {}, at: 0, loading: null };
+
+  // espera (como mucho una vez cada 10 min) a tener la lista de vistos de Trakt
+  function seenReady() {
+    if (!settings.hideWatched || !Trakt.linked()) return Promise.resolve();
+    if (Date.now() - Seen.at < 600000) return Promise.resolve();
+    if (!Seen.loading) {
+      Seen.loading = Trakt.loadWatched().catch(function () { /* sin Trakt: se muestra todo */ }).then(function () { Seen.loading = null; });
+    }
+    return Seen.loading;
+  }
+
+  function isSeenMeta(m) {
+    var id = String(m.id || '');
+    var imdb = m.imdb_id || (id.indexOf('tt') === 0 ? id : null);
+    if (m.type === 'movie') return !!((imdb && Seen.movies[imdb]) || (progress[id] && progress[id].done));
+    return !!(imdb && Seen.shows[imdb]);
+  }
+
+  function filterSeen(metas) {
+    if (!settings.hideWatched) return metas;
+    return metas.filter(function (m) { return !isSeenMeta(m); });
+  }
 
   // ---------------------------------------------------------------- navegación espacial
 
@@ -568,7 +615,9 @@
   }
 
   function asyncRow(container, title, url, onPick) {
-    promiseRow(container, title, getJSON(url).then(function (d) { return d.metas || []; }), onPick);
+    promiseRow(container, title, Promise.all([getJSON(url), seenReady()]).then(function (r) {
+      return filterSeen(r[0].metas || []);
+    }), onPick);
   }
 
   function openMeta(meta) { push(detailScreen(meta.type, meta.id || meta.metaId)); }
@@ -642,8 +691,9 @@
         });
       }), openMeta, true);
       promiseRow(traktWrap, 'Mi lista (Trakt)', Trakt.loadWatchlist(), openMeta, true);
-      promiseRow(traktWrap, 'Recomendadas para ti: películas', Trakt.recommendations('movies'), openMeta, true);
-      promiseRow(traktWrap, 'Recomendadas para ti: series', Trakt.recommendations('shows'), openMeta, true);
+      var seenThen = function (pr) { return Promise.all([pr, seenReady()]).then(function (r) { return filterSeen(r[0]); }); };
+      promiseRow(traktWrap, 'Recomendadas para ti: películas', seenThen(Trakt.recommendations('movies')), openMeta, true);
+      promiseRow(traktWrap, 'Recomendadas para ti: series', seenThen(Trakt.recommendations('shows')), openMeta, true);
     }
     renderTrakt();
 
@@ -718,7 +768,7 @@
     root.appendChild(d);
     var screen = { el: root };
     var meta = null, curSeason = null, episodesBox = null, actions = null;
-    var traktSeen = {}, traktNext = null;
+    var traktSeen = {}, traktNext = null, showSeen = false, progressRequested = false;
 
     function watchlistButton(container) {
       if (!Trakt.linked()) return;
@@ -829,44 +879,75 @@
       return best ? best.season : null;
     }
 
+    function isSeenEp(v) {
+      var p = progress[v.id];
+      return !!((p && p.done) || traktSeen[traktKey(v)]);
+    }
+
+    function hidingSeen() { return settings.hideWatched && !showSeen; }
+
     function renderSeries() {
+      actions.innerHTML = '';
       var seasons = seasonsOf();
       if (!seasons.nums.length) {
         actions.appendChild(el('div', 'loading', 'Sin episodios disponibles'));
-        return;
+        return null;
       }
-      if (curSeason === null) {
+      var seenCount = 0;
+      seasons.nums.forEach(function (n) { seasons.map[n].forEach(function (v) { if (isSeenEp(v)) seenCount++; }); });
+      var nums = !hidingSeen() ? seasons.nums : seasons.nums.filter(function (n) {
+        return seasons.map[n].some(function (v) { return !isSeenEp(v); });
+      });
+      if (curSeason === null || nums.indexOf(curSeason) < 0) {
         var lw = lastWatchedSeason(seasons);
-        curSeason = lw !== null ? lw : seasons.nums[0];
+        curSeason = lw !== null && nums.indexOf(lw) >= 0 ? lw : (nums.length ? nums[0] : null);
       }
-      if (Trakt.linked()) {
-        var wl = el('div');
-        watchlistButton(wl);
-        actions.appendChild(wl);
-        if (imdbOf()) Trakt.showProgress(imdbOf()).then(function (tp) {
+
+      // fila superior: mi lista y mostrar/ocultar vistos
+      var top = el('div');
+      watchlistButton(top);
+      var toggle = null;
+      if (settings.hideWatched && seenCount) {
+        toggle = el('div', 'btn', showSeen ? 'Ocultar vistos' : 'Mostrar ' + seenCount + ' visto' + (seenCount === 1 ? '' : 's'));
+        focusable(toggle, function () {
+          showSeen = !showSeen;
+          renderSeries();
+          var again = actions.querySelectorAll('.btn');
+          for (var i = 0; i < again.length; i++) if (/visto/.test(again[i].textContent)) { Nav.setRoot(root, again[i]); return; }
+          Nav.setRoot(root);
+        });
+        top.appendChild(toggle);
+      }
+      if (top.children.length) actions.appendChild(top);
+
+      if (Trakt.linked() && imdbOf() && !progressRequested) {
+        progressRequested = true;
+        Trakt.showProgress(imdbOf()).then(function (tp) {
           traktSeen = tp.seen;
           traktNext = tp.next;
+          var untouched = Nav.root === root && Nav.cur === screen.autoFocus;
           // si no hay progreso local, ir a la temporada del siguiente episodio según Trakt
           if (traktNext && lastWatchedSeason(seasons) === null) {
-            var ns = null;
             seasons.nums.forEach(function (n) {
-              seasons.map[n].forEach(function (v) { if (ns === null && traktKey(v) === traktNext) ns = n; });
+              seasons.map[n].forEach(function (v) { if (traktKey(v) === traktNext) curSeason = n; });
             });
-            if (seasons.map[ns] && ns !== curSeason) {
-              curSeason = ns;
-              Array.prototype.forEach.call(sRow.children, function (x) {
-                x.classList.toggle('primary', x._season === ns);
-              });
-            }
           }
-          var target = renderEpisodes(seasons.map[curSeason]);
-          // solo mover el foco si el usuario aún no se ha movido
-          if (target && Nav.root === root && Nav.cur === screen.autoFocus) Nav.focus(target);
+          var target = renderSeries();
+          // solo mover el foco si el usuario aún no se había movido
+          if (Nav.root === root && (untouched || !root.contains(Nav.cur))) {
+            Nav.setRoot(root, target);
+            screen.autoFocus = Nav.cur;
+          }
         }).catch(function () { /* sin datos de Trakt */ });
+      }
+
+      if (curSeason === null) {
+        actions.appendChild(el('div', 'loading', '✓ Has visto todos los episodios emitidos.'));
+        return toggle;
       }
       var sRow = el('div', 'seasons hscroll');
       sRow.style.position = 'relative';
-      seasons.nums.forEach(function (n) {
+      nums.forEach(function (n) {
         var b = el('div', 'btn' + (n === curSeason ? ' primary' : ''), n === 0 ? 'Especiales' : 'Temporada ' + n);
         b._season = n;
         focusable(b, function () {
@@ -881,7 +962,7 @@
       episodesBox = el('div', 'vscroll');
       episodesBox.setAttribute('data-pad', '0');
       episodesBox.style.position = 'relative';
-      episodesBox.style.height = Trakt.linked() ? '440px' : '520px';
+      episodesBox.style.height = top.children.length ? '440px' : '520px';
       actions.appendChild(episodesBox);
       return renderEpisodes(seasons.map[curSeason]);
     }
@@ -890,6 +971,7 @@
       episodesBox.innerHTML = '';
       episodesBox.scrollTop = 0;
       var focusTarget = null;
+      if (hidingSeen()) eps = eps.filter(function (v) { return !isSeenEp(v); });
       eps.forEach(function (v) {
         var p = progress[v.id];
         var row = el('div', 'ep');
@@ -930,14 +1012,13 @@
     screen.onResume = function () {
       if (!meta) return;
       if (type === 'movie') { renderMovieActions(); return; }
-      // repintar episodios conservando la posición
-      var idx = -1;
-      if (Nav.cur && Nav.cur.parentNode === episodesBox) idx = Array.prototype.indexOf.call(episodesBox.children, Nav.cur);
-      if (screen.lastFocus && screen.lastFocus.parentNode === episodesBox) idx = Array.prototype.indexOf.call(episodesBox.children, screen.lastFocus);
-      var top = episodesBox.scrollTop;
-      renderEpisodes(seasonsOf().map[curSeason]);
-      episodesBox.scrollTop = top;
-      if (idx >= 0 && episodesBox.children[idx]) screen.lastFocus = episodesBox.children[idx];
+      // repintar (lo recién visto puede desaparecer) y colocarse en el siguiente pendiente
+      var idx = -1, box = episodesBox;
+      if (box && screen.lastFocus && screen.lastFocus.parentNode === box) idx = Array.prototype.indexOf.call(box.children, screen.lastFocus);
+      var target = renderSeries();
+      if (target) screen.lastFocus = target;
+      else if (idx >= 0 && episodesBox && episodesBox.children.length) screen.lastFocus = episodesBox.children[Math.min(idx, episodesBox.children.length - 1)];
+      else screen.lastFocus = null;
     };
 
     return screen;
@@ -1664,6 +1745,7 @@
     opt('Solo enlaces en caché (instantáneos)', function () { return settings.onlyCached ? 'Sí' : 'No'; }, function () { settings.onlyCached = !settings.onlyCached; });
     opt('Calidad máxima', function () { return QUALITY_NAMES[settings.maxQ]; }, cycle('maxQ', ['all', '1080', '720']));
     opt('Mostrar primero las fuentes que la tele puede reproducir', function () { return settings.compatFirst ? 'Sí' : 'No'; }, function () { settings.compatFirst = !settings.compatFirst; });
+    opt('Ocultar lo que ya he visto (Trakt y esta app)', function () { return settings.hideWatched ? 'Sí' : 'No'; }, function () { settings.hideWatched = !settings.hideWatched; Seen.at = 0; });
     opt('Mostrar primero las fuentes en español', function () { return settings.preferEs ? 'Sí' : 'No'; }, function () { settings.preferEs = !settings.preferEs; });
 
     box.appendChild(el('div', 'row-title', 'Subtítulos'));
@@ -1757,7 +1839,7 @@
 
   // ---------------------------------------------------------------- arranque
 
-  var VERSION = '0.4.7';
+  var VERSION = '0.5.0';
 
   function fitScreen() {
     var z = window.innerWidth / 1920;
