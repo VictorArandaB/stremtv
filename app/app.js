@@ -1757,7 +1757,7 @@
 
   // ---------------------------------------------------------------- arranque
 
-  var VERSION = '0.4.5';
+  var VERSION = '0.4.7';
 
   function fitScreen() {
     var z = window.innerWidth / 1920;
@@ -1771,7 +1771,7 @@
     b[name] = Date.now();
     if (name !== 'firstRow') return;
     var log = load('boot', []);
-    log.unshift({ at: new Date(b.nav || b.loader).toISOString(), loader: b.loader - b.nav, app: b.app - b.nav, firstRow: b.firstRow - b.nav });
+    log.unshift({ at: new Date(b.nav || b.loader).toISOString(), src: b.src, loader: b.loader - b.nav, app: b.app - b.nav, firstRow: b.firstRow - b.nav });
     save('boot', log.slice(0, 5));
   }
 

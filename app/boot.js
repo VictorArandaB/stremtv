@@ -16,9 +16,8 @@ window.__boot = { nav: (performance.timing || {}).navigationStart || 0, loader: 
     var st = document.createElement('style');
     st.textContent = css;
     document.head.appendChild(st);
-    var sc = document.createElement('script');
-    sc.text = js;
-    document.body.appendChild(sc);
+    // eval indirecto (ámbito global): un <script> en línea creado aquí no se ejecuta en el arranque en frío
+    (0, eval)(js);
   }
   function loadFiles() {
     var l = document.createElement('link');
@@ -44,9 +43,10 @@ window.__boot = { nav: (performance.timing || {}).navigationStart || 0, loader: 
   var dev = location.port === '8090';
   var cachedVer = cached && cached.js ? (/var VERSION = '([\d.]+)'/.exec(cached.js) || [])[1] : '';
   if (!dev && cached && cached.js && cached.css && ver(cachedVer) >= ver(PKG_VERSION)) {
-    try { inject(cached.css, cached.js); } catch (e) { loadFiles(); }
+    try { inject(cached.css, cached.js); window.__boot.src = 'guardada ' + cachedVer; } catch (e) { loadFiles(); window.__boot.src = 'paquete (fallo la guardada)'; }
   } else {
     loadFiles();
+    window.__boot.src = 'paquete ' + PKG_VERSION;
   }
   if (dev) return;
 
@@ -57,7 +57,8 @@ window.__boot = { nav: (performance.timing || {}).navigationStart || 0, loader: 
       if (!/^[0-9a-f]{40}$/.test(sha) || (cached && cached.sha === sha)) return;
       var base = 'https://cdn.jsdelivr.net/gh/' + REPO + '@' + sha + '/app/';
       return Promise.all([get(base + 'app.js', 30000), get(base + 'style.css', 30000)]).then(function (r) {
-        if (r[0].indexOf('StremTV') < 0) return;
+        var newVer = (/var VERSION = '([\d.]+)'/.exec(r[0]) || [])[1];
+        if (r[0].indexOf('StremTV') < 0 || ver(newVer) <= ver(PKG_VERSION)) return; // no guardar versiones más viejas que la instalada
         localStorage.setItem(KEY, JSON.stringify({ sha: sha, js: r[0], css: r[1], ts: Date.now() }));
         if (window.StremTV && window.StremTV.toast) window.StremTV.toast('Actualización descargada: se aplicará la próxima vez que abras StremTV');
       });

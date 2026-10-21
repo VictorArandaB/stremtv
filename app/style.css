@@ -1,6 +1,6 @@
 /* Diseñado a 1920x1080; app.js aplica zoom si la ventana es distinta.
    Sin variables CSS ni grid: el motor de Tizen 3 (Chromium ~47) no los soporta. */
-* { box-sizing: border-box; margin: 0; padding: 0; }
+* { box-sizing: border-box; margin: 0; padding: 0; cursor: none; }
 html, body { width: 1920px; height: 1080px; overflow: hidden; background: #0d0f14; color: #e8eaf0;
   font-family: "Samsung One", "SamsungOne", Helvetica, Arial, sans-serif; font-size: 26px; }
 .hidden { display: none !important; }
