@@ -114,7 +114,7 @@
     'No se pudieron obtener las fuentes ({0}). Pulsa Atrás e inténtalo de nuevo.': 'Could not get sources ({0}). Press Back and try again.',
     // reproductor
     'Conectando con {0}…': 'Connecting to {0}…',
-    'OK pausa · ◀ ▶ avanzar/retroceder · ▲ subtítulos · ▼ audio · Atrás salir': 'OK pause · ◀ ▶ seek · ▲ subtitles · ▼ audio · Back exit',
+    'OK pausa · ◀ ▶ avanzar/retroceder · ▲ subtítulos · ▼ audio y temporizador · Atrás salir': 'OK pause · ◀ ▶ seek · ▲ subtitles · ▼ audio and sleep timer · Back exit',
     '{0} ha bloqueado el acceso desde Torrentio. Revisa tu correo o la sección de autorizaciones de tu cuenta y aprueba el acceso.':
       '{0} has blocked access from Torrentio. Check your email or the authorizations section of your account and approve it.',
     'La clave de {0} no es válida o tu suscripción ha caducado.': 'The {0} key is invalid or your subscription has expired.',
@@ -188,8 +188,8 @@
     'Mostrar primero las fuentes en español': 'Show Spanish sources first',
     'Reproducción': 'Playback', 'Pasar solo al siguiente episodio': 'Play the next episode automatically',
     'Idioma del audio': 'Audio language', 'El que traiga el archivo': 'Whatever the file has', '{0} si lo hay': '{0} if available',
-    'Si cambias la pista con ▼ en una serie, se recuerda para el resto de episodios (y la fuente que elijas, también).':
-      'If you change the track with ▼ in a show, it is remembered for the rest of the episodes (and so is the source you pick).',
+    'La pista que elijas con ▼ se recuerda en esa película o serie. Si un archivo no trae tu idioma, se prueba el último que elegiste y después inglés.':
+      'The track you pick with ▼ is remembered for that movie or show. If a file lacks your language, the last one you picked is tried, then English.',
     'Idioma automático': 'Automatic language', 'Tamaño': 'Size', 'Grande': 'Large', 'Normal': 'Normal',
     'Client ID de tu app de Trakt': 'Client ID of your Trakt app',
     'Client Secret (solo apps antiguas de Trakt; déjalo vacío si no tienes)': 'Client Secret (old Trakt apps only; leave empty if you have none)',
@@ -202,6 +202,13 @@
     'Datos': 'Data', 'Borrar historial de reproducción': 'Clear playback history',
     '¿Borrar «Continuar viendo» y el progreso?': 'Clear “Continue watching” and progress?', 'Borrar': 'Clear', 'Historial borrado': 'History cleared',
     'Diagnóstico de reproducción': 'Playback diagnostics',
+    'Búsquedas recientes': 'Recent searches', 'Más como esto': 'More like this', 'Más como «{0}»': 'More like “{0}”',
+    'Intro saltada': 'Intro skipped', 'Audio cambiado (se recordará para esta película)': 'Audio changed (it will be remembered for this movie)', '⏭ OK: saltar intro': '⏭ OK: skip intro', '⏭ OK: saltar ending': '⏭ OK: skip ending',
+    'Saltar solo las intros de anime': 'Skip anime intros automatically',
+    '⏾ Temporizador: {0}': '⏾ Sleep timer: {0}', 'Audio y temporizador': 'Audio and sleep timer', 'desactivado': 'off',
+    'al terminar este vídeo': 'when this video ends', 'quedan {0} min': '{0} min left', 'Temporizador': 'Sleep timer',
+    'Desactivado': 'Off', 'Al terminar este vídeo': 'When this video ends', '{0} minutos': '{0} minutes',
+    'Temporizador: {0}': 'Sleep timer: {0}', 'Temporizador: reproducción detenida': 'Sleep timer: playback stopped',
     '▶ Continuar ({0} %)': '▶ Resume ({0} %)', 'Continuar desde el {0} % (Trakt)': 'Resume from {0} % (Trakt)',
     'la clave de TMDB no es válida': 'the TMDB key is not valid', 'Resultados en español (TMDB)': 'Results in Spanish (TMDB)',
     'Este título no tiene ID de IMDb y no se puede reproducir': 'This title has no IMDb ID and cannot be played',
@@ -290,7 +297,7 @@
   var DEFAULTS = {
     debrid: 'realdebrid', key: '', onlyCached: true, maxQ: 'all',
     preferEs: true, compatFirst: true, hideWatched: true, maxRate: 'auto', measuredMbps: 0, measuredAt: 0,
-    subLang: 'spa', subSize: 'normal', autoNext: true, audioLang: 'spa', lang: 'es', quickPlay: true, subBg: true, tmdbKey: ''
+    subLang: 'spa', subSize: 'normal', autoNext: true, audioLang: 'spa', lang: 'es', quickPlay: true, subBg: true, tmdbKey: '', autoSkip: false, lastAudio: ''
   };
   var settings = extend(extend({}, DEFAULTS), load('settings', {}));
   function saveSettings() { save('settings', settings); }
@@ -530,6 +537,41 @@
       var t = setTimeout(function () { reject(new Error('timeout')); }, ms);
       promise.then(function (v) { clearTimeout(t); resolve(v); }, function (e) { clearTimeout(t); reject(e); });
     });
+  }
+
+  // ---------------------------------------------------------------- saltar intro y ending de anime (AniSkip)
+
+  // id de MyAnimeList y número de episodio de lo que se reproduce (ARM traduce de Kitsu o IMDb); null si no es anime
+  var armCache = {};
+  function armGet(path) {
+    if (!armCache[path]) armCache[path] = getJSON('https://arm.haglund.dev/api/v2/' + path).catch(function () { delete armCache[path]; return null; });
+    return armCache[path];
+  }
+  function malFor(ctx) {
+    var k = /^kitsu:(\d+)/.exec(ctx.metaId || '');
+    if (k) {
+      var ep = +String(ctx.videoId).split(':')[2] || 1;
+      return armGet('ids?source=kitsu&id=' + k[1]).then(function (d) { return d && d.myanimelist ? { id: d.myanimelist, ep: ep } : null; });
+    }
+    if (!ctx.imdb) return Promise.resolve(null);
+    return armGet('imdb?id=' + ctx.imdb).then(function (list) {
+      list = (list || []).filter(function (x) { return x.myanimelist; });
+      if (!list.length) return null;
+      if (ctx.type === 'movie') return { id: list[0].myanimelist, ep: 1 };
+      // series: la entrada de MyAnimeList de esa temporada
+      var bySeason = list.filter(function (x) { return x['thetvdb-season'] === +ctx.imdbS || x['themoviedb-season'] === +ctx.imdbS; });
+      var m = bySeason.length === 1 ? bySeason[0] : list.length === 1 ? list[0] : null;
+      return m ? { id: m.myanimelist, ep: +ctx.imdbE } : null;
+    });
+  }
+
+  function skipTimes(ctx) {
+    return malFor(ctx).then(function (mal) {
+      if (!mal) return [];
+      return getJSON('https://api.aniskip.com/v2/skip-times/' + mal.id + '/' + mal.ep + '?types=op&types=ed&episodeLength=0').then(function (d) {
+        return d && d.found ? (d.results || []).map(function (r) { return { type: r.skipType, s: r.interval.startTime, e: r.interval.endTime }; }) : [];
+      });
+    }).catch(function () { return []; });
   }
 
   // ---------------------------------------------------------------- progreso
@@ -1501,6 +1543,54 @@
     return { el: root, initialFocus: function () { return vs.querySelectorAll('.tab')[2]; } };
   }
 
+  // ---------------------------------------------------------------- pantalla: más como esto
+
+  // recomendaciones de TMDB (en español) o, si no hay, títulos relacionados de Trakt
+  function similarTitles(type, imdb) {
+    var fromTrakt = function () {
+      if (!trakt.clientId) return [];
+      return traktReq('GET', '/' + (type === 'movie' ? 'movies' : 'shows') + '/' + imdb + '/related?limit=40', null, false).then(function (list) {
+        return (list || []).filter(function (o) { return o.ids && o.ids.imdb; }).map(function (o) {
+          return { id: o.ids.imdb, type: type, name: o.title, poster: metahubPoster(o.ids.imdb) };
+        });
+      });
+    };
+    if (!tmdbOn()) return Promise.resolve(fromTrakt());
+    return tmdbFind(imdb).then(function (r) {
+      if (!r.id) return [];
+      return tmdbGet('/' + r.k + '/' + r.id + '/recommendations').then(function (d) {
+        return (d.results || []).map(function (x) {
+          return { id: 'tmdb:' + r.k + ':' + x.id, type: type, name: x.title || x.name, poster: x.poster_path ? 'https://image.tmdb.org/t/p/w185' + x.poster_path : '' };
+        });
+      });
+    }).then(function (list) { return list.length ? list : fromTrakt(); }, fromTrakt);
+  }
+
+  function similarScreen(type, imdb, name) {
+    var root = el('div', 'screen');
+    var vs = el('div', 'vscroll');
+    root.appendChild(vs);
+    vs.appendChild(el('div', 'screen-title', esc(tr('Más como «{0}»', name))));
+    var grid = el('div', 'grid');
+    vs.appendChild(grid);
+    var status = el('div', 'empty', tr('Cargando…'));
+    grid.appendChild(status);
+    Promise.all([similarTitles(type, imdb), seenReady()]).then(function (r) {
+      var metas = filterSeen(r[0]), cards = [];
+      grid.innerHTML = '';
+      if (!metas.length) { grid.appendChild(el('div', 'empty', tr('Sin resultados'))); return; }
+      metas.forEach(function (m, i) {
+        var c = card(m, function () { openMeta(m); });
+        c._onfocus = function () { loadImages(cards, i + 14); };
+        cards.push(c);
+        grid.appendChild(c);
+      });
+      loadImages(cards, 13);
+      if (Nav.root === root) Nav.setRoot(root, cards[0]);
+    }).catch(function (e) { status.textContent = tr('No se pudo cargar ({0})', e.message); });
+    return { el: root };
+  }
+
   // ---------------------------------------------------------------- pantalla: búsqueda
 
   function searchScreen() {
@@ -1513,15 +1603,65 @@
     input.type = 'text';
     input.placeholder = tr('Título de película o serie…');
     focusable(input, function () { input.focus(); });
-    input._ondone = function (q) { run(q); };
+    var lastRun = null, liveTimer = null;
+    input._ondone = function (q) {
+      clearTimeout(liveTimer);
+      remember(q);
+      if (trim(q) !== lastRun) run(q);
+    };
+    // resultados mientras se escribe: a partir de 3 letras, cuando se deja de teclear un momento
+    input.addEventListener('input', function () {
+      clearTimeout(liveTimer);
+      liveTimer = setTimeout(function () {
+        var q = trim(input.value);
+        if (q.length >= 3 && q !== lastRun) run(q);
+      }, 800);
+    });
     box.appendChild(input);
     vs.appendChild(box);
     vs.appendChild(el('div', 'hint', tr('Pulsa OK para escribir y confirma con «Hecho».')));
+    var recent = el('div');
+    vs.appendChild(recent);
     var results = el('div');
     vs.appendChild(results);
 
+    function trim(q) { return (q || '').replace(/^\s+|\s+$/g, ''); }
+
+    // últimas 12 búsquedas, la más reciente primero
+    var recentQs = load('searches', []);
+    function remember(q) {
+      q = trim(q);
+      if (!q) return;
+      recentQs = [q].concat(recentQs.filter(function (x) { return x.toLowerCase() !== q.toLowerCase(); })).slice(0, 12);
+      save('searches', recentQs);
+      paintRecent();
+    }
+    function paintRecent() {
+      recent.innerHTML = '';
+      if (!recentQs.length) return;
+      var row = el('div', 'row chips-row');
+      row.appendChild(el('div', 'row-title', esc(tr('Búsquedas recientes'))));
+      var sc = el('div', 'hscroll chips');
+      sc.style.position = 'relative';
+      recentQs.forEach(function (q) {
+        var b = el('div', 'btn', esc(q));
+        focusable(b, function () { input.value = q; remember(q); run(q); });
+        sc.appendChild(b);
+      });
+      var clear = el('div', 'btn', esc(tr('Borrar')));
+      focusable(clear, function () { recentQs = []; save('searches', recentQs); paintRecent(); Nav.focus(input); });
+      sc.appendChild(clear);
+      row.appendChild(sc);
+      recent.appendChild(row);
+    }
+    paintRecent();
+
+    // abrir un resultado también guarda la búsqueda (aunque no se pulsara «Hecho»)
+    function pick(m) { remember(lastRun); openMeta(m); }
+
     function run(q) {
-      q = (q || '').replace(/^\s+|\s+$/g, '');
+      q = trim(q);
+      lastRun = q;
       results.innerHTML = '';
       if (!q) return;
       var enc = encodeURIComponent(q);
@@ -1531,13 +1671,13 @@
             return { id: 'tmdb:' + x.media_type + ':' + x.id, type: x.media_type === 'movie' ? 'movie' : 'series', name: x.title || x.name,
               poster: x.poster_path ? 'https://image.tmdb.org/t/p/w185' + x.poster_path : '' };
           });
-        }), openMeta, true);
+        }), pick, true);
       }
-      asyncRow(results, tr('Películas'), CINEMETA + '/catalog/movie/top/search=' + enc + '.json', openMeta);
-      asyncRow(results, tr('Series'), CINEMETA + '/catalog/series/top/search=' + enc + '.json', openMeta);
-      asyncRow(results, tr('Anime'), ANIME + '/catalog/anime/kitsu-anime-list/search=' + enc + '.json', openMeta);
+      asyncRow(results, tr('Películas'), CINEMETA + '/catalog/movie/top/search=' + enc + '.json', pick);
+      asyncRow(results, tr('Series'), CINEMETA + '/catalog/series/top/search=' + enc + '.json', pick);
+      asyncRow(results, tr('Anime'), ANIME + '/catalog/anime/kitsu-anime-list/search=' + enc + '.json', pick);
       addonCatalogs(true).forEach(function (c) {
-        asyncRow(results, c.title, c.addon.url + '/catalog/' + c.catalog.type + '/' + c.catalog.id + '/search=' + enc + '.json', openMeta);
+        asyncRow(results, c.title, c.addon.url + '/catalog/' + c.catalog.type + '/' + c.catalog.id + '/search=' + enc + '.json', pick);
       });
     }
 
@@ -1571,6 +1711,13 @@
           toast(added ? tr('Añadido a tu lista de Trakt') : tr('Quitado de tu lista de Trakt'));
         }).catch(function (e) { toast('Trakt: ' + e.message); });
       });
+      container.appendChild(b);
+    }
+
+    function similarButton(container) {
+      if (!imdbOf() || !(tmdbOn() || trakt.clientId)) return; // hace falta TMDB o una app de Trakt
+      var b = el('div', 'btn', tr('Más como esto'));
+      focusable(b, function () { push(similarScreen(type, imdbOf(), meta.name)); });
       container.appendChild(b);
     }
 
@@ -1677,6 +1824,7 @@
         actions.appendChild(fromStart);
       }
       watchlistButton(actions);
+      similarButton(actions);
     }
 
     function seasonsOf() {
@@ -1760,6 +1908,7 @@
       // fila superior: mi lista y mostrar/ocultar vistos
       var top = el('div');
       watchlistButton(top);
+      similarButton(top);
       var toggle = null;
       if (settings.hideWatched && seenCount) {
         toggle = el('div', 'btn', showSeen ? tr('Ocultar vistos') : seenCount === 1 ? tr('Mostrar 1 visto') : tr('Mostrar {0} vistos', seenCount));
@@ -2222,6 +2371,8 @@
       this.startPct = this.startAt ? 0 : ctx.startPct || 0;
       this.seekTarget = null;
       this.upNext = null; this.upNextOff = false; this.nextCtx = undefined; this.audioKey = '';
+      this.skips = []; this.skipNow = null;
+      skipTimes(ctx).then(function (list) { if (self.ctx === ctx) self.skips = list; });
       $('#player').classList.remove('hidden');
       $('#osd-title').textContent = ctx.label;
       Subs.box = $('#subs');
@@ -2229,7 +2380,7 @@
       this.syncMode = false;
       Subs.offset = subOffsets[ctx.videoId] ? subOffsets[ctx.videoId].o : 0;
       this.spinner(true, tr('Conectando con {0}…', DEBRID_NAMES[settings.debrid]));
-      $('#osd-help').textContent = tr('OK pausa · ◀ ▶ avanzar/retroceder · ▲ subtítulos · ▼ audio · Atrás salir');
+      $('#osd-help').textContent = tr('OK pausa · ◀ ▶ avanzar/retroceder · ▲ subtítulos · ▼ audio y temporizador · Atrás salir');
       this.showOSD();
       this.screen = {
         el: el('div'),
@@ -2393,10 +2544,51 @@
         ' · ' + fmtTime(this.duration) : '--:--';
       $('#osd-progress').style.width = this.duration ? (shown / this.duration * 100) + '%' : '0';
       $('#osd-state').textContent = this.seekTarget !== null ? (this.seekTarget >= this.time ? '⏩ ' : '⏪ ') + fmtTime(this.seekTarget) :
-        (this.paused ? tr('⏸ Pausa') + (this.probeText ? ' · ' + this.probeText : '') : '');
+        (this.paused ? tr('⏸ Pausa') + (this.probeText ? ' · ' + this.probeText : '') : '') +
+        (Player.sleep ? '  ⏾ ' + this.sleepLabel() : '');
       if (this.paused) this.showOSD(true);
       Subs.update(this.time);
+      this.checkSkip();
       this.checkUpNext();
+      this.checkSleep();
+    },
+
+    // opening/ending de AniSkip en curso (el ending solo si no hay siguiente episodio: entonces sale su aviso)
+    checkSkip: function () {
+      var cur = null, t = this.time, i;
+      if (this.started && this.seekTarget === null) {
+        for (i = 0; i < this.skips.length; i++) {
+          var sk = this.skips[i];
+          if (t >= sk.s && t < sk.e - 2 && !(sk.type === 'ed' && (this.upNext || this.nextCtx))) cur = sk;
+        }
+      }
+      if (cur && cur.type === 'op' && settings.autoSkip && !cur.done) {
+        cur.done = true;
+        toast(tr('Intro saltada'));
+        this.skipTo(cur.e);
+        cur = null;
+      }
+      if (cur === this.skipNow) return;
+      this.skipNow = cur;
+      var box = $('#skipbox');
+      if (!box) { // el index.html de la app instalada no trae este elemento
+        box = el('div', 'hidden');
+        box.id = 'skipbox';
+        $('#player').appendChild(box);
+      }
+      box.textContent = cur ? (cur.type === 'op' ? tr('⏭ OK: saltar intro') : tr('⏭ OK: saltar ending')) : '';
+      box.classList.toggle('hidden', !cur);
+    },
+
+    skipTo: function (t) {
+      this.seekTarget = Math.min(t, this.duration ? this.duration - 1 : t);
+      this.commitSeek();
+    },
+
+    // en el ending (si AniSkip lo conoce) ya se puede avisar del siguiente episodio
+    inEnding: function () {
+      for (var i = 0; i < this.skips.length; i++) if (this.skips[i].type === 'ed' && this.time >= this.skips[i].s) return true;
+      return false;
     },
 
     markStarted: function () {
@@ -2420,7 +2612,7 @@
         return;
       }
       if (this.upNextOff && this.nextCtx && left > 120) this.upNextOff = false; // ha vuelto atrás: avisar otra vez
-      if (this.upNextOff || this.paused || this.duration < 300 || left > 40) return;
+      if (this.upNextOff || this.paused || this.duration < 300 || (left > 40 && !this.inEnding())) return;
       if (this.nextCtx === undefined) this.nextCtx = this.ctx.next ? this.ctx.next() : null;
       if (!this.nextCtx) { this.upNextOff = true; return; }
       this.upNext = { left: 10 };
@@ -2451,6 +2643,7 @@
     playNext: function () {
       var next = this.nextCtx, me = this.screen;
       if (!next) return;
+      if (Player.sleep && Player.sleep.end) { this.sleepNow(); return; } // «al terminar este vídeo»: no seguir
       this.upNext = null;
       this.paintUpNext();
       while (stack.length > 1 && stack[stack.length - 1] !== me) pop(); // cerrar menús abiertos
@@ -2470,15 +2663,18 @@
     },
 
     autoAudio: function () {
-      var c = this.ctx, pref = c.type === 'series' ? srcPrefs[c.metaId] : null;
-      var want = (pref && pref.audio) || (settings.audioLang !== 'orig' ? settings.audioLang : '');
-      var tracks = this.avTracks('AUDIO'), cur = this.currentAudio(), i;
-      for (i = 0; want && tracks.length > 1 && i < tracks.length; i++) {
-        if (langKey(tracks[i].lang) !== want) continue;
-        if (tracks[i].index !== cur) {
-          try { webapis.avplay.setSelectTrack('AUDIO', tracks[i].index); cur = tracks[i].index; } catch (e) { /* se queda la de serie */ }
-        }
-        break;
+      var c = this.ctx, pref = srcPrefs[c.metaId];
+      // por orden: lo elegido en esta película o serie, el idioma de Ajustes, el último elegido a mano y, si no, inglés
+      // (muchos archivos traen primero una pista en ruso u otro doblaje)
+      var wants = [];
+      if (pref && pref.audio) wants.push(pref.audio);
+      if (settings.audioLang !== 'orig') wants.push(settings.audioLang, settings.lastAudio, 'eng');
+      var tracks = this.avTracks('AUDIO'), cur = this.currentAudio(), i, w, pick = null;
+      for (w = 0; !pick && tracks.length > 1 && w < wants.length; w++) {
+        for (i = 0; wants[w] && i < tracks.length; i++) if (langKey(tracks[i].lang) === wants[w]) { pick = tracks[i]; break; }
+      }
+      if (pick && pick.index !== cur) {
+        try { webapis.avplay.setSelectTrack('AUDIO', pick.index); cur = pick.index; } catch (e) { /* se queda la del archivo */ }
       }
       this.audioKey = '';
       for (i = 0; i < tracks.length; i++) if (tracks[i].index === cur || tracks.length === 1) this.audioKey = langKey(tracks[i].lang);
@@ -2568,22 +2764,63 @@
       } catch (e) { return []; }
     },
 
+    // ▼: temporizador y, si hay varias, pistas de audio
     audioMenu: function () {
-      if (this.backend !== 'av') { toast(tr('Cambiar el audio solo es posible con el reproductor nativo')); return; }
-      var tracks = this.avTracks('AUDIO');
-      if (tracks.length < 2) { toast(tr('Esta fuente solo tiene una pista de audio')); return; }
+      var tracks = this.backend === 'av' ? this.avTracks('AUDIO') : [];
       var cur = this.currentAudio(), c = this.ctx, self = this;
-      menu('Audio', tracks.map(function (k, i) {
-        return { label: (tr(LANG_NAMES[langKey(k.lang)]) || k.lang || tr('Pista {0}', i + 1)) + (k.codec ? ' · ' + k.codec : '') + (k.channels ? tr(' · {0} canales', k.channels) : ''),
-          value: k.index, lang: langKey(k.lang), selected: k.index === cur };
-      }), function (it) {
+      var items = [{ label: tr('⏾ Temporizador: {0}', this.sleepLabel()), value: 'sleep' }];
+      if (tracks.length > 1) {
+        items = items.concat(tracks.map(function (k, i) {
+          return { label: (tr(LANG_NAMES[langKey(k.lang)]) || k.lang || tr('Pista {0}', i + 1)) + (k.codec ? ' · ' + k.codec : '') + (k.channels ? tr(' · {0} canales', k.channels) : ''),
+            value: k.index, lang: langKey(k.lang), selected: k.index === cur };
+        }));
+      } else {
+        items.push({ label: this.backend === 'av' ? tr('Esta fuente solo tiene una pista de audio') : tr('Cambiar el audio solo es posible con el reproductor nativo'), value: 'none' });
+      }
+      menu(tr('Audio y temporizador'), items, function (it) {
+        if (it.value === 'sleep') { self.sleepMenu(); return; }
+        if (it.value === 'none') return;
         try { webapis.avplay.setSelectTrack('AUDIO', it.value); } catch (e) { toast(tr('No se pudo cambiar el audio')); return; }
         self.audioKey = it.lang;
-        if (c.type === 'series' && it.lang) {
+        if (it.lang) {
+          // se recuerda en esta película o serie, y como idioma de reserva para las demás
           saveSrcPref(c.metaId, { audio: it.lang });
-          toast(tr('Audio cambiado (se usará en el resto de la serie)'));
+          settings.lastAudio = it.lang;
+          saveSettings();
+          toast(c.type === 'series' ? tr('Audio cambiado (se usará en el resto de la serie)') : tr('Audio cambiado (se recordará para esta película)'));
         } else toast(tr('Audio cambiado'));
       });
+    },
+
+    sleepLabel: function () {
+      var sl = Player.sleep;
+      if (!sl) return tr('desactivado');
+      if (sl.end) return tr('al terminar este vídeo');
+      return tr('quedan {0} min', Math.max(1, Math.ceil((sl.at - Date.now()) / 60000)));
+    },
+
+    sleepMenu: function () {
+      var self = this, sl = Player.sleep;
+      menu(tr('Temporizador'), [
+        { label: tr('Desactivado'), value: 0, selected: !sl },
+        { label: tr('Al terminar este vídeo'), value: 'end', selected: !!(sl && sl.end) },
+        { label: tr('{0} minutos', 30), value: 30 }, { label: tr('{0} minutos', 60), value: 60 }, { label: tr('{0} minutos', 90), value: 90 }
+      ], function (it) {
+        Player.sleep = !it.value ? null : it.value === 'end' ? { end: true } : { at: Date.now() + it.value * 60000 };
+        toast(tr('Temporizador: {0}', self.sleepLabel()));
+      });
+    },
+
+    // se para guardando la posición; el salvapantallas vuelve y la tele se apaga sola con su ahorro de energía
+    checkSleep: function () {
+      var sl = Player.sleep;
+      if (sl && sl.at && Date.now() >= sl.at && stack[stack.length - 1] === this.screen) this.sleepNow();
+    },
+
+    sleepNow: function () {
+      Player.sleep = null;
+      pop();
+      toast(tr('Temporizador: reproducción detenida'), 8000);
     },
 
     subsMenu: function () {
@@ -2667,6 +2904,7 @@
         this.dismissUpNext();
         if (code === K.BACK || code === K.ESC || code === K.BKSP) return true;
       }
+      if (this.skipNow && code === K.ENTER) { this.skipTo(this.skipNow.e); return true; }
       switch (code) {
         case K.ENTER: case K.PLAYPAUSE: this.toggle(); return true;
         case K.PLAY:
@@ -2730,6 +2968,7 @@
     finished: function () {
       this.time = this.duration;
       if (this.nextCtx === undefined) this.nextCtx = this.ctx.next ? this.ctx.next() : null;
+      if (Player.sleep && Player.sleep.end) { this.sleepNow(); return; }
       if (this.nextCtx && settings.autoNext && !this.upNextOff) { this.playNext(); return; }
       this.saveProgress();
       pop();
@@ -2971,11 +3210,12 @@
     box.appendChild(el('div', 'row-title', tr('Reproducción')));
     box.lastChild.style.padding = '30px 0 16px 0';
     opt('Al pulsar Ver, reproducir directamente la mejor fuente', function () { return yesNo(settings.quickPlay); }, function () { settings.quickPlay = !settings.quickPlay; });
+    opt('Saltar solo las intros de anime', function () { return yesNo(settings.autoSkip); }, function () { settings.autoSkip = !settings.autoSkip; });
     opt('Pasar solo al siguiente episodio', function () { return yesNo(settings.autoNext); }, function () { settings.autoNext = !settings.autoNext; });
     opt('Idioma del audio', function () {
       return settings.audioLang === 'orig' ? tr('El que traiga el archivo') : tr('{0} si lo hay', tr(LANG_NAMES[settings.audioLang]));
     }, cycle('audioLang', AUDIO_LANGS));
-    box.appendChild(el('div', 'note', tr('Si cambias la pista con ▼ en una serie, se recuerda para el resto de episodios (y la fuente que elijas, también).')));
+    box.appendChild(el('div', 'note', tr('La pista que elijas con ▼ se recuerda en esa película o serie. Si un archivo no trae tu idioma, se prueba el último que elegiste y después inglés.')));
 
     box.appendChild(el('div', 'row-title', tr('Subtítulos')));
     box.lastChild.style.padding = '30px 0 16px 0';
@@ -3188,7 +3428,7 @@
 
   // ---------------------------------------------------------------- arranque
 
-  var VERSION = '0.12.0';
+  var VERSION = '0.13.0';
 
   function fitScreen() {
     var z = window.innerWidth / 1920;
