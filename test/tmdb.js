@@ -1,0 +1,60 @@
+// Títulos y sinopsis en español con TMDB (simulado): clave en Ajustes, tarjetas, ficha, episodios, búsqueda y app en inglés.
+const puppeteer = require('puppeteer-core');
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+(async () => {
+  const b = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: 'new', defaultViewport: { width: 1920, height: 1080 } });
+  const p = await b.newPage(); const errs = []; p.on('pageerror', (e) => errs.push(e.message));
+  await p.setRequestInterception(true);
+  const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*' };
+  const json = (req, o, st) => req.respond({ status: st || 200, headers: cors, contentType: 'application/json', body: JSON.stringify(o) });
+  const calls = [];
+  p.on('request', (req) => {
+    const u = req.url();
+    if (u.indexOf('api.themoviedb.org') < 0) return req.continue();
+    if (req.method() === 'OPTIONS') return req.respond({ status: 204, headers: cors });
+    calls.push(u.replace(/^https:\/\/api.themoviedb.org\/3/, '').replace(/[?&]api_key=[^&]*/, ''));
+    const ok = /api_key=CLAVE/.test(u) || req.headers().authorization === 'Bearer ' + 'x'.repeat(60);
+    if (!ok) return json(req, { status_message: 'Invalid API key' }, 401);
+    if (!/language=es-ES/.test(u)) return json(req, {}, 400);
+    if (u.indexOf('/movie/278?') >= 0) return json(req, { title: 'Cadena perpetua', overview: 'Sinopsis en español', genres: [{ name: 'Drama' }, { name: 'Crimen' }] });
+    if (u.indexOf('/find/tt0111161') >= 0) return json(req, { movie_results: [{ id: 278, title: 'Cadena perpetua' }], tv_results: [] });
+    if (u.indexOf('/find/tt0903747') >= 0) return json(req, { movie_results: [], tv_results: [{ id: 1396, name: 'Breaking Bad (ES)' }] });
+    if (u.indexOf('/find/') >= 0) return json(req, { movie_results: [{ id: 1, title: 'Título ES' }], tv_results: [] });
+    if (u.indexOf('/tv/1396/season/1') >= 0) return json(req, { episodes: [{ episode_number: 1, name: 'Piloto' }, { episode_number: 2, name: 'El gato está en la bolsa...' }, { episode_number: 3, name: 'Episodio 3' }] });
+    if (u.indexOf('/tv/1396?') >= 0) return json(req, { name: 'Breaking Bad (ES)', overview: 'Un profesor de química...', genres: [{ name: 'Drama' }] });
+    if (u.indexOf('/search/multi') >= 0) return json(req, { results: [{ media_type: 'tv', id: 71446, name: 'La casa de papel', poster_path: '/x.jpg' }, { media_type: 'person', id: 9, name: 'Alguien' }] });
+    if (u.indexOf('/tv/71446/external_ids') >= 0) return json(req, { imdb_id: 'tt6468322' });
+    return json(req, {});
+  });
+  const key = async (k, n = 1) => { for (let i = 0; i < n; i++) { await p.keyboard.press(k); await sleep(250); } };
+  await p.goto('http://127.0.0.1:8090/', { waitUntil: 'networkidle2' });
+  await p.evaluate(() => { localStorage.clear(); localStorage.setItem('stv.settings', JSON.stringify({ key: 'K', debrid: 'alldebrid', hideWatched: false })); });
+  await p.reload({ waitUntil: 'networkidle2' }); await sleep(2000);
+  console.log('sin clave, 1ª tarjeta:', await p.evaluate(() => document.querySelector('.card .name').textContent), '· llamadas TMDB:', calls.length);
+  // poner la clave en Ajustes
+  await p.evaluate(() => StremTV.Nav.focus(Array.from(document.querySelectorAll('.tab')).filter((x) => x.textContent === 'Ajustes')[0])); await key('Enter'); await sleep(800);
+  const setKey = async (v) => { await p.evaluate((v) => { const i = Array.from(document.querySelectorAll('input')).filter((x) => /themoviedb/.test(x.placeholder))[0]; StremTV.Nav.focus(i); i.focus(); i.value = v; }, v); await key('Enter'); await sleep(1200);
+    return p.evaluate(() => { const i = Array.from(document.querySelectorAll('input')).filter((x) => /themoviedb/.test(x.placeholder))[0]; return i.parentNode.nextSibling.textContent; }); };
+  console.log('clave mala:', await setKey('MALA'));
+  console.log('token largo:', await setKey('x'.repeat(60)));
+  console.log('clave buena:', await setKey('CLAVE'));
+  await key('Escape'); await sleep(2500);
+  console.log('Inicio con clave:', await p.evaluate(() => Array.from(document.querySelectorAll('.card .name')).slice(0, 4).map((x) => x.textContent).join(' | ')));
+  await p.evaluate(() => StremTV.open('movie', 'tt0111161')); await sleep(2500);
+  console.log('ficha película:', await p.evaluate(() => [document.querySelector('.detail h1').textContent, document.querySelector('.meta-line').textContent, document.querySelector('.desc').textContent].join(' · ')));
+  await key('Escape'); await sleep(400);
+  await p.evaluate(() => StremTV.open('series', 'tt0903747')); await sleep(3500);
+  console.log('ficha serie:', await p.evaluate(() => document.querySelector('.detail h1').textContent), '·', await p.evaluate(() => Array.from(document.querySelectorAll('.ep-title')).slice(0, 4).map((x) => x.textContent).join(' | ')));
+  await key('Escape'); await sleep(400);
+  await p.evaluate(() => StremTV.Nav.focus(Array.from(document.querySelectorAll('.tab')).filter((x) => x.textContent === 'Buscar')[0])); await key('Enter'); await sleep(500);
+  await p.evaluate(() => { const i = document.querySelector('.search-box input'); i.focus(); i.value = 'la casa de papel'; }); await key('Enter'); await sleep(2500);
+  console.log('búsqueda:', await p.evaluate(() => { const r = Array.from(document.querySelectorAll('.row')).filter((x) => /TMDB/.test(x.textContent))[0]; return r ? Array.from(r.querySelectorAll('.card .name')).map((x) => x.textContent).join() : 'NO'; }));
+  await p.evaluate(() => { const r = Array.from(document.querySelectorAll('.row')).filter((x) => /TMDB/.test(x.textContent))[0]; StremTV.Nav.focus(r.querySelector('.card')); }); await key('Enter'); await sleep(7000);
+  console.log('abre por IMDb:', await p.evaluate(() => { const d = document.querySelectorAll('.detail'); return d.length ? d[d.length - 1].innerText.slice(0, 80) : 'sin ficha'; }));
+  // app en inglés: no se usa TMDB
+  await p.evaluate(() => { StremTV.settings.lang = 'en'; }); const before = calls.length;
+  await p.evaluate(() => StremTV.open('movie', 'tt0068646')); await sleep(2500);
+  console.log('app en inglés:', await p.evaluate(() => document.querySelector('.detail h1').textContent), '· llamadas TMDB nuevas:', calls.length - before);
+  console.log('ERRORES:', errs.length ? errs : 'ninguno');
+  await b.close();
+})();

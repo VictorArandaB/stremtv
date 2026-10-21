@@ -202,6 +202,14 @@
     'Datos': 'Data', 'Borrar historial de reproducción': 'Clear playback history',
     '¿Borrar «Continuar viendo» y el progreso?': 'Clear “Continue watching” and progress?', 'Borrar': 'Clear', 'Historial borrado': 'History cleared',
     'Diagnóstico de reproducción': 'Playback diagnostics',
+    '▶ Continuar ({0} %)': '▶ Resume ({0} %)', 'Continuar desde el {0} % (Trakt)': 'Resume from {0} % (Trakt)',
+    'la clave de TMDB no es válida': 'the TMDB key is not valid', 'Resultados en español (TMDB)': 'Results in Spanish (TMDB)',
+    'Este título no tiene ID de IMDb y no se puede reproducir': 'This title has no IMDb ID and cannot be played',
+    'Títulos y sinopsis en español: clave de TMDB (pulsa OK para escribirla)': 'Spanish titles and synopses: TMDB key (press OK to type it)',
+    'Clave de la API o token de lectura de themoviedb.org': 'API key or read access token from themoviedb.org',
+    'Gratis en themoviedb.org → Ajustes → API. Solo se usa con la app en español.': 'Free at themoviedb.org → Settings → API. Only used with the app in Spanish.',
+    'Sin clave: los títulos salen en inglés.': 'No key: titles are shown in English.',
+    '✓ Clave válida («{0}»). Los cambios se ven al volver a Inicio.': '✓ Valid key (“{0}”). Changes show when you go back to Home.',
     'el token de GitHub no es válido': 'the GitHub token is not valid', 'el token no tiene permiso para Gists': 'the token has no Gist permission',
     'falta el token de GitHub': 'the GitHub token is missing', 'no hay ninguna copia en esta cuenta de GitHub': 'there is no backup in this GitHub account',
     'la copia está vacía': 'the backup is empty', 'la copia no es de StremTV': 'the backup is not from StremTV',
@@ -282,7 +290,7 @@
   var DEFAULTS = {
     debrid: 'realdebrid', key: '', onlyCached: true, maxQ: 'all',
     preferEs: true, compatFirst: true, hideWatched: true, maxRate: 'auto', measuredMbps: 0, measuredAt: 0,
-    subLang: 'spa', subSize: 'normal', autoNext: true, audioLang: 'spa', lang: 'es', quickPlay: true, subBg: true
+    subLang: 'spa', subSize: 'normal', autoNext: true, audioLang: 'spa', lang: 'es', quickPlay: true, subBg: true, tmdbKey: ''
   };
   var settings = extend(extend({}, DEFAULTS), load('settings', {}));
   function saveSettings() { save('settings', settings); }
@@ -446,6 +454,82 @@
       });
     });
     return out;
+  }
+
+  // ---------------------------------------------------------------- títulos y sinopsis en español (TMDB)
+
+  var TMDB = 'https://api.themoviedb.org/3';
+  // imdb → { k: 'movie' | 'tv' | '', id, n: título en español }; los títulos casi no cambian, así que no caduca
+  var tmdbIds = load('tmdbids', {});
+  var tmdbPending = {}, tmdbSaveTimer = null;
+
+  // solo con la app en español (Cinemeta ya da todo en inglés) y con clave
+  function tmdbOn() { return !!settings.tmdbKey && settings.lang !== 'en'; }
+
+  function tmdbGet(path) {
+    var key = settings.tmdbKey, bearer = key.length > 40; // token de lectura (v4) o clave de la API (v3)
+    var url = TMDB + path + (path.indexOf('?') >= 0 ? '&' : '?') + 'language=es-ES' + (bearer ? '' : '&api_key=' + encodeURIComponent(key));
+    return new Promise(function (resolve, reject) {
+      var x = new XMLHttpRequest();
+      x.open('GET', url, true);
+      x.timeout = 15000;
+      if (bearer) x.setRequestHeader('Authorization', 'Bearer ' + key);
+      x.onload = function () {
+        if (x.status === 401) return reject(new Error(tr('la clave de TMDB no es válida')));
+        if (x.status < 200 || x.status >= 300) return reject(new Error('TMDB ' + x.status));
+        try { resolve(JSON.parse(x.responseText)); } catch (e) { reject(new Error(tr('respuesta no válida'))); }
+      };
+      x.onerror = function () { reject(new Error(tr('sin conexión'))); };
+      x.ontimeout = function () { reject(new Error(tr('tiempo de espera agotado'))); };
+      x.send();
+    });
+  }
+
+  function saveTmdbIds() {
+    clearTimeout(tmdbSaveTimer);
+    tmdbSaveTimer = setTimeout(function () {
+      var ids = Object.keys(tmdbIds);
+      if (ids.length > 3000) {
+        ids.sort(function (a, b) { return tmdbIds[a].ts - tmdbIds[b].ts; });
+        for (var i = 0; i < ids.length - 3000; i++) delete tmdbIds[ids[i]];
+      }
+      save('tmdbids', tmdbIds);
+    }, 2000);
+  }
+
+  // id de TMDB y título en español de un título de IMDb (con caché)
+  function tmdbFind(imdb) {
+    if (tmdbIds[imdb]) return Promise.resolve(tmdbIds[imdb]);
+    if (!tmdbPending[imdb]) {
+      tmdbPending[imdb] = tmdbGet('/find/' + imdb + '?external_source=imdb_id').then(function (d) {
+        var m = (d.movie_results || [])[0], t = (d.tv_results || [])[0];
+        var r = m ? { k: 'movie', id: m.id, n: m.title } : t ? { k: 'tv', id: t.id, n: t.name } : { k: '', id: 0, n: '' };
+        r.ts = Date.now();
+        tmdbIds[imdb] = r;
+        saveTmdbIds();
+        delete tmdbPending[imdb];
+        return r;
+      }, function (e) { delete tmdbPending[imdb]; throw e; });
+    }
+    return tmdbPending[imdb];
+  }
+
+  // título, sinopsis y géneros en español para la ficha
+  function tmdbDetail(imdb) {
+    return tmdbFind(imdb).then(function (r) {
+      if (!r.id) return null;
+      return tmdbGet('/' + r.k + '/' + r.id).then(function (d) {
+        return { k: r.k, id: r.id, name: d.title || d.name, overview: d.overview, genres: (d.genres || []).map(function (g) { return g.name; }) };
+      });
+    });
+  }
+
+  // como mucho «ms» de espera: si TMDB tarda, la ficha sale en inglés
+  function withTimeout(promise, ms) {
+    return new Promise(function (resolve, reject) {
+      var t = setTimeout(function () { reject(new Error('timeout')); }, ms);
+      promise.then(function (v) { clearTimeout(t); resolve(v); }, function (e) { clearTimeout(t); reject(e); });
+    });
   }
 
   // ---------------------------------------------------------------- progreso
@@ -659,6 +743,26 @@
         });
         return out;
       });
+    },
+
+    // lo dejado a medias en cualquier dispositivo: imdb (película) o imdb:temporada:episodio → % visto
+    resumeCache: null,
+    resumeMap: function () {
+      if (!Trakt.linked()) return Promise.resolve({});
+      var c = Trakt.resumeCache;
+      if (c && Date.now() - c.at < 120000) return c.promise;
+      var promise = Trakt.call('GET', '/sync/playback?limit=100').then(function (items) {
+        var map = {};
+        (items || []).forEach(function (it) {
+          if (it.type === 'movie' && it.movie && it.movie.ids.imdb) map[it.movie.ids.imdb] = it.progress;
+          else if (it.type === 'episode' && it.show && it.show.ids.imdb && it.episode) {
+            map[it.show.ids.imdb + ':' + it.episode.season + ':' + it.episode.number] = it.progress;
+          }
+        });
+        return map;
+      }).catch(function () { return {}; });
+      Trakt.resumeCache = { at: Date.now(), promise: promise };
+      return promise;
     },
 
     // episodios de tus series de hace dos días a una semana vista
@@ -1068,6 +1172,8 @@
     }
     c.appendChild(p);
     c.appendChild(el('div', 'name', esc(extra && extra.label ? extra.label : meta.name)));
+    var id = String(meta.id || '');
+    c._imdb = extra && extra.label ? null : meta.imdb_id || (id.indexOf('tt') === 0 ? id : null);
     return focusable(c, onclick);
   }
 
@@ -1078,7 +1184,15 @@
         c._loaded = true;
         c.firstChild.style.backgroundImage = 'url("' + c._img + '")';
       }
+      if (c._loaded || !c._img) nameCard(c);
     }
+  }
+
+  // título en español de la tarjeta (solo las que ya se ven)
+  function nameCard(c) {
+    if (!c._imdb || c._named || !tmdbOn()) return;
+    c._named = true;
+    tmdbFind(c._imdb).then(function (r) { if (r.n) c.lastChild.textContent = r.n; }).catch(function () { c._named = false; });
   }
 
   function posterRow(title, metas, onPick, extras) {
@@ -1129,6 +1243,14 @@
 
   function openMeta(meta) {
     var id = String(meta.id || meta.metaId || '');
+    var tm = /^tmdb:(movie|tv):(\d+)$/.exec(id);
+    if (tm) { // resultado de la búsqueda en español: abrir por su id de IMDb
+      tmdbGet('/' + tm[1] + '/' + tm[2] + '/external_ids').then(function (x) {
+        if (x.imdb_id) push(detailScreen(meta.type, x.imdb_id));
+        else toast(tr('Este título no tiene ID de IMDb y no se puede reproducir'));
+      }).catch(function (e) { toast(tr('No se pudo cargar ({0})', e.message)); });
+      return;
+    }
     if (meta.imdb_id && id.indexOf('tt') !== 0 && id.indexOf('kitsu:') !== 0) id = meta.imdb_id;
     push(detailScreen(meta.type === 'anime' && id.indexOf('tt') === 0 ? 'series' : meta.type, id));
   }
@@ -1239,7 +1361,11 @@
       }), openMeta, true);
     });
 
-    return { el: root, onResume: function () { renderTop(); renderTrakt(); } };
+    return { el: root, onResume: function () {
+      renderTop(); renderTrakt();
+      // si se acaba de poner la clave de TMDB, traducir las tarjetas que ya se ven
+      Array.prototype.forEach.call(root.querySelectorAll('.card'), function (c) { if (c._loaded || !c._img) nameCard(c); });
+    } };
   }
 
   function resumeMovie(p) {
@@ -1399,6 +1525,14 @@
       results.innerHTML = '';
       if (!q) return;
       var enc = encodeURIComponent(q);
+      if (tmdbOn()) {
+        promiseRow(results, tr('Resultados en español (TMDB)'), tmdbGet('/search/multi?include_adult=false&query=' + enc).then(function (d) {
+          return (d.results || []).filter(function (x) { return x.media_type === 'movie' || x.media_type === 'tv'; }).map(function (x) {
+            return { id: 'tmdb:' + x.media_type + ':' + x.id, type: x.media_type === 'movie' ? 'movie' : 'series', name: x.title || x.name,
+              poster: x.poster_path ? 'https://image.tmdb.org/t/p/w185' + x.poster_path : '' };
+          });
+        }), openMeta, true);
+      }
       asyncRow(results, tr('Películas'), CINEMETA + '/catalog/movie/top/search=' + enc + '.json', openMeta);
       asyncRow(results, tr('Series'), CINEMETA + '/catalog/series/top/search=' + enc + '.json', openMeta);
       asyncRow(results, tr('Anime'), ANIME + '/catalog/anime/kitsu-anime-list/search=' + enc + '.json', openMeta);
@@ -1422,7 +1556,7 @@
     root.appendChild(d);
     var screen = { el: root };
     var meta = null, curSeason = null, episodesBox = null, actions = null;
-    var traktSeen = {}, traktNext = null, showSeen = false, progressRequested = false;
+    var traktSeen = {}, traktNext = null, showSeen = false, progressRequested = false, traktResume = {};
 
     function watchlistButton(container) {
       if (!Trakt.linked()) return;
@@ -1452,7 +1586,15 @@
       meta = res.meta;
       if (!meta) throw new Error(tr('sin datos'));
       if (isAnime) type = meta.type === 'movie' ? 'movie' : 'series';
-      render();
+      if (!tmdbOn() || !imdbOf()) return render();
+      return withTimeout(tmdbDetail(imdbOf()), 2500).then(function (es) {
+        if (es) {
+          if (es.name) meta.name = es.name;
+          if (es.overview) meta.description = es.overview;
+          if (es.genres.length) meta.genres = es.genres;
+          meta._tmdb = es;
+        }
+      }, function () { /* sin traducción: en inglés */ }).then(render);
     }).catch(function (e) {
       d.innerHTML = '';
       d.appendChild(el('div', 'loading', esc(tr('No se pudo cargar ({0})', e.message))));
@@ -1485,6 +1627,32 @@
       }
       Nav.setRoot(root, focusEl);
       screen.autoFocus = Nav.cur;
+      if (Trakt.linked() && imdbOf()) Trakt.resumeMap().then(applyResume);
+    }
+
+    function applyResume(map) {
+      traktResume = map;
+      var mine = imdbOf(), any = false;
+      for (var k in map) if (k === mine || k.indexOf(mine + ':') === 0) any = true;
+      if (!any || !meta) return;
+      var untouched = Nav.root === root && Nav.cur === screen.autoFocus;
+      if (type === 'movie') {
+        renderMovieActions();
+        if (untouched || (Nav.root === root && !root.contains(Nav.cur))) { Nav.setRoot(root, actions.firstChild); screen.autoFocus = Nav.cur; }
+        return;
+      }
+      if (!episodesBox || curSeason === null) return;
+      var idx = Nav.cur && Nav.cur.parentNode === episodesBox ? Array.prototype.indexOf.call(episodesBox.children, Nav.cur) : -1;
+      var target = renderEpisodes(seasonsOf().map[curSeason]);
+      if (Nav.root !== root) return;
+      if (untouched && target) { Nav.setRoot(root, target); screen.autoFocus = Nav.cur; }
+      else if (idx >= 0) Nav.setRoot(root, episodesBox.children[Math.min(idx, episodesBox.children.length - 1)]);
+    }
+
+    // posición de Trakt (de otro dispositivo) si la tele no tiene una propia: % entre 1 y 95
+    function resumePct(key) {
+      var x = traktResume[key];
+      return x && x >= 1 && x < 95 ? Math.round(x) : 0;
     }
 
     function base() {
@@ -1495,12 +1663,13 @@
     function renderMovieActions() {
       actions.innerHTML = '';
       var p = progress[meta.id];
-      var play = el('div', 'btn primary', p && !p.done && p.t > 60 ? tr('▶ Continuar ({0})', fmtTime(p.t)) : tr('▶ Ver'));
+      var local = p && !p.done && p.t > 60, pct = p ? 0 : resumePct(imdbOf()); // si la tele tiene progreso propio, manda el suyo
+      var play = el('div', 'btn primary', local ? tr('▶ Continuar ({0})', fmtTime(p.t)) : pct ? tr('▶ Continuar ({0} %)', pct) : tr('▶ Ver'));
       focusable(play, function () {
-        push(streamsScreen(extend(base(), { videoId: meta.id, label: meta.name, startAt: p && !p.done ? p.t : 0, autoPlay: settings.quickPlay })));
+        push(streamsScreen(extend(base(), { videoId: meta.id, label: meta.name, startAt: p && !p.done ? p.t : 0, startPct: pct, autoPlay: settings.quickPlay })));
       });
       actions.appendChild(play);
-      if (p && !p.done && p.t > 60) {
+      if (local || pct) {
         var fromStart = el('div', 'btn', tr('Desde el principio'));
         focusable(fromStart, function () {
           push(streamsScreen(extend(base(), { videoId: meta.id, label: meta.name, startAt: 0, autoPlay: settings.quickPlay })));
@@ -1558,6 +1727,7 @@
         imdbS: v.imdbSeason !== undefined ? v.imdbSeason : v.season,
         imdbE: v.imdbEpisode !== undefined ? v.imdbEpisode : v.episode,
         startAt: p && !p.done ? p.t : 0,
+        startPct: p ? 0 : resumePct(imdbOf() + ':' + traktKey(v)),
         runtime: parseRuntime(v.runtime) || parseRuntime(meta.runtime),
         next: function () { var n = nextEpisode(v); return n ? epCtx(n) : null; }
       });
@@ -1651,19 +1821,47 @@
       return renderEpisodes(seasons.map[curSeason]);
     }
 
+    // títulos de episodio en español: se piden una vez por temporada y se vuelve a pintar
+    var tmdbSeasons = {};
+    function translateEpisodes(eps) {
+      if (!meta._tmdb || meta._tmdb.k !== 'tv') return;
+      var need = {};
+      eps.forEach(function (v) { need[v.imdbSeason !== undefined ? v.imdbSeason : v.season] = true; });
+      Object.keys(need).forEach(function (n) {
+        if (tmdbSeasons[n]) return;
+        tmdbSeasons[n] = tmdbGet('/tv/' + meta._tmdb.id + '/season/' + n).then(function (d) {
+          var names = {};
+          (d.episodes || []).forEach(function (e) {
+            if (e.name && !/^(Episodio|Episode) \d+$/.test(e.name)) names[e.episode_number] = e.name; // sin traducir: se queda el original
+          });
+          var changed = false;
+          (meta.videos || []).forEach(function (v) {
+            var s = v.imdbSeason !== undefined ? v.imdbSeason : v.season, e = v.imdbEpisode !== undefined ? v.imdbEpisode : v.episode;
+            if (String(s) === n && names[e] && v.name !== names[e]) { v.name = names[e]; v.title = names[e]; changed = true; }
+          });
+          if (!changed || !episodesBox || curSeason === null || Nav.root !== root) return;
+          var idx = Nav.cur && Nav.cur.parentNode === episodesBox ? Array.prototype.indexOf.call(episodesBox.children, Nav.cur) : -1;
+          renderEpisodes(seasonsOf().map[curSeason]);
+          if (idx >= 0) Nav.setRoot(root, episodesBox.children[Math.min(idx, episodesBox.children.length - 1)]);
+        }).catch(function () { /* se quedan en inglés */ });
+      });
+    }
+
     function renderEpisodes(eps) {
+      translateEpisodes(eps);
       episodesBox.innerHTML = '';
       episodesBox.scrollTop = 0;
       var focusTarget = null;
       if (hidingSeen()) eps = eps.filter(function (v) { return !isSeenEp(v); });
       eps.forEach(function (v) {
         var p = progress[v.id];
+        var tp = p ? 0 : resumePct(imdbOf() + ':' + traktKey(v));
         var row = el('div', 'ep');
         var th = el('div', 'thumb');
         if (v.thumbnail) th.style.backgroundImage = 'url("' + v.thumbnail + '")';
-        if (p && p.d) {
+        if ((p && p.d) || tp) {
           var bar = el('div', 'pbar');
-          bar.style.cssText = 'position:absolute;left:0;bottom:0;height:8px;background:#8a7dff;width:' + (p.done ? 100 : Math.round(p.t / p.d * 100)) + '%';
+          bar.style.cssText = 'position:absolute;left:0;bottom:0;height:8px;background:#8a7dff;width:' + (tp || (p.done ? 100 : Math.round(p.t / p.d * 100))) + '%';
           th.appendChild(bar);
         }
         row.appendChild(th);
@@ -1675,11 +1873,12 @@
         var sub = [];
         if (date && !isNaN(date)) sub.push(date.toLocaleDateString ? fmtDate(date) : date.toDateString());
         if (p && !p.done && p.t > 60) sub.push(tr('Continuar desde {0}', fmtTime(p.t)));
+        else if (tp) sub.push(tr('Continuar desde el {0} % (Trakt)', tp));
         txt.appendChild(el('div', 'ep-sub', esc(sub.join(' · '))));
         row.appendChild(txt);
         focusable(row, function () { push(streamsScreen(extend(epCtx(v), { autoPlay: settings.quickPlay }))); });
         episodesBox.appendChild(row);
-        if (!focusTarget && ((p && !p.done) || traktNext === traktKey(v))) focusTarget = row;
+        if (!focusTarget && ((p && !p.done) || tp || traktNext === traktKey(v))) focusTarget = row;
       });
       return focusTarget;
     }
@@ -2020,6 +2219,7 @@
       this.duration = 0; this.time = 0; this.paused = false; this.started = false; this.lastPaused = null;
       this.finalUrl = null; this.probeText = ''; this.probeId = 0;
       this.startAt = ctx.startAt || 0;
+      this.startPct = this.startAt ? 0 : ctx.startPct || 0;
       this.seekTarget = null;
       this.upNext = null; this.upNextOff = false; this.nextCtx = undefined; this.audioKey = '';
       $('#player').classList.remove('hidden');
@@ -2125,6 +2325,7 @@
         });
         av.prepareAsync(function () {
           self.duration = av.getDuration() / 1000;
+          if (!self.startAt && self.startPct && self.duration) self.startAt = self.duration * self.startPct / 100;
           self.autoAudio();
           // por si la pista no se puede cambiar antes de empezar: volver a intentarlo ya reproduciendo
           var go = function () { av.play(); self.markStarted(); self.spinner(false); self.autoAudio(); };
@@ -2148,6 +2349,7 @@
       v.classList.remove('hidden');
       v.onloadedmetadata = function () {
         self.duration = v.duration || 0;
+        if (!self.startAt && self.startPct && self.duration) self.startAt = self.duration * self.startPct / 100;
         if (self.startAt > 5 && !self.started) v.currentTime = self.startAt;
       };
       v.onwaiting = function () { self.buffering = true; self.spinner(true, tr('Cargando…')); };
@@ -2557,6 +2759,7 @@
       if (this.started) {
         Trakt.scrobble('stop', this.ctx, this.pct()); // >= 80 % lo marca como visto
         Trakt.upNextCache = null; // el siguiente episodio ha podido cambiar
+        Trakt.resumeCache = null;
       }
       this.saveProgress();
       clearInterval(this.tickTimer);
@@ -2673,6 +2876,30 @@
       saveSettings();
       setTimeout(rebuildUI, 0);
     });
+
+    var tf = el('div', 'field');
+    tf.appendChild(el('label', null, esc(tr('Títulos y sinopsis en español: clave de TMDB (pulsa OK para escribirla)'))));
+    var tmdbInput = el('input');
+    tmdbInput.type = 'text';
+    tmdbInput.value = settings.tmdbKey;
+    tmdbInput.placeholder = tr('Clave de la API o token de lectura de themoviedb.org');
+    tmdbInput.setAttribute('autocomplete', 'off');
+    tmdbInput.setAttribute('spellcheck', 'false');
+    focusable(tmdbInput, function () { tmdbInput.focus(); });
+    var tmdbStatus = el('div', 'note', esc(tr('Gratis en themoviedb.org → Ajustes → API. Solo se usa con la app en español.')));
+    tmdbInput._ondone = function (v) {
+      settings.tmdbKey = (v || '').replace(/\s+/g, '');
+      tmdbInput.value = settings.tmdbKey;
+      saveSettings();
+      if (!settings.tmdbKey) { tmdbStatus.textContent = tr('Sin clave: los títulos salen en inglés.'); return; }
+      tmdbStatus.textContent = tr('Comprobando…');
+      tmdbGet('/movie/278').then(function (d) {
+        tmdbStatus.textContent = tr('✓ Clave válida («{0}»). Los cambios se ven al volver a Inicio.', d.title);
+      }).catch(function (e) { tmdbStatus.textContent = '✗ ' + e.message; });
+    };
+    tf.appendChild(tmdbInput);
+    box.appendChild(tf);
+    box.appendChild(tmdbStatus);
 
     box.appendChild(el('div', 'row-title', tr('Servicio debrid')));
     box.lastChild.style.padding = '10px 0 16px 0';
@@ -2961,7 +3188,7 @@
 
   // ---------------------------------------------------------------- arranque
 
-  var VERSION = '0.11.1';
+  var VERSION = '0.12.0';
 
   function fitScreen() {
     var z = window.innerWidth / 1920;

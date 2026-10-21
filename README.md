@@ -14,6 +14,8 @@ Escrito en ES5 y CSS sin funciones modernas para que funcione en el motor web de
 - «Continuar viendo» y progreso por episodio (guardado en la propia tele).
 - **Siguiente episodio automático**: aviso en los últimos 40 s con cuenta atrás de 10 s (OK lo pone ya, Atrás lo descarta).
 - En cada serie recuerda la **fuente** (misma release o pack) y la **pista de audio** elegidas y las usa en los demás episodios.
+- **Títulos y sinopsis en español** con una clave gratuita de TMDB (Ajustes, debajo del idioma): tarjetas, fichas, géneros, nombres de episodio y búsqueda en español.
+- **Retomar desde Trakt** lo dejado a medias en otro dispositivo («▶ Continuar (35 %)»).
 - **Copia de seguridad** en un Gist secreto de GitHub (Ajustes → Copia de seguridad): diaria y automática; para restaurar basta con escribir el token.
 - **Addons de Stremio**: en Ajustes → Addons se pega la URL de un manifest; sus fuentes se suman a las de Torrentio, sus catálogos salen en Inicio (hasta 4 filas) y en la búsqueda, y sus subtítulos en el menú ▲.
 - **Explorar**: películas o series por género y año, populares o mejor valoradas.
