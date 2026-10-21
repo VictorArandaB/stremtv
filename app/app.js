@@ -1204,6 +1204,10 @@
       this.backend = 'av';
       $('#video').classList.add('hidden');
       $('#avplayer').classList.remove('hidden');
+      // AVPlay pinta el vídeo en un plano por debajo de la web: hay que dejarla transparente
+      document.documentElement.style.background = 'transparent';
+      document.body.style.background = 'transparent';
+      $('#player').style.background = 'transparent';
       try {
         av.open(url);
         av.setDisplayRect(0, 0, 1920, 1080);
@@ -1226,9 +1230,8 @@
           if (self.startAt > 5) av.seekTo(Math.floor(self.startAt * 1000), go, go);
           else go();
         }, function (e) {
-          // si AVPlay no puede, probar con el reproductor HTML5
           try { av.close(); } catch (x) { /* ya cerrado */ }
-          self.openHTML(url);
+          self.fail('El reproductor nativo no ha podido abrir esta fuente (' + (e && e.name ? e.name : e) + ').');
         });
       } catch (e) {
         try { av.close(); } catch (x) { /* ya cerrado */ }
@@ -1474,6 +1477,9 @@
       try { v.load(); } catch (e) { /* nada que liberar */ }
       this.backend = null;
       Subs.reset();
+      document.documentElement.style.background = '';
+      document.body.style.background = '';
+      $('#player').style.background = '';
       $('#player').classList.add('hidden');
       this.spinner(false);
       try {
@@ -1703,7 +1709,7 @@
 
   // ---------------------------------------------------------------- arranque
 
-  var VERSION = '0.3.0';
+  var VERSION = '0.4.0';
 
   function fitScreen() {
     var z = window.innerWidth / 1920;
