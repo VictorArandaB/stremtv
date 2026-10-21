@@ -65,6 +65,12 @@
 
   function extend(dst, src) { for (var k in src) if (src.hasOwnProperty(k)) dst[k] = src[k]; return dst; }
 
+  function fmtOffset(o) {
+    o = Math.round((o || 0) * 100) / 100;
+    if (!o) return 'sin desfase';
+    return (o > 0 ? '+' : '−') + Math.abs(o).toFixed(2).replace('.', ',') + ' s' + (o > 0 ? ' (más tarde)' : ' (antes)');
+  }
+
   function fmtTime(sec) {
     sec = Math.max(0, Math.floor(sec || 0));
     var h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
@@ -1199,6 +1205,20 @@
     return cues;
   }
 
+  // desfase de subtítulos recordado por vídeo (los 300 más recientes)
+  var subOffsets = load('suboffsets', {});
+  function saveSubOffset(videoId, offset) {
+    if (!videoId) return;
+    if (Math.abs(offset) < 0.01) delete subOffsets[videoId];
+    else subOffsets[videoId] = { o: Math.round(offset * 100) / 100, ts: Date.now() };
+    var ids = Object.keys(subOffsets);
+    if (ids.length > 300) {
+      ids.sort(function (a, b) { return subOffsets[a].ts - subOffsets[b].ts; });
+      for (var i = 0; i < ids.length - 300; i++) delete subOffsets[ids[i]];
+    }
+    save('suboffsets', subOffsets);
+  }
+
   var Subs = {
     cues: [], idx: 0, offset: 0, list: [], current: null, embedded: false,
     box: null,
@@ -1264,6 +1284,8 @@
       $('#osd-title').textContent = ctx.label;
       Subs.box = $('#subs');
       Subs.reset();
+      this.syncMode = false;
+      Subs.offset = subOffsets[ctx.videoId] ? subOffsets[ctx.videoId].o : 0;
       this.spinner(true, 'Conectando con ' + DEBRID_NAMES[settings.debrid] + '…');
       this.showOSD();
       push({
@@ -1511,17 +1533,11 @@
       Subs.list.forEach(function (s) {
         items.push({ label: (s.lang === 'spa' ? 'Español' : 'Inglés') + ' · ' + (s.subtitleFileName || s.id), value: 'ext', sub: s, selected: Subs.current === s });
       });
-      if (Subs.current) {
-        items.push({ label: 'Adelantar subtítulos 0,5 s', value: 'minus' });
-        items.push({ label: 'Retrasar subtítulos 0,5 s', value: 'plus' });
+      if (Subs.current || Subs.embedded) {
+        items.unshift({ label: 'Sincronizar subtítulos… (ahora ' + fmtOffset(Subs.offset) + ')', value: 'sync' });
       }
       menu('Subtítulos', items, function (it) {
-        if (it.value === 'minus' || it.value === 'plus') {
-          Subs.offset += it.value === 'plus' ? 0.5 : -0.5;
-          Subs.idx = 0;
-          toast('Desfase de subtítulos: ' + (Subs.offset > 0 ? '+' : '') + Subs.offset.toFixed(1) + ' s');
-          return;
-        }
+        if (it.value === 'sync') { self.startSync(); return; }
         Subs.embedded = false;
         try { if (self.backend === 'av') webapis.avplay.setSilentSubtitle(true); } catch (e) { /* no soportado */ }
         if (it.value === 'off') { Subs.select(null); return; }
@@ -1538,7 +1554,49 @@
       });
     },
 
+    // modo sincronización: ◀ ▶ ±0,25 s, ▲ ▼ ±1 s, OK/Atrás termina (sin salir del vídeo)
+    startSync: function () {
+      this.syncMode = true;
+      this.paintSync();
+    },
+
+    paintSync: function () {
+      var box = $('#syncbox');
+      if (!box) { // la app instalada puede tener un index.html anterior sin este elemento
+        box = el('div', 'hidden');
+        box.id = 'syncbox';
+        $('#player').appendChild(box);
+      }
+      if (!this.syncMode) { box.classList.add('hidden'); return; }
+      box.innerHTML = '<div class="sync-val">' + fmtOffset(Subs.offset) + '</div>' +
+        '<div class="sync-help">◀ adelantar · ▶ retrasar (0,25 s) &nbsp;·&nbsp; ▲ ▼ 1 s &nbsp;·&nbsp; OK terminar</div>';
+      box.classList.remove('hidden');
+    },
+
+    adjustSync: function (delta) {
+      Subs.offset = Math.round((Subs.offset + delta) * 100) / 100;
+      Subs.idx = 0;
+      if (Subs.embedded) {
+        try { webapis.avplay.setSubtitlePosition(Math.round(Subs.offset * 1000)); } catch (e) { /* no soportado */ }
+      }
+      saveSubOffset(this.ctx && this.ctx.videoId, Subs.offset);
+      this.paintSync();
+    },
+
     onKey: function (code) {
+      if (this.syncMode) {
+        switch (code) {
+          case K.LEFT: this.adjustSync(-0.25); return true;
+          case K.RIGHT: this.adjustSync(0.25); return true;
+          case K.DOWN: this.adjustSync(-1); return true;
+          case K.UP: this.adjustSync(1); return true;
+          case K.ENTER: case K.BACK: case K.ESC: case K.BKSP:
+            this.syncMode = false;
+            this.paintSync();
+            toast('Subtítulos: ' + fmtOffset(Subs.offset) + ' (se recordará para este vídeo)');
+            return true;
+        }
+      }
       switch (code) {
         case K.ENTER: case K.PLAYPAUSE: this.toggle(); return true;
         case K.PLAY:
@@ -1589,6 +1647,8 @@
     },
 
     close: function () {
+      this.syncMode = false;
+      this.paintSync();
       if (this.started) Trakt.scrobble('stop', this.ctx, this.pct()); // >= 80 % lo marca como visto
       this.saveProgress();
       clearInterval(this.tickTimer);
@@ -1839,7 +1899,7 @@
 
   // ---------------------------------------------------------------- arranque
 
-  var VERSION = '0.5.0';
+  var VERSION = '0.5.1';
 
   function fitScreen() {
     var z = window.innerWidth / 1920;

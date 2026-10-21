@@ -131,3 +131,9 @@ html, body { width: 1920px; height: 1080px; overflow: hidden; background: #0d0f1
 .seasons.hscroll { padding: 10px 0; }
 .list .loading { padding: 20px 0; }
 .badge.warn { background: #8a5a12; color: #fff; }
+
+/* Modo sincronización de subtítulos */
+#syncbox { position: absolute; left: 50%; top: 80px; width: 900px; margin-left: -450px; text-align: center; padding: 24px 30px;
+  background: rgba(13,15,20,0.88); border: 2px solid #8a7dff; border-radius: 16px; z-index: 20; }
+#syncbox .sync-val { font-size: 52px; font-weight: bold; color: #fff; }
+#syncbox .sync-help { font-size: 24px; color: #aab; margin-top: 10px; }

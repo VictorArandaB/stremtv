@@ -1,6 +1,6 @@
 {
   "name": "stremtv",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Cliente ligero tipo Stremio para teles Samsung Tizen 3+ (Cinemeta + Kitsu anime + Torrentio + Real-Debrid/AllDebrid + Trakt)",
   "packageType": "app",
   "appName": "StremTV",
