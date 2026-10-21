@@ -12,6 +12,9 @@ Escrito en ES5 y CSS sin funciones modernas para que funcione en el motor web de
 - Reproductor nativo de Samsung (AVPlay) si está disponible, con HTML5 como alternativa. Cambio de pista de audio con AVPlay.
 - Subtítulos en español/inglés de OpenSubtitles, con ajuste de sincronía.
 - «Continuar viendo» y progreso por episodio (guardado en la propia tele).
+- **Siguiente episodio automático**: aviso en los últimos 40 s con cuenta atrás de 10 s (OK lo pone ya, Atrás lo descarta).
+- En cada serie recuerda la **fuente** (misma release o pack) y la **pista de audio** elegidas y las usa en los demás episodios.
+- **Audio en español automático** si el archivo lo trae (y entonces no pone subtítulos en español).
 - **Trakt**: vinculación con código, scrobble automático (visto al pasar del 80 %), «Continuar», tu lista, recomendaciones y episodios vistos. El anime se registra usando su equivalencia en IMDb.
 
 ## Instalar en TizenBrew

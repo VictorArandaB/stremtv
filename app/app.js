@@ -94,7 +94,7 @@
   var DEFAULTS = {
     debrid: 'realdebrid', key: '', onlyCached: true, maxQ: 'all',
     preferEs: true, compatFirst: true, hideWatched: true, maxRate: 'auto', measuredMbps: 0, measuredAt: 0,
-    subLang: 'spa', subSize: 'normal'
+    subLang: 'spa', subSize: 'normal', autoNext: true, audioLang: 'spa'
   };
   var settings = extend(extend({}, DEFAULTS), load('settings', {}));
   function saveSettings() { save('settings', settings); }
@@ -151,6 +151,17 @@
   }
 
   var SUB_NAMES = { spa: 'Español', eng: 'Inglés', off: 'Desactivados' };
+  var LANG_NAMES = { spa: 'Español', eng: 'Inglés', jpn: 'Japonés', fre: 'Francés', fra: 'Francés', ger: 'Alemán', deu: 'Alemán',
+    ita: 'Italiano', por: 'Portugués', kor: 'Coreano', cat: 'Catalán' };
+
+  // código de idioma de una pista (es, spa, Spanish, cas… → spa)
+  function langKey(l) {
+    l = String(l || '').toLowerCase();
+    if (/^(es($|[-_])|spa|esp|spanish|cas|lat)/.test(l)) return 'spa';
+    if (/^(en($|[-_])|eng)/.test(l)) return 'eng';
+    if (/^(ja($|[-_])|jpn|jap)/.test(l)) return 'jpn';
+    return l === 'und' ? '' : l.slice(0, 3);
+  }
 
   function torrentioBase() {
     var filter = ['scr', 'cam', 'unknown'];
@@ -936,6 +947,30 @@
       return best ? best.season : null;
     }
 
+    // siguiente episodio ya emitido (sin pasar a los especiales)
+    function nextEpisode(v) {
+      var s = seasonsOf(), list = [];
+      s.nums.forEach(function (n) { if (n !== 0) list = list.concat(s.map[n]); });
+      var i = list.indexOf(v), n = i >= 0 ? list[i + 1] : null;
+      if (!n || (n.released && new Date(n.released) > new Date())) return null;
+      return n;
+    }
+
+    // contexto de reproducción de un episodio; next() da el del siguiente para encadenarlos
+    function epCtx(v) {
+      var p = progress[v.id];
+      var label = 'T' + v.season + ':E' + v.episode + ' · ' + (v.name || v.title || ('Episodio ' + v.episode));
+      return extend(base(), {
+        videoId: v.id, label: meta.name + ' — ' + label, epLabel: label,
+        imdb: v.imdb_id || imdbOf(),
+        imdbS: v.imdbSeason !== undefined ? v.imdbSeason : v.season,
+        imdbE: v.imdbEpisode !== undefined ? v.imdbEpisode : v.episode,
+        startAt: p && !p.done ? p.t : 0,
+        runtime: parseRuntime(v.runtime) || parseRuntime(meta.runtime),
+        next: function () { var n = nextEpisode(v); return n ? epCtx(n) : null; }
+      });
+    }
+
     function isSeenEp(v) {
       var p = progress[v.id];
       return !!((p && p.done) || traktSeen[traktKey(v)]);
@@ -1050,17 +1085,7 @@
         if (p && !p.done && p.t > 60) sub.push('Continuar desde ' + fmtTime(p.t));
         txt.appendChild(el('div', 'ep-sub', esc(sub.join(' · '))));
         row.appendChild(txt);
-        var label = 'T' + v.season + ':E' + v.episode + ' · ' + epTitle;
-        focusable(row, function () {
-          push(streamsScreen(extend(base(), {
-            videoId: v.id, label: meta.name + ' — ' + label, epLabel: label,
-            imdb: v.imdb_id || imdbOf(),
-            imdbS: v.imdbSeason !== undefined ? v.imdbSeason : v.season,
-            imdbE: v.imdbEpisode !== undefined ? v.imdbEpisode : v.episode,
-            startAt: p && !p.done ? p.t : 0,
-            runtime: parseRuntime(v.runtime) || parseRuntime(meta.runtime)
-          })));
-        });
+        focusable(row, function () { push(streamsScreen(epCtx(v))); });
         episodesBox.appendChild(row);
         if (!focusTarget && ((p && !p.done) || traktNext === traktKey(v))) focusTarget = row;
       });
@@ -1151,8 +1176,38 @@
       media: mediaInfo(((s.behaviorHints && s.behaviorHints.filename) || '') + ' ' + title + ' ' + quality),
       es: title.indexOf(FLAG_ES) >= 0 || title.indexOf(FLAG_MX) >= 0 ||
         /(^|[^a-z])(spa|spanish|castellano|espa[nñ]ol|latino|esp)([^a-z]|$)/i.test(title),
+      hash: s.infoHash || (/\/([a-f0-9]{40})\//i.exec(s.url || '') || [])[1] || '',
+      binge: (s.behaviorHints && s.behaviorHints.bingeGroup) || '',
+      group: releaseGroup(((s.behaviorHints && s.behaviorHints.filename) || '') || lines[0]),
       raw: s
     };
+  }
+
+  // grupo que firma la release: «…-NTb.mkv» o «[SubsPlease] …» en anime
+  function releaseGroup(file) {
+    var f = String(file || '').replace(/\.(mkv|mp4|avi|m4v|ts)$/i, '');
+    var m = /^\[([^\]]+)\]/.exec(f) || /-([A-Za-z0-9]+)(\[[^\]]*\])?$/.exec(f);
+    return m ? m[1].toLowerCase() : '';
+  }
+
+  // fuente (y pista de audio) elegida en cada serie, para usar la misma en los demás episodios
+  var srcPrefs = load('srcprefs', {});
+  function saveSrcPref(metaId, data) {
+    if (!metaId) return;
+    srcPrefs[metaId] = extend(srcPrefs[metaId] || {}, data);
+    srcPrefs[metaId].ts = Date.now();
+    var ids = Object.keys(srcPrefs);
+    if (ids.length > 100) {
+      ids.sort(function (a, b) { return srcPrefs[a].ts - srcPrefs[b].ts; });
+      for (var i = 0; i < ids.length - 100; i++) delete srcPrefs[ids[i]];
+    }
+    save('srcprefs', srcPrefs);
+  }
+  // 4 = mismo torrent (pack de temporada), 2 = mismo bingeGroup de Torrentio, 1 = mismo grupo
+  function prefScore(s, pref) {
+    if (!pref) return 0;
+    return (pref.hash && s.hash === pref.hash ? 4 : 0) + (pref.binge && s.binge === pref.binge ? 2 : 0) +
+      (pref.group && s.group === pref.group ? 1 : 0);
   }
 
   function streamsScreen(ctx) {
@@ -1163,7 +1218,7 @@
     var list = el('div', 'list vscroll');
     list.setAttribute('data-pad', '0');
     root.appendChild(list);
-    var screen = { el: root };
+    var screen = { el: root, streamsOf: ctx.videoId };
 
     function message(text, withSettings) {
       list.innerHTML = '';
@@ -1199,8 +1254,11 @@
         });
         // orden: primero lo que la tele puede reproducir y cabe en la conexión, después español, después Torrentio
         var tier = function (x) { return (x.heavy ? 3 : 0) + (!settings.compatFirst ? 0 : x.media.risk <= 1 ? 0 : x.media.risk <= 3 ? 1 : 2); };
+        // en series, antes que nada la misma release que se vio en el episodio anterior
+        var pref = ctx.type === 'series' ? srcPrefs[ctx.metaId] : null;
+        streams.forEach(function (x) { x.pref = prefScore(x, pref); });
         streams = streams.map(function (s, i) { s._i = i; return s; }).sort(function (a, b) {
-          return (tier(a) - tier(b)) || (settings.preferEs ? b.es - a.es : 0) || (a._i - b._i);
+          return (b.pref - a.pref) || (tier(a) - tier(b)) || (settings.preferEs ? b.es - a.es : 0) || (a._i - b._i);
         });
         if (!streams.length) {
           sub.textContent = '';
@@ -1211,11 +1269,13 @@
         sub.textContent = streams.length + ' fuentes · ' + DEBRID_NAMES[settings.debrid] +
           (limit ? ' · tu conexión: hasta ~' + limit + ' Mb/s' : '');
         list.innerHTML = '';
+        var auto = null;
         streams.forEach(function (s) {
           var row = el('div', 'stream');
           row.appendChild(el('div', 'q', esc(s.quality)));
           var info = el('div', 'info');
           var badges = '';
+          if (s.pref >= 2) badges += '<span class="badge ok">↺ Como el anterior</span>';
           if (s.cached) badges += '<span class="badge ok">⚡ Instantáneo</span>';
           else if (s.download) badges += '<span class="badge">Descargar en debrid</span>';
           if (s.es) badges += '<span class="badge es">ES</span>';
@@ -1232,7 +1292,16 @@
           row.appendChild(info);
           focusable(row, function () { Player.open(s, ctx, row); });
           list.appendChild(row);
+          // siguiente episodio automático: la misma release que antes o, si no, la primera instantánea que quepa
+          if (ctx.autoPlay && !auto && (s.pref >= 2 || (s.cached && !s.heavy))) auto = { s: s, row: row };
         });
+        if (ctx.autoPlay && !auto) auto = { s: streams[0], row: list.firstChild };
+        if (auto) {
+          Nav.setRoot(root, auto.row);
+          ctx.autoPlay = false; // al volver a esta lista no arrancar otra vez
+          Player.open(auto.s, ctx, auto.row);
+          return;
+        }
         Nav.setRoot(root);
       }).catch(function (e) {
         sub.textContent = '';
@@ -1281,10 +1350,10 @@
   }
 
   var Subs = {
-    cues: [], idx: 0, offset: 0, list: [], current: null, embedded: false,
+    cues: [], idx: 0, offset: 0, list: [], current: null, embedded: false, auto: false,
     box: null,
     reset: function () {
-      this.cues = []; this.idx = 0; this.offset = 0; this.list = []; this.current = null; this.embedded = false;
+      this.cues = []; this.idx = 0; this.offset = 0; this.list = []; this.current = null; this.embedded = false; this.auto = false;
       this.box.textContent = '';
       this.box.className = settings.subSize === 'big' ? 'big' : '';
     },
@@ -1342,6 +1411,7 @@
       this.finalUrl = null; this.probeText = ''; this.probeId = 0;
       this.startAt = ctx.startAt || 0;
       this.seekTarget = null;
+      this.upNext = null; this.upNextOff = false; this.nextCtx = undefined; this.audioKey = '';
       $('#player').classList.remove('hidden');
       $('#osd-title').textContent = ctx.label;
       Subs.box = $('#subs');
@@ -1350,11 +1420,12 @@
       Subs.offset = subOffsets[ctx.videoId] ? subOffsets[ctx.videoId].o : 0;
       this.spinner(true, 'Conectando con ' + DEBRID_NAMES[settings.debrid] + '…');
       this.showOSD();
-      push({
+      this.screen = {
         el: el('div'),
         onKey: function (code) { return self.onKey(code); },
         onClose: function () { self.close(); }
-      });
+      };
+      push(this.screen);
       try {
         if (window.webapis && webapis.appcommon) webapis.appcommon.setScreenSaver(webapis.appcommon.AppCommonScreenSaverState.SCREEN_SAVER_OFF);
       } catch (e) { /* sin control del salvapantallas */ }
@@ -1369,9 +1440,9 @@
       });
 
       Subs.fetchList(ctx).then(function (list) {
-        if (settings.subLang === 'off') return;
+        if (self.ctx !== ctx || settings.subLang === 'off' || self.skipAutoSubs()) return;
         for (var i = 0; i < list.length; i++) {
-          if (list[i].lang === settings.subLang) { Subs.select(list[i]); return; }
+          if (list[i].lang === settings.subLang) { Subs.auto = true; Subs.select(list[i]); return; }
         }
       });
       this.tickTimer = setInterval(function () { self.tick(); }, 250);
@@ -1443,7 +1514,9 @@
         });
         av.prepareAsync(function () {
           self.duration = av.getDuration() / 1000;
-          var go = function () { av.play(); self.started = true; self.spinner(false); };
+          self.autoAudio();
+          // por si la pista no se puede cambiar antes de empezar: volver a intentarlo ya reproduciendo
+          var go = function () { av.play(); self.markStarted(); self.spinner(false); self.autoAudio(); };
           if (self.startAt > 5) av.seekTo(Math.floor(self.startAt * 1000), go, go);
           else go();
         }, function (e) {
@@ -1467,7 +1540,7 @@
         if (self.startAt > 5 && !self.started) v.currentTime = self.startAt;
       };
       v.onwaiting = function () { self.buffering = true; self.spinner(true, 'Cargando…'); };
-      v.onplaying = function () { self.buffering = false; self.started = true; self.spinner(false); };
+      v.onplaying = function () { self.buffering = false; self.markStarted(); self.spinner(false); };
       v.onended = function () { self.finished(); };
       v.onerror = function () {
         var code = v.error ? v.error.code : 0;
@@ -1508,7 +1581,97 @@
         (this.paused ? '⏸ Pausa' + (this.probeText ? ' · ' + this.probeText : '') : '');
       if (this.paused) this.showOSD(true);
       Subs.update(this.time);
+      this.checkUpNext();
     },
+
+    markStarted: function () {
+      if (this.started) return;
+      this.started = true;
+      var c = this.ctx, s = this.stream;
+      if (c.type === 'series') saveSrcPref(c.metaId, { hash: s.hash, binge: s.binge, group: s.group });
+    },
+
+    // --- siguiente episodio: aviso en los últimos 40 s y cuenta atrás de 10 s
+    checkUpNext: function () {
+      if (!this.started || !this.duration) return;
+      var left = this.duration - this.time;
+      if (this.upNext) {
+        // la cuenta atrás se para en pausa o con un menú abierto
+        if (settings.autoNext && !this.paused && stack[stack.length - 1] === this.screen) {
+          this.upNext.left -= 0.25;
+          if (this.upNext.left <= 0) { this.playNext(); return; }
+        }
+        this.paintUpNext();
+        return;
+      }
+      if (this.upNextOff && this.nextCtx && left > 120) this.upNextOff = false; // ha vuelto atrás: avisar otra vez
+      if (this.upNextOff || this.paused || this.duration < 300 || left > 40) return;
+      if (this.nextCtx === undefined) this.nextCtx = this.ctx.next ? this.ctx.next() : null;
+      if (!this.nextCtx) { this.upNextOff = true; return; }
+      this.upNext = { left: 10 };
+      this.paintUpNext();
+    },
+
+    paintUpNext: function () {
+      var box = $('#upnext');
+      if (!box) { // el index.html de la app instalada no trae este elemento
+        box = el('div', 'hidden');
+        box.id = 'upnext';
+        $('#player').appendChild(box);
+      }
+      if (!this.upNext) { box.classList.add('hidden'); return; }
+      var html = '<div class="un-label">Siguiente episodio</div><div class="un-title">' + esc(this.nextCtx.epLabel) + '</div>' +
+        '<div class="un-help">' + (settings.autoNext ? 'Empieza en ' + Math.max(1, Math.ceil(this.upNext.left)) + ' s · ' : '') +
+        'OK ver ahora · Atrás seguir viendo</div>';
+      if (box.innerHTML !== html) box.innerHTML = html;
+      box.classList.remove('hidden');
+    },
+
+    dismissUpNext: function () {
+      this.upNext = null;
+      this.upNextOff = true;
+      this.paintUpNext();
+    },
+
+    playNext: function () {
+      var next = this.nextCtx, me = this.screen;
+      if (!next) return;
+      this.upNext = null;
+      this.paintUpNext();
+      while (stack.length > 1 && stack[stack.length - 1] !== me) pop(); // cerrar menús abiertos
+      pop(); // cierra el reproductor: guarda el progreso y avisa a Trakt
+      var top = stack[stack.length - 1];
+      if (top && top.streamsOf) pop(); // la lista de fuentes del episodio anterior ya no sirve
+      next.autoPlay = true;
+      push(streamsScreen(next));
+    },
+
+    // --- audio: el idioma elegido antes en esta serie o, si no, español si el archivo lo trae
+    currentAudio: function () {
+      try {
+        var sel = webapis.avplay.getCurrentStreamInfo().filter(function (t) { return t.type === 'AUDIO'; })[0];
+        return sel ? sel.index : -1;
+      } catch (e) { return -1; }
+    },
+
+    autoAudio: function () {
+      var c = this.ctx, pref = c.type === 'series' ? srcPrefs[c.metaId] : null;
+      var want = (pref && pref.audio) || (settings.audioLang === 'spa' ? 'spa' : '');
+      var tracks = this.avTracks('AUDIO'), cur = this.currentAudio(), i;
+      for (i = 0; want && tracks.length > 1 && i < tracks.length; i++) {
+        if (langKey(tracks[i].lang) !== want) continue;
+        if (tracks[i].index !== cur) {
+          try { webapis.avplay.setSelectTrack('AUDIO', tracks[i].index); cur = tracks[i].index; } catch (e) { /* se queda la de serie */ }
+        }
+        break;
+      }
+      this.audioKey = '';
+      for (i = 0; i < tracks.length; i++) if (tracks[i].index === cur || tracks.length === 1) this.audioKey = langKey(tracks[i].lang);
+      // con audio en español no hacen falta subtítulos en español
+      if (Subs.auto && this.skipAutoSubs()) { Subs.auto = false; Subs.select(null); }
+    },
+
+    skipAutoSubs: function () { return settings.subLang === 'spa' && this.audioKey === 'spa'; },
 
     showOSD: function (sticky) {
       var osd = $('#osd');
@@ -1579,15 +1742,17 @@
       if (this.backend !== 'av') { toast('Cambiar el audio solo es posible con el reproductor nativo'); return; }
       var tracks = this.avTracks('AUDIO');
       if (tracks.length < 2) { toast('Esta fuente solo tiene una pista de audio'); return; }
-      var cur = -1;
-      try {
-        var sel = webapis.avplay.getCurrentStreamInfo().filter(function (t) { return t.type === 'AUDIO'; })[0];
-        if (sel) cur = sel.index;
-      } catch (e) { /* desconocido */ }
+      var cur = this.currentAudio(), c = this.ctx, self = this;
       menu('Audio', tracks.map(function (t, i) {
-        return { label: (t.lang || ('Pista ' + (i + 1))) + (t.codec ? ' · ' + t.codec : '') + (t.channels ? ' · ' + t.channels + ' canales' : ''), value: t.index, selected: t.index === cur };
+        return { label: (LANG_NAMES[langKey(t.lang)] || t.lang || ('Pista ' + (i + 1))) + (t.codec ? ' · ' + t.codec : '') + (t.channels ? ' · ' + t.channels + ' canales' : ''),
+          value: t.index, lang: langKey(t.lang), selected: t.index === cur };
       }), function (it) {
-        try { webapis.avplay.setSelectTrack('AUDIO', it.value); toast('Audio cambiado'); } catch (e) { toast('No se pudo cambiar el audio'); }
+        try { webapis.avplay.setSelectTrack('AUDIO', it.value); } catch (e) { toast('No se pudo cambiar el audio'); return; }
+        self.audioKey = it.lang;
+        if (c.type === 'series' && it.lang) {
+          saveSrcPref(c.metaId, { audio: it.lang });
+          toast('Audio cambiado (se usará en el resto de la serie)');
+        } else toast('Audio cambiado');
       });
     },
 
@@ -1606,6 +1771,7 @@
       }
       menu('Subtítulos', items, function (it) {
         if (it.value === 'sync') { self.startSync(); return; }
+        Subs.auto = false;
         Subs.embedded = false;
         try { if (self.backend === 'av') webapis.avplay.setSilentSubtitle(true); } catch (e) { /* no soportado */ }
         if (it.value === 'off') { Subs.select(null); return; }
@@ -1664,6 +1830,11 @@
             toast('Subtítulos: ' + fmtOffset(Subs.offset) + ' (se recordará para este vídeo)');
             return true;
         }
+      }
+      if (this.upNext) {
+        if (code === K.ENTER) { this.playNext(); return true; }
+        this.dismissUpNext();
+        if (code === K.BACK || code === K.ESC || code === K.BKSP) return true;
       }
       switch (code) {
         case K.ENTER: case K.PLAYPAUSE: this.toggle(); return true;
@@ -1727,6 +1898,8 @@
 
     finished: function () {
       this.time = this.duration;
+      if (this.nextCtx === undefined) this.nextCtx = this.ctx.next ? this.ctx.next() : null;
+      if (this.nextCtx && settings.autoNext && !this.upNextOff) { this.playNext(); return; }
       this.saveProgress();
       pop();
     },
@@ -1750,6 +1923,8 @@
       this.probeId++;
       this.syncMode = false;
       this.paintSync();
+      this.upNext = null;
+      this.paintUpNext();
       if (this.started) Trakt.scrobble('stop', this.ctx, this.pct()); // >= 80 % lo marca como visto
       this.saveProgress();
       clearInterval(this.tickTimer);
@@ -1928,6 +2103,12 @@
     opt('Ocultar lo que ya he visto (Trakt y esta app)', function () { return settings.hideWatched ? 'Sí' : 'No'; }, function () { settings.hideWatched = !settings.hideWatched; Seen.at = 0; });
     opt('Mostrar primero las fuentes en español', function () { return settings.preferEs ? 'Sí' : 'No'; }, function () { settings.preferEs = !settings.preferEs; });
 
+    box.appendChild(el('div', 'row-title', 'Reproducción'));
+    box.lastChild.style.padding = '30px 0 16px 0';
+    opt('Pasar solo al siguiente episodio', function () { return settings.autoNext ? 'Sí' : 'No'; }, function () { settings.autoNext = !settings.autoNext; });
+    opt('Audio preferido', function () { return settings.audioLang === 'spa' ? 'Español si lo hay' : 'El que traiga el archivo'; }, cycle('audioLang', ['spa', 'orig']));
+    box.appendChild(el('div', 'note', 'En las series se recuerdan la fuente y el audio que elijas, para usarlos en los demás episodios.'));
+
     box.appendChild(el('div', 'row-title', 'Subtítulos'));
     box.lastChild.style.padding = '30px 0 16px 0';
     opt('Idioma automático', function () { return SUB_NAMES[settings.subLang]; }, cycle('subLang', ['spa', 'eng', 'off']));
@@ -2019,7 +2200,7 @@
 
   // ---------------------------------------------------------------- arranque
 
-  var VERSION = '0.5.3';
+  var VERSION = '0.6.0';
 
   function fitScreen() {
     var z = window.innerWidth / 1920;

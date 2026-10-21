@@ -137,3 +137,10 @@ html, body { width: 1920px; height: 1080px; overflow: hidden; background: #0d0f1
   background: rgba(13,15,20,0.88); border: 2px solid #8a7dff; border-radius: 16px; z-index: 20; }
 #syncbox .sync-val { font-size: 52px; font-weight: bold; color: #fff; }
 #syncbox .sync-help { font-size: 24px; color: #aab; margin-top: 10px; }
+
+/* Aviso de siguiente episodio */
+#upnext { position: absolute; right: 100px; top: 80px; width: 680px; padding: 26px 30px; background: rgba(13,15,20,0.9);
+  border: 2px solid #8a7dff; border-radius: 16px; z-index: 20; }
+#upnext .un-label { font-size: 24px; color: #aab; }
+#upnext .un-title { font-size: 34px; font-weight: bold; color: #fff; margin: 8px 0 12px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#upnext .un-help { font-size: 24px; color: #ccd; }
