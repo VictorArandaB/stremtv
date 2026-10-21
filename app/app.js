@@ -36,23 +36,38 @@
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
-  function request(url, asJSON) {
+  // petición HTTP que resuelve con el texto; los errores llevan .status (0: sin conexión o tiempo agotado)
+  // o: { headers, body, timeout, fail(status) → mensaje propio del servicio }
+  function xhr(method, url, o) {
+    o = o || {};
     return new Promise(function (resolve, reject) {
       var x = new XMLHttpRequest();
-      x.open('GET', url, true);
-      x.timeout = 25000;
+      x.open(method, url, true);
+      x.timeout = o.timeout || 25000;
+      for (var h in o.headers || {}) x.setRequestHeader(h, o.headers[h]);
+      var fail = function (status, msg) { reject(extend(new Error(msg), { status: status })); };
       x.onload = function () {
-        if (x.status < 200 || x.status >= 300) return reject(new Error('HTTP ' + x.status));
-        if (!asJSON) return resolve(x.responseText);
-        try { resolve(JSON.parse(x.responseText)); } catch (e) { reject(new Error(tr('respuesta no válida'))); }
+        if (x.status >= 200 && x.status < 300) return resolve(x.responseText);
+        fail(x.status, (o.fail && o.fail(x.status)) || 'HTTP ' + x.status);
       };
-      x.onerror = function () { reject(new Error(tr('sin conexión'))); };
-      x.ontimeout = function () { reject(new Error(tr('tiempo de espera agotado'))); };
-      x.send();
+      x.onerror = function () { fail(0, tr('sin conexión')); };
+      x.ontimeout = function () { fail(0, tr('tiempo de espera agotado')); };
+      x.send(o.body === undefined ? null : o.body);
     });
   }
-  function getJSON(url) { return request(url, true); }
-  function getText(url) { return request(url, false); }
+  // JSON estricto (respuesta rota = error) o tolerante (vacía o rota = null: las APIs que responden 204)
+  function strictJSON(txt) { try { return JSON.parse(txt); } catch (e) { throw new Error(tr('respuesta no válida')); } }
+  function looseJSON(txt) { try { return txt ? JSON.parse(txt) : null; } catch (e) { return null; } }
+  function getJSON(url) { return xhr('GET', url).then(strictJSON); }
+  function getText(url) { return xhr('GET', url); }
+
+  // deja en obj solo las n entradas más recientes (por .ts)
+  function capByTs(obj, n) {
+    var ids = Object.keys(obj);
+    if (ids.length <= n) return;
+    ids.sort(function (a, b) { return obj[a].ts - obj[b].ts; });
+    for (var i = 0; i < ids.length - n; i++) delete obj[ids[i]];
+  }
 
   function load(key, def) {
     try {
@@ -404,11 +419,8 @@
     var filter = ['scr', 'cam', 'unknown'];
     if (settings.maxQ === '1080') filter.push('4k');
     if (settings.maxQ === '720') filter.push('4k', '1080p');
-    var parts = ['sort=qualitysize', 'qualityfilter=' + filter.join(',')];
-    if (settings.key) {
-      parts.push('debridoptions=' + (settings.onlyCached ? 'nodownloadlinks,nocatalog' : 'nocatalog'));
-      parts.push(settings.debrid + '=' + settings.key);
-    }
+    var parts = ['sort=qualitysize', 'qualityfilter=' + filter.join(','),
+      'debridoptions=' + (settings.onlyCached ? 'nodownloadlinks,nocatalog' : 'nocatalog'), settings.debrid + '=' + settings.key];
     return originOf(a.url) + '/' + parts.join('|');
   }
 
@@ -495,7 +507,7 @@
   // ---------------------------------------------------------------- títulos y sinopsis en español (TMDB)
 
   var TMDB = 'https://api.themoviedb.org/3';
-  // imdb → { k: 'movie' | 'tv' | '', id, n: título en español }; los títulos casi no cambian, así que no caduca
+  // imdb → { k: 'movie' | 'tv' | '', id, n: título en español }; los títulos casi no cambian, así que no caduca (salvo «no encontrado»)
   var tmdbIds = load('tmdbids', {});
   var tmdbPending = {}, tmdbSaveTimer = null;
 
@@ -505,37 +517,23 @@
   function tmdbGet(path) {
     var key = settings.tmdbKey, bearer = key.length > 40; // token de lectura (v4) o clave de la API (v3)
     var url = TMDB + path + (path.indexOf('?') >= 0 ? '&' : '?') + 'language=es-ES' + (bearer ? '' : '&api_key=' + encodeURIComponent(key));
-    return new Promise(function (resolve, reject) {
-      var x = new XMLHttpRequest();
-      x.open('GET', url, true);
-      x.timeout = 15000;
-      if (bearer) x.setRequestHeader('Authorization', 'Bearer ' + key);
-      x.onload = function () {
-        if (x.status === 401) return reject(new Error(tr('la clave de TMDB no es válida')));
-        if (x.status < 200 || x.status >= 300) return reject(new Error('TMDB ' + x.status));
-        try { resolve(JSON.parse(x.responseText)); } catch (e) { reject(new Error(tr('respuesta no válida'))); }
-      };
-      x.onerror = function () { reject(new Error(tr('sin conexión'))); };
-      x.ontimeout = function () { reject(new Error(tr('tiempo de espera agotado'))); };
-      x.send();
-    });
+    return xhr('GET', url, { timeout: 15000, headers: bearer ? { Authorization: 'Bearer ' + key } : {},
+      fail: function (st) { return st === 401 ? tr('la clave de TMDB no es válida') : 'TMDB ' + st; } }).then(strictJSON);
   }
 
   function saveTmdbIds() {
     clearTimeout(tmdbSaveTimer);
     tmdbSaveTimer = setTimeout(function () {
-      var ids = Object.keys(tmdbIds);
-      if (ids.length > 3000) {
-        ids.sort(function (a, b) { return tmdbIds[a].ts - tmdbIds[b].ts; });
-        for (var i = 0; i < ids.length - 3000; i++) delete tmdbIds[ids[i]];
-      }
+      capByTs(tmdbIds, 3000);
       save('tmdbids', tmdbIds);
     }, 2000);
   }
 
   // id de TMDB y título en español de un título de IMDb (con caché)
   function tmdbFind(imdb) {
-    if (tmdbIds[imdb]) return Promise.resolve(tmdbIds[imdb]);
+    var c = tmdbIds[imdb];
+    // lo encontrado no caduca; «no está en TMDB» se vuelve a mirar a la semana (los estrenos se enlazan después)
+    if (c && (c.id || Date.now() - c.ts < 7 * 86400000)) return Promise.resolve(c);
     if (!tmdbPending[imdb]) {
       tmdbPending[imdb] = tmdbGet('/find/' + imdb + '?external_source=imdb_id').then(function (d) {
         var m = (d.movie_results || [])[0], t = (d.tv_results || [])[0];
@@ -608,12 +606,7 @@
   var progress = load('progress', {});
   function saveProgress(entry) {
     progress[entry.videoId] = entry;
-    // limitar a las 200 entradas más recientes
-    var ids = Object.keys(progress);
-    if (ids.length > 200) {
-      ids.sort(function (a, b) { return progress[a].ts - progress[b].ts; });
-      for (var i = 0; i < ids.length - 200; i++) delete progress[ids[i]];
-    }
+    capByTs(progress, 200);
     save('progress', progress);
   }
   function continueList() {
@@ -634,26 +627,10 @@
   function saveTrakt() { save('trakt', trakt); }
 
   function traktReq(method, path, body, auth) {
-    return new Promise(function (resolve, reject) {
-      var x = new XMLHttpRequest();
-      x.open(method, TRAKT + path, true);
-      x.timeout = 20000;
-      x.setRequestHeader('Content-Type', 'application/json');
-      x.setRequestHeader('trakt-api-version', '2');
-      x.setRequestHeader('trakt-api-key', trakt.clientId || '');
-      if (auth !== false && trakt.access) x.setRequestHeader('Authorization', 'Bearer ' + trakt.access);
-      x.onload = function () {
-        var d = null;
-        try { d = x.responseText ? JSON.parse(x.responseText) : null; } catch (e) { /* respuesta vacía */ }
-        if (x.status >= 200 && x.status < 300) return resolve(d);
-        var err = new Error('Trakt ' + x.status);
-        err.status = x.status;
-        reject(err);
-      };
-      x.onerror = function () { reject(new Error(tr('sin conexión'))); };
-      x.ontimeout = function () { reject(new Error(tr('tiempo de espera agotado'))); };
-      x.send(body ? JSON.stringify(body) : null);
-    });
+    var headers = { 'Content-Type': 'application/json', 'trakt-api-version': '2', 'trakt-api-key': trakt.clientId || '' };
+    if (auth !== false && trakt.access) headers.Authorization = 'Bearer ' + trakt.access;
+    return xhr(method, TRAKT + path, { timeout: 20000, headers: headers, body: body ? JSON.stringify(body) : null,
+      fail: function (st) { return 'Trakt ' + st; } }).then(looseJSON);
   }
 
   function withSecret(body) {
@@ -765,11 +742,21 @@
     // series empezadas con episodios ya emitidos pendientes, de la vista más recientemente a la más antigua (el «Up Next» de Trakt).
     // Se guarda 10 minutos (o hasta terminar de ver algo): son muchas consultas
     upNextCache: null,
+    // la lista completa de series vistas es la respuesta más pesada de Trakt: Seen y Siguientes episodios comparten la descarga
+    watchedShows: function () {
+      var c = Trakt.watchedCache;
+      if (c && Date.now() - c.at < 60000) return c.promise;
+      var promise = Trakt.call('GET', '/sync/watched/shows?extended=full');
+      Trakt.watchedCache = { at: Date.now(), promise: promise };
+      promise.catch(function () { Trakt.watchedCache = null; });
+      return promise;
+    },
+
     upNext: function () {
       var c = Trakt.upNextCache;
       if (c && Date.now() - c.at < 600000) return c.promise;
       var promise = Promise.all([
-        Trakt.call('GET', '/sync/watched/shows?extended=full'),
+        Trakt.watchedShows(),
         Trakt.call('GET', '/users/hidden/progress_watched?type=show&limit=500').catch(function () { return []; })
       ]).then(function (r) {
         var hidden = {};
@@ -885,7 +872,7 @@
     loadWatched: function () {
       return Promise.all([
         Trakt.call('GET', '/sync/watched/movies'),
-        Trakt.call('GET', '/sync/watched/shows?extended=full')
+        Trakt.watchedShows()
       ]).then(function (r) {
         var movies = {}, shows = {};
         (r[0] || []).forEach(function (it) { if (it.movie && it.movie.ids && it.movie.ids.imdb) movies[it.movie.ids.imdb] = true; });
@@ -940,24 +927,12 @@
   function saveBackup() { save('backup', backup); }
 
   function ghReq(method, path, body) {
-    return new Promise(function (resolve, reject) {
-      var x = new XMLHttpRequest();
-      x.open(method, 'https://api.github.com' + path, true);
-      x.timeout = 20000;
-      x.setRequestHeader('Accept', 'application/vnd.github+json');
-      x.setRequestHeader('Authorization', 'token ' + backup.token);
-      if (body) x.setRequestHeader('Content-Type', 'application/json');
-      x.onload = function () {
-        var d = null;
-        try { d = x.responseText ? JSON.parse(x.responseText) : null; } catch (e) { /* respuesta vacía */ }
-        if (x.status >= 200 && x.status < 300) return resolve(d);
-        reject(extend(new Error(x.status === 401 ? tr('el token de GitHub no es válido') :
-          x.status === 403 || x.status === 404 ? tr('el token no tiene permiso para Gists') : 'GitHub ' + x.status), { status: x.status }));
-      };
-      x.onerror = function () { reject(new Error(tr('sin conexión'))); };
-      x.ontimeout = function () { reject(new Error(tr('tiempo de espera agotado'))); };
-      x.send(body ? JSON.stringify(body) : null);
-    });
+    var headers = { Accept: 'application/vnd.github+json', Authorization: 'token ' + backup.token };
+    if (body) headers['Content-Type'] = 'application/json';
+    return xhr(method, 'https://api.github.com' + path, { timeout: 20000, headers: headers, body: body ? JSON.stringify(body) : null,
+      fail: function (st) {
+        return st === 401 ? tr('el token de GitHub no es válido') : st === 403 || st === 404 ? tr('el token no tiene permiso para Gists') : 'GitHub ' + st;
+      } }).then(looseJSON);
   }
 
   // el Gist de la copia: el guardado o, si no, el que tenga nuestra descripción
@@ -1181,6 +1156,7 @@
   function pop() {
     var s = stack.pop();
     if (!s) return;
+    s.closed = true;
     if (s.onClose) s.onClose();
     if (s.el.parentNode) s.el.parentNode.removeChild(s.el);
     var top = stack[stack.length - 1];
@@ -1192,6 +1168,9 @@
   }
 
   function isTop(screen) { return stack[stack.length - 1] === screen; }
+  // para respuestas que llegan tarde: fn solo se ejecuta si la pantalla no se ha cerrado
+  // (una pantalla que aún no se ha abierto con push cuenta como viva)
+  function alive(screen, fn) { return function () { if (!screen.closed) return fn.apply(this, arguments); }; }
 
   function goBack() {
     if (stack.length > 1) pop();
@@ -1362,10 +1341,14 @@
     var id = String(meta.id || meta.metaId || '');
     var tm = /^tmdb:(movie|tv):(\d+)$/.exec(id);
     if (tm) { // resultado de la búsqueda en español: abrir por su id de IMDb
+      // solo si sigue delante la pantalla desde la que se pidió (ni tras Atrás ni dos veces por pulsar OK otra vez)
+      var from = stack[stack.length - 1];
+      toast(tr('Cargando…'), 1500);
       tmdbGet('/' + tm[1] + '/' + tm[2] + '/external_ids').then(function (x) {
+        if (!isTop(from)) return;
         if (x.imdb_id) push(detailScreen(meta.type, x.imdb_id));
         else toast(tr('Este título no tiene ID de IMDb y no se puede reproducir'));
-      }).catch(function (e) { toast(tr('No se pudo cargar ({0})', e.message)); });
+      }).catch(function (e) { if (isTop(from)) toast(tr('No se pudo cargar ({0})', e.message)); });
       return;
     }
     if (meta.imdb_id && id.indexOf('tt') !== 0 && id.indexOf('kitsu:') !== 0) id = meta.imdb_id;
@@ -1856,11 +1839,12 @@
         };
         if (!meta._tmdb || !tmdbOn()) { show(names()); return; }
         tmdbGet('/' + meta._tmdb.k + '/' + meta._tmdb.id + '/credits').then(function (d) {
+          if (!isTop(screen)) return; // ha salido de la ficha (o abierto otra cosa) mientras llegaba
           var cast = (d.cast || []).slice(0, 20).map(function (c) {
             return { label: c.name + (c.character ? ' · ' + c.character : ''), value: c.id, name: c.name };
           });
           show(cast.length ? cast : names());
-        }).catch(function () { show(names()); });
+        }).catch(function () { if (isTop(screen)) show(names()); });
       });
       container.appendChild(b);
     }
@@ -1908,7 +1892,7 @@
     }
 
     function render() {
-      if (stack.indexOf(screen) < 0) return; // cerrada mientras cargaba
+      if (screen.closed) return; // cerrada mientras cargaba
       var focusEl = null;
       if (meta.background) bd.style.backgroundImage = 'url("' + meta.background + '")';
       d.innerHTML = '';
@@ -1927,7 +1911,7 @@
       if (isTop(screen)) Nav.setRoot(root, focusEl);
       else screen.lastFocus = focusEl;
       screen.autoFocus = focusEl || (isTop(screen) ? Nav.cur : null);
-      if (Trakt.linked() && imdbOf()) Trakt.resumeMap().then(applyResume);
+      if (Trakt.linked() && imdbOf()) Trakt.resumeMap().then(alive(screen, applyResume));
     }
 
     function applyResume(map) {
@@ -2080,7 +2064,7 @@
 
       if (Trakt.linked() && imdbOf() && !progressRequested) {
         progressRequested = true;
-        Trakt.showProgress(imdbOf()).then(function (tp) {
+        Trakt.showProgress(imdbOf()).then(alive(screen, function (tp) {
           traktSeen = tp.seen;
           traktNext = tp.next;
           var untouched = Nav.root === root && Nav.cur === screen.autoFocus;
@@ -2096,7 +2080,7 @@
             Nav.setRoot(root, target);
             screen.autoFocus = Nav.cur;
           }
-        }).catch(function () { /* sin datos de Trakt */ });
+        })).catch(function () { /* sin datos de Trakt */ });
       }
 
       if (curSeason === null) {
@@ -2134,7 +2118,7 @@
       eps.forEach(function (v) { need[v.imdbSeason !== undefined ? v.imdbSeason : v.season] = true; });
       Object.keys(need).forEach(function (n) {
         if (tmdbSeasons[n]) return;
-        tmdbSeasons[n] = tmdbGet('/tv/' + meta._tmdb.id + '/season/' + n).then(function (d) {
+        tmdbSeasons[n] = tmdbGet('/tv/' + meta._tmdb.id + '/season/' + n).then(alive(screen, function (d) {
           var names = {}, ovs = {};
           (d.episodes || []).forEach(function (e) {
             if (e.name && !/^(Episodio|Episode) \d+$/.test(e.name)) names[e.episode_number] = e.name; // sin traducir: se queda el original
@@ -2151,7 +2135,7 @@
           var idx = Nav.cur && Nav.cur.parentNode === episodesBox ? Array.prototype.indexOf.call(episodesBox.children, Nav.cur) : -1;
           renderEpisodes(seasonsOf().map[curSeason]);
           if (idx >= 0) Nav.setRoot(root, episodesBox.children[Math.min(idx, episodesBox.children.length - 1)]);
-        }).catch(function () { /* se quedan en inglés */ });
+        })).catch(function () { /* se quedan en inglés */ });
       });
     }
 
@@ -2299,11 +2283,7 @@
     if (!metaId) return;
     srcPrefs[metaId] = extend(srcPrefs[metaId] || {}, data);
     srcPrefs[metaId].ts = Date.now();
-    var ids = Object.keys(srcPrefs);
-    if (ids.length > 100) {
-      ids.sort(function (a, b) { return srcPrefs[a].ts - srcPrefs[b].ts; });
-      for (var i = 0; i < ids.length - 100; i++) delete srcPrefs[ids[i]];
-    }
+    capByTs(srcPrefs, 100);
     save('srcprefs', srcPrefs);
   }
   // 4 = mismo torrent (pack de temporada), 2 = mismo bingeGroup del addon, 1 = mismo grupo
@@ -2324,7 +2304,7 @@
     var screen = { el: root, streamsOf: ctx.videoId };
 
     function message(text, withSettings) {
-      if (stack.indexOf(screen) < 0) return; // cerrada mientras buscaba
+      if (screen.closed) return; // cerrada mientras buscaba (antes del push aún no está en la pila, pero sí viva)
       list.innerHTML = '';
       list.appendChild(el('div', 'loading', esc(text)));
       if (withSettings) {
@@ -2353,7 +2333,7 @@
       var fromDebrid = dAddon ? getJSON(sourcesBase(dAddon) + '/stream/' + ctx.type + '/' + ctx.videoId + '.json').catch(function (e) { return { failed: e }; })
         : Promise.resolve({ streams: [] });
       Promise.all([fromDebrid, fromAddons]).then(function (r) {
-        if (stack.indexOf(screen) < 0) return; // Atrás antes de que respondan los addons: ni pintar ni reproducir
+        if (screen.closed) return; // Atrás antes de que respondan los addons: ni pintar ni reproducir
         var d = r[0], extra = [].concat.apply([], r[1]);
         if (d.failed && !extra.length) throw d.failed;
         var streams = (d.streams || []).map(parseStream);
@@ -2466,11 +2446,7 @@
     if (!videoId) return;
     if (Math.abs(offset) < 0.01) delete subOffsets[videoId];
     else subOffsets[videoId] = { o: Math.round(offset * 100) / 100, ts: Date.now() };
-    var ids = Object.keys(subOffsets);
-    if (ids.length > 300) {
-      ids.sort(function (a, b) { return subOffsets[a].ts - subOffsets[b].ts; });
-      for (var i = 0; i < ids.length - 300; i++) delete subOffsets[ids[i]];
-    }
+    capByTs(subOffsets, 300);
     save('suboffsets', subOffsets);
   }
 
@@ -2495,6 +2471,7 @@
       })).then(function (r) {
         // el idioma de Ajustes primero, después español e inglés
         var rank = function (l) { return l === settings.subLang ? 0 : l === 'spa' ? 1 : l === 'eng' ? 2 : 3; };
+        if (Player.ctx !== ctx) return []; // llegó tarde: ya suena otro vídeo
         self.list = [].concat.apply([], r).filter(function (x) { return rank(x.lang) < 3; })
           .sort(function (a, b) { return rank(a.lang) - rank(b.lang); }).slice(0, 40);
         return self.list;
@@ -2671,7 +2648,8 @@
           }
         });
         av.prepareAsync(function () {
-          if (self.stream !== mine) { try { av.close(); } catch (x) { /* ya cerrado */ } return; } // salió mientras preparaba
+          // salió mientras preparaba: close() ya cerró ese vídeo; no tocar AVPlay, que puede ser ya el de otra fuente
+          if (self.stream !== mine) return;
           self.duration = av.getDuration() / 1000;
           try {
             logEv('pistas', Math.round(self.duration) + ' s', webapis.avplay.getTotalTrackInfo().map(function (t) { return { tipo: t.type, i: t.index, info: t.extra_info }; }));
@@ -2841,10 +2819,11 @@
       this.paintUpNext();
     },
 
-    playNext: function () {
+    // manual: el usuario ha pulsado «OK ver ahora»; el temporizador «al terminar este vídeo» pasa al siguiente
+    playNext: function (manual) {
       var next = this.nextCtx;
       if (!next) return;
-      if (Player.sleep && Player.sleep.end) { this.sleepNow(); return; } // «al terminar este vídeo»: no seguir
+      if (!manual && Player.sleep && Player.sleep.end) { this.sleepNow(); return; } // «al terminar este vídeo»: no seguir
       this.upNext = null;
       this.paintUpNext();
       if (!this.leave()) return; // cierra menús y reproductor: guarda el progreso y avisa a Trakt
@@ -3116,7 +3095,7 @@
         }
       }
       if (this.upNext) {
-        if (code === K.ENTER) { this.playNext(); return true; }
+        if (code === K.ENTER) { this.playNext(true); return true; }
         this.dismissUpNext();
         if (code === K.BACK || code === K.ESC || code === K.BKSP) return true;
       }
@@ -3193,7 +3172,7 @@
     // cierra el reproductor aunque tenga un menú (▲/▼) encima; false si ya estaba cerrado
     leave: function () {
       var me = this.screen;
-      if (!me || stack.indexOf(me) < 0) return false;
+      if (!me || me.closed) return false;
       while (!isTop(me)) pop();
       pop();
       return true;
@@ -3224,6 +3203,7 @@
       if (this.started) {
         Trakt.scrobble('stop', this.ctx, this.pct()); // >= 80 % lo marca como visto
         Trakt.upNextCache = null; // el siguiente episodio ha podido cambiar
+        Trakt.watchedCache = null;
         Trakt.resumeCache = null;
       }
       this.saveProgress();
@@ -3705,6 +3685,7 @@
   function rebuildUI() {
     while (stack.length) {
       var sc = stack.pop();
+      sc.closed = true;
       if (sc.onClose) sc.onClose();
       if (sc.el.parentNode) sc.el.parentNode.removeChild(sc.el);
     }
@@ -3716,7 +3697,7 @@
 
   // ---------------------------------------------------------------- arranque
 
-  var VERSION = '0.16.2';
+  var VERSION = '0.16.3';
 
   function fitScreen() {
     var z = window.innerWidth / 1920;
@@ -3762,5 +3743,5 @@
   else start();
 
   // exponer para depurar desde la consola
-  window.StremTV = { bootLog: function () { return load('boot', []); }, settings: settings, Player: Player, Nav: Nav, stack: stack, toast: function (m, ms) { toast(tr(m), ms); }, open: function (type, id) { push(detailScreen(type, id)); }, openSettings: openSettings };
+  window.StremTV = { bootLog: function () { return load('boot', []); }, settings: settings, Player: Player, Nav: Nav, stack: stack, toast: function (m, ms) { toast(tr(m), ms); }, open: function (type, id) { push(detailScreen(type, id)); }, openMeta: openMeta, openSettings: openSettings };
 })();
