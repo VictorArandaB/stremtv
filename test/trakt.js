@@ -40,7 +40,7 @@ const VIDEO = 'https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/1080/Big_Buc
   await page.reload({ waitUntil: 'networkidle2' }); await sleep(1500);
 
   // Ajustes -> Vincular
-  await go('^Ajustes$'); await sleep(600);
+  await page.evaluate(() => StremTV.openSettings('accounts')); await sleep(600);
   await go('Vincular con Trakt'); await sleep(800);
   await page.screenshot({ path: OUT + '/20-trakt-code.png' });
   await sleep(3000);

@@ -201,6 +201,11 @@
     'Datos': 'Data', 'Borrar historial de reproducción': 'Clear playback history',
     '¿Borrar «Continuar viendo» y el progreso?': 'Clear “Continue watching” and progress?', 'Borrar': 'Clear', 'Historial borrado': 'History cleared',
     'Diagnóstico de reproducción': 'Playback diagnostics',
+    'Fuentes y debrid': 'Sources and debrid', 'Cuentas': 'Accounts', 'General': 'General', 'Datos y diagnóstico': 'Data and diagnostics',
+    '{0} addons de fuentes': '{0} source add-ons', '✗ Falta un addon de fuentes': '✗ No source add-on', 'sin clave de debrid': 'no debrid key',
+    'Audio: {0}': 'Audio: {0}', 'siguiente episodio: {0}': 'next episode: {0}', 'Opciones de fuentes': 'Source options',
+    'Títulos en español (TMDB)': 'Spanish titles (TMDB)', 'Copia de seguridad (GitHub)': 'Backup (GitHub)',
+    'Añade primero un addon de fuentes (arriba, en Addons).': 'Add a sources add-on first (above, in Add-ons).',
     'Enviar registro de diagnóstico': 'Send diagnostic log', 'Configura antes la copia de seguridad (token de GitHub)': 'Set up the backup first (GitHub token)',
     'Enviando…': 'Sending…', 'Registro enviado. ID: {0}': 'Log sent. ID: {0}', 'Ver registro': 'View log',
     'Registro (lo más reciente arriba)': 'Log (most recent first)', 'Vacío': 'Empty',
@@ -247,7 +252,6 @@
       'None added. Without a sources add-on nothing can be played. Cinemeta, Kitsu and OpenSubtitles are built in.',
     'fuentes con tu debrid': 'sources with your debrid',
     'No tienes ningún addon de fuentes. Añádelo en Ajustes → Addons pegando la URL de su manifest.': 'You have no sources add-on. Add one in Settings → Add-ons by pasting its manifest URL.',
-    'Añade primero un addon de fuentes (más abajo, en Addons).': 'Add a sources add-on first (below, in Add-ons).',
     'Añade un addon de fuentes en Ajustes → Addons para poder reproducir': 'Add a sources add-on in Settings → Add-ons to be able to play',
     'fuentes': 'sources', 'catálogos': 'catalogs', 'subtítulos': 'subtitles', 'Quitar este addon': 'Remove this add-on',
     'Addon quitado': 'Add-on removed', 'Añadir addon: URL de su manifest (pulsa OK para escribirla)': 'Add an add-on: its manifest URL (press OK to type it)',
@@ -1369,7 +1373,7 @@
         if (t[0] === 'search') push(searchScreen());
         else if (t[0] === 'anime') push(animeScreen());
         else if (t[0] === 'explore') push(exploreScreen());
-        else if (t[0] === 'settings') push(settingsScreen());
+        else if (t[0] === 'settings') openSettings();
         else while (stack.length > 1) pop();
       });
       h.appendChild(tab);
@@ -1393,7 +1397,7 @@
         var b = el('div', 'btn primary', noSources ? tr('Añade un addon de fuentes en Ajustes → Addons para poder reproducir')
           : tr('Configura tu Real-Debrid o AllDebrid para poder reproducir'));
         b.style.marginLeft = '80px';
-        focusable(b, function () { push(settingsScreen()); });
+        focusable(b, function () { push(settingsScreen('sources')); });
         warn.appendChild(b);
         contWrap.appendChild(warn);
       }
@@ -2311,7 +2315,7 @@
       list.appendChild(el('div', 'loading', esc(text)));
       if (withSettings) {
         var b = el('div', 'btn primary', tr('Abrir ajustes'));
-        focusable(b, function () { push(settingsScreen()); });
+        focusable(b, function () { push(settingsScreen('sources')); });
         list.appendChild(b);
       }
       Nav.setRoot(root);
@@ -3273,13 +3277,68 @@
 
   // ---------------------------------------------------------------- pantalla: ajustes
 
-  function settingsScreen() {
+  // Ajustes: menú de categorías (con un resumen de cada una); settingsScreen(id) abre una categoría
+  var SETTINGS_SECTIONS = ['sources', 'playback', 'subs', 'accounts', 'general', 'data'];
+  var SECTION_NAMES = { sources: 'Fuentes y debrid', playback: 'Reproducción', subs: 'Subtítulos', accounts: 'Cuentas',
+    general: 'General', data: 'Datos y diagnóstico' };
+
+  function hasSources() { return !!(debridAddon() || addonsFor('stream').length); }
+
+  function sectionSummary(id) {
+    if (id === 'sources') {
+      var da = debridAddon(), n = addonsFor('stream').length;
+      return (da ? da.manifest.name : n ? tr('{0} addons de fuentes', n) : tr('✗ Falta un addon de fuentes')) + ' · ' +
+        (settings.key ? DEBRID_NAMES[settings.debrid] + ' ✓' : tr('sin clave de debrid'));
+    }
+    if (id === 'playback') {
+      return tr('Audio: {0}', settings.audioLang === 'orig' ? tr('El que traiga el archivo') : tr(LANG_NAMES[settings.audioLang])) +
+        ' · ' + tr('siguiente episodio: {0}', yesNo(settings.autoNext));
+    }
+    if (id === 'subs') return tr(SUB_NAMES[settings.subLang]) + ' · ' + (settings.subColor === 'yellow' ? tr('Amarillo') : tr('Blanco'));
+    if (id === 'accounts') {
+      var mark = function (on) { return on ? ' ✓' : ' ✗'; };
+      return 'Trakt' + mark(Trakt.linked()) + ' · TMDB' + mark(settings.tmdbKey) + ' · GitHub' + mark(backup.token);
+    }
+    if (id === 'general') return LANGS[settings.lang];
+    return 'StremTV ' + VERSION;
+  }
+
+  // la pestaña Ajustes: sin addon de fuentes, se abre directamente en «Fuentes y debrid»
+  function openSettings() {
+    push(settingsScreen());
+    if (!hasSources()) push(settingsScreen('sources'));
+  }
+
+  function settingsScreen(section) {
     var root = el('div', 'screen');
     var vs = el('div', 'vscroll');
     root.appendChild(vs);
     vs.appendChild(header('settings'));
     var box = el('div');
     box.style.cssText = 'padding:0 80px;width:1400px';
+
+    if (!section) {
+      var items = [];
+      SETTINGS_SECTIONS.forEach(function (id) {
+        var o = el('div', 'opt');
+        o.appendChild(el('span'));
+        o.appendChild(el('span', 'val'));
+        focusable(o, function () { push(settingsScreen(id)); });
+        box.appendChild(o);
+        items.push({ o: o, id: id });
+      });
+      var paint = function () {
+        items.forEach(function (it) {
+          it.o.firstChild.textContent = tr(SECTION_NAMES[it.id]);
+          it.o.lastChild.textContent = sectionSummary(it.id);
+        });
+      };
+      paint();
+      vs.appendChild(box);
+      return { el: root, initialFocus: function () { return box.querySelector('.f'); }, onResume: paint };
+    }
+
+    vs.appendChild(el('div', 'screen-title settings-title', esc(tr('Ajustes') + ' › ' + tr(SECTION_NAMES[section]))));
     vs.appendChild(box);
 
     function opt(label, valueFn, onclick) {
@@ -3299,328 +3358,345 @@
       };
     }
 
-    opt('Idioma de la app', function () { return LANGS[settings.lang]; }, function () {
-      settings.lang = settings.lang === 'en' ? 'es' : 'en';
-      saveSettings();
-      setTimeout(rebuildUI, 0);
-    });
-
-    var tf = el('div', 'field');
-    tf.appendChild(el('label', null, esc(tr('Títulos y sinopsis en español: clave de TMDB (pulsa OK para escribirla)'))));
-    var tmdbInput = el('input');
-    tmdbInput.type = 'text';
-    tmdbInput.value = settings.tmdbKey;
-    tmdbInput.placeholder = tr('Clave de la API o token de lectura de themoviedb.org');
-    tmdbInput.setAttribute('autocomplete', 'off');
-    tmdbInput.setAttribute('spellcheck', 'false');
-    focusable(tmdbInput, function () { tmdbInput.focus(); });
-    var tmdbStatus = el('div', 'note', esc(tr('Gratis en themoviedb.org → Ajustes → API. Solo se usa con la app en español.')));
-    tmdbInput._ondone = function (v) {
-      settings.tmdbKey = (v || '').replace(/\s+/g, '');
-      tmdbInput.value = settings.tmdbKey;
-      saveSettings();
-      if (!settings.tmdbKey) { tmdbStatus.textContent = tr('Sin clave: los títulos salen en inglés.'); return; }
-      tmdbStatus.textContent = tr('Comprobando…');
-      tmdbGet('/movie/278').then(function (d) {
-        tmdbStatus.textContent = tr('✓ Clave válida («{0}»). Los cambios se ven al volver a Inicio.', d.title);
-      }).catch(function (e) { tmdbStatus.textContent = '✗ ' + e.message; });
-    };
-    tf.appendChild(tmdbInput);
-    box.appendChild(tf);
-    box.appendChild(tmdbStatus);
-
-    box.appendChild(el('div', 'row-title', tr('Servicio debrid')));
-    box.lastChild.style.padding = '10px 0 16px 0';
-    opt('Servicio', function () { return DEBRID_NAMES[settings.debrid]; }, cycle('debrid', ['realdebrid', 'alldebrid']));
-
-    var field = el('div', 'field');
-    field.appendChild(el('label', null, tr('Clave API (pulsa OK para escribirla)')));
-    var input = el('input');
-    input.type = 'text';
-    input.value = settings.key;
-    input.placeholder = tr('Pega o escribe aquí tu clave');
-    input.setAttribute('autocomplete', 'off');
-    input.setAttribute('spellcheck', 'false');
-    focusable(input, function () { input.focus(); });
-    input._ondone = function (v) {
-      settings.key = (v || '').replace(/\s+/g, '');
-      input.value = settings.key;
-      saveSettings();
-      if (settings.key) testKey();
-    };
-    field.appendChild(input);
-    box.appendChild(field);
-    box.appendChild(el('div', 'note', 'Real-Debrid: real-debrid.com/apitoken · AllDebrid: alldebrid.com/apikeys'));
-
-    var testBtn = el('div', 'btn', tr('Probar clave'));
-    var status = el('span', 'note');
-    status.style.marginLeft = '20px';
-    focusable(testBtn, testKey);
-    box.appendChild(testBtn);
-    box.appendChild(status);
-
-    function testKey() {
-      if (!settings.key) { status.textContent = tr('Escribe primero la clave.'); return; }
-      var da = debridAddon();
-      if (!da) { status.textContent = tr('Añade primero un addon de fuentes (más abajo, en Addons).'); return; }
-      status.textContent = tr('Comprobando…');
-      getJSON(sourcesBase(da) + '/stream/movie/' + PROBE_ID + '.json').then(function (d) {
-        var s = (d.streams || []).map(parseStream);
-        if (s.length === 1 && s[0].error) status.textContent = tr('✗ Clave no válida para {0}', DEBRID_NAMES[settings.debrid]);
-        else status.textContent = tr('✓ Clave válida · {0} fuentes de prueba', s.filter(function (x) { return x.url; }).length);
-      }).catch(function (e) { status.textContent = tr('No se pudo comprobar ({0})', e.message); });
+    var build = {};
+    function heading(t) {
+      var h = el('div', 'row-title', esc(t));
+      h.style.padding = box.children.length ? '30px 0 16px 0' : '0 0 16px 0';
+      box.appendChild(h);
     }
 
-    box.appendChild(el('div', 'row-title', tr('Fuentes')));
-    box.lastChild.style.padding = '30px 0 16px 0';
-    opt('Solo enlaces en caché (instantáneos)', function () { return yesNo(settings.onlyCached); }, function () { settings.onlyCached = !settings.onlyCached; });
-    opt('Calidad máxima', function () { return tr(QUALITY_NAMES[settings.maxQ]); }, cycle('maxQ', ['all', '1080', '720']));
-    var rateOpt = opt('Tasa máxima de las fuentes', function () {
-      return tr(RATE_NAMES[settings.maxRate]) + (settings.maxRate === 'auto' ? (settings.measuredMbps ? ' (~' + rateLimit() + ' Mb/s)' : tr(' (sin medir)')) : '');
-    }, cycle('maxRate', ['auto', 'none', '10', '20', '40']));
-    var speedBtn = el('div', 'btn', tr('Medir mi conexión'));
-    var speedNote = el('span', 'note', settings.measuredMbps ? tr('Última medida: {0} Mb/s', num(settings.measuredMbps)) : tr('Sin medir todavía'));
-    speedNote.style.marginLeft = '20px';
-    focusable(speedBtn, function () {
-      speedNote.textContent = tr('Midiendo… (unos segundos)');
-      measureSpeed().then(function (mbps) {
-        settings.measuredMbps = mbps;
-        settings.measuredAt = Date.now();
-        saveSettings();
-        speedNote.textContent = tr('Tu conexión: {0} Mb/s → fuentes de hasta ~{1} Mb/s', num(mbps), Math.round(mbps * 0.7));
-        rateOpt.lastChild.textContent = tr(RATE_NAMES[settings.maxRate]) + (settings.maxRate === 'auto' ? ' (~' + rateLimit() + ' Mb/s)' : '');
-      }).catch(function (e) { speedNote.textContent = tr('No se pudo medir ({0})', e.message); });
-    });
-    box.appendChild(speedBtn);
-    box.appendChild(speedNote);
-    box.appendChild(el('div', 'note', tr('Las fuentes más pesadas que tu conexión salen al final, marcadas como «pesada»: suelen pararse a cargar.')));
-    opt('Mostrar primero las fuentes que la tele puede reproducir', function () { return yesNo(settings.compatFirst); }, function () { settings.compatFirst = !settings.compatFirst; });
-    opt('Ocultar lo que ya he visto (Trakt y esta app)', function () { return yesNo(settings.hideWatched); }, function () { settings.hideWatched = !settings.hideWatched; Seen.at = 0; });
-    opt('Mostrar primero las fuentes en español', function () { return yesNo(settings.preferEs); }, function () { settings.preferEs = !settings.preferEs; });
-
-    box.appendChild(el('div', 'row-title', tr('Reproducción')));
-    box.lastChild.style.padding = '30px 0 16px 0';
-    opt('Al pulsar Ver, reproducir directamente la mejor fuente', function () { return yesNo(settings.quickPlay); }, function () { settings.quickPlay = !settings.quickPlay; });
-    opt('Saltar solo las intros de anime', function () { return yesNo(settings.autoSkip); }, function () { settings.autoSkip = !settings.autoSkip; });
-    opt('Pasar solo al siguiente episodio', function () { return yesNo(settings.autoNext); }, function () { settings.autoNext = !settings.autoNext; });
-    opt('Idioma del audio', function () {
-      return settings.audioLang === 'orig' ? tr('El que traiga el archivo') : tr('{0} si lo hay', tr(LANG_NAMES[settings.audioLang]));
-    }, cycle('audioLang', AUDIO_LANGS));
-    box.appendChild(el('div', 'note', tr('La pista que elijas con ▼ se recuerda en esa película o serie. Si un archivo no trae tu idioma, se prueba el último que elegiste y después inglés.')));
-
-    box.appendChild(el('div', 'row-title', tr('Subtítulos')));
-    box.lastChild.style.padding = '30px 0 16px 0';
-    opt('Idioma automático', function () { return tr(SUB_NAMES[settings.subLang]); }, cycle('subLang', ['spa', 'eng', 'fre', 'ger', 'ita', 'por', 'off']));
-    opt('Color', function () { return settings.subColor === 'yellow' ? tr('Amarillo') : tr('Blanco'); }, function () { settings.subColor = settings.subColor === 'yellow' ? 'white' : 'yellow'; });
-    opt('Posición', function () { return settings.subPos === 'high' ? tr('Más arriba') : tr('Abajo'); }, function () { settings.subPos = settings.subPos === 'high' ? 'low' : 'high'; });
-    opt('Fondo detrás del texto', function () { return yesNo(settings.subBg); }, function () { settings.subBg = !settings.subBg; });
-    opt('Tamaño', function () { return settings.subSize === 'big' ? tr('Grande') : tr('Normal'); }, function () { settings.subSize = settings.subSize === 'big' ? 'normal' : 'big'; });
-
-    box.appendChild(el('div', 'row-title', 'Trakt'));
-    box.lastChild.style.padding = '30px 0 16px 0';
-    var tStatus = el('div', 'note');
-    box.appendChild(tStatus);
-
-    function textField(label, key, placeholder) {
-      var f = el('div', 'field');
-      f.appendChild(el('label', null, esc(tr(label))));
-      var inp = el('input');
-      inp.type = 'text';
-      inp.value = trakt[key] || '';
-      inp.placeholder = tr(placeholder);
-      inp.setAttribute('autocomplete', 'off');
-      inp.setAttribute('spellcheck', 'false');
-      focusable(inp, function () { inp.focus(); });
-      inp._ondone = function (v) {
-        trakt[key] = (v || '').replace(/\s+/g, '');
-        inp.value = trakt[key];
-        saveTrakt();
-        paintTrakt();
-      };
-      f.appendChild(inp);
-      box.appendChild(f);
-    }
-    textField('Client ID de tu app de Trakt', 'clientId', 'Client ID');
-    textField('Client Secret (solo apps antiguas de Trakt; déjalo vacío si no tienes)', 'clientSecret', 'Opcional');
-    box.appendChild(el('div', 'note', tr('Créala gratis en trakt.tv/oauth/applications/new · Redirect URI: http://localhost')));
-
-    var linkBtn = el('div', 'btn primary');
-    focusable(linkBtn, function () {
-      if (Trakt.linked()) {
-        Trakt.unlink();
-        paintTrakt();
-        toast(tr('Trakt desvinculado'));
-        return;
-      }
-      if (!trakt.clientId) { toast(tr('Escribe primero el Client ID de tu app de Trakt')); return; }
-      traktLinkScreen(paintTrakt);
-    });
-    box.appendChild(linkBtn);
-
-    function paintTrakt() {
-      tStatus.textContent = Trakt.linked()
-        ? tr('✓ Vinculado') + (trakt.user ? tr(' como {0}', trakt.user) : '') + tr('. Lo que veas se registra automáticamente (visto al pasar del 80 %).')
-        : tr('Sin vincular. Registra lo que ves, tu lista y recomendaciones.');
-      linkBtn.textContent = Trakt.linked() ? tr('Desvincular Trakt') : tr('Vincular con Trakt');
-    }
-    paintTrakt();
-
-    box.appendChild(el('div', 'row-title', tr('Addons')));
-    box.lastChild.style.padding = '30px 0 16px 0';
-    var addonList = el('div');
-    box.appendChild(addonList);
-    function paintAddons() {
-      addonList.innerHTML = '';
-      if (!addons.length) addonList.appendChild(el('div', 'note', esc(tr('Ninguno añadido. Sin un addon de fuentes no se puede reproducir nada. Cinemeta, Kitsu y OpenSubtitles ya vienen incluidos.'))));
-      addons.forEach(function (a) {
-        var what = [];
-        if (a === debridAddon()) what.push(tr('fuentes con tu debrid'));
-        else if (addonHas(a, 'stream')) what.push(tr('fuentes'));
-        if ((a.manifest.catalogs || []).length) what.push(tr('catálogos'));
-        if (addonHas(a, 'subtitles')) what.push(tr('subtítulos'));
-        var o = el('div', 'opt');
-        o.appendChild(el('span', null, esc(a.manifest.name)));
-        o.appendChild(el('span', 'val', esc(what.join(', ') || '—')));
-        focusable(o, function () {
-          menu(a.manifest.name, [{ label: tr('Quitar este addon'), value: 1 }, { label: tr('Cancelar'), value: 0, selected: true }], function (it) {
-            if (!it.value) return;
-            removeAddon(a);
-            paintAddons();
-            Nav.focus(addonInput);
-            toast(tr('Addon quitado'));
+    // cada categoría en su propia función: ES5 estricto no admite funciones declaradas dentro de un if
+    build.sources = function () {
+      heading(tr('Addons'));
+      var addonList = el('div');
+      box.appendChild(addonList);
+      function paintAddons() {
+        addonList.innerHTML = '';
+        if (!addons.length) addonList.appendChild(el('div', 'note', esc(tr('Ninguno añadido. Sin un addon de fuentes no se puede reproducir nada. Cinemeta, Kitsu y OpenSubtitles ya vienen incluidos.'))));
+        addons.forEach(function (a) {
+          var what = [];
+          if (a === debridAddon()) what.push(tr('fuentes con tu debrid'));
+          else if (addonHas(a, 'stream')) what.push(tr('fuentes'));
+          if ((a.manifest.catalogs || []).length) what.push(tr('catálogos'));
+          if (addonHas(a, 'subtitles')) what.push(tr('subtítulos'));
+          var o = el('div', 'opt');
+          o.appendChild(el('span', null, esc(a.manifest.name)));
+          o.appendChild(el('span', 'val', esc(what.join(', ') || '—')));
+          focusable(o, function () {
+            menu(a.manifest.name, [{ label: tr('Quitar este addon'), value: 1 }, { label: tr('Cancelar'), value: 0, selected: true }], function (it) {
+              if (!it.value) return;
+              removeAddon(a);
+              paintAddons();
+              Nav.focus(addonInput);
+              toast(tr('Addon quitado'));
+            });
           });
+          addonList.appendChild(o);
         });
-        addonList.appendChild(o);
-      });
-    }
-    paintAddons();
-    var af = el('div', 'field');
-    af.appendChild(el('label', null, esc(tr('Añadir addon: URL de su manifest (pulsa OK para escribirla)'))));
-    var addonInput = el('input');
-    addonInput.type = 'text';
-    addonInput.placeholder = 'https://…/manifest.json';
-    addonInput.setAttribute('autocomplete', 'off');
-    addonInput.setAttribute('spellcheck', 'false');
-    focusable(addonInput, function () { addonInput.focus(); });
-    var addonStatus = el('div', 'note');
-    addonInput._ondone = function (v) {
-      if (!v || !v.replace(/\s+/g, '')) return;
-      addonStatus.textContent = tr('Comprobando…');
-      installAddon(v).then(function (a) {
-        addonInput.value = '';
-        addonStatus.textContent = tr('✓ Añadido: {0}', a.manifest.name);
-        paintAddons();
-      }).catch(function (e) { addonStatus.textContent = tr('✗ No se pudo añadir ({0})', e.message); });
-    };
-    af.appendChild(addonInput);
-    box.appendChild(af);
-    box.appendChild(addonStatus);
-    box.appendChild(el('div', 'note', esc(tr('Los addons de fuentes que piden configuración (Comet, MediaFusion…) se configuran en su web con tu debrid y se pega aquí la URL que dan. Sus catálogos salen en Inicio y en la búsqueda.'))));
+      }
+      paintAddons();
+      var af = el('div', 'field');
+      af.appendChild(el('label', null, esc(tr('Añadir addon: URL de su manifest (pulsa OK para escribirla)'))));
+      var addonInput = el('input');
+      addonInput.type = 'text';
+      addonInput.placeholder = 'https://…/manifest.json';
+      addonInput.setAttribute('autocomplete', 'off');
+      addonInput.setAttribute('spellcheck', 'false');
+      focusable(addonInput, function () { addonInput.focus(); });
+      var addonStatus = el('div', 'note');
+      addonInput._ondone = function (v) {
+        if (!v || !v.replace(/\s+/g, '')) return;
+        addonStatus.textContent = tr('Comprobando…');
+        installAddon(v).then(function (a) {
+          addonInput.value = '';
+          addonStatus.textContent = tr('✓ Añadido: {0}', a.manifest.name);
+          paintAddons();
+        }).catch(function (e) { addonStatus.textContent = tr('✗ No se pudo añadir ({0})', e.message); });
+      };
+      af.appendChild(addonInput);
+      box.appendChild(af);
+      box.appendChild(addonStatus);
+      box.appendChild(el('div', 'note', esc(tr('Los addons de fuentes que piden configuración (Comet, MediaFusion…) se configuran en su web con tu debrid y se pega aquí la URL que dan. Sus catálogos salen en Inicio y en la búsqueda.'))));
 
-    box.appendChild(el('div', 'row-title', tr('Copia de seguridad')));
-    box.lastChild.style.padding = '30px 0 16px 0';
-    box.appendChild(el('div', 'note', esc(tr('Guarda tus ajustes, claves, Trakt, progreso y addons en un Gist secreto de tu cuenta de GitHub, una vez al día. Si se borran los datos de la app, escribe el token y pulsa Restaurar.'))));
-    var bf = el('div', 'field');
-    bf.appendChild(el('label', null, esc(tr('Token de GitHub con permiso «gist» (pulsa OK para escribirlo)'))));
-    var tokenInput = el('input');
-    tokenInput.type = 'text';
-    tokenInput.value = backup.token ? backup.token.slice(0, 8) + '…' : '';
-    tokenInput.placeholder = 'ghp_…';
-    tokenInput.setAttribute('autocomplete', 'off');
-    tokenInput.setAttribute('spellcheck', 'false');
-    focusable(tokenInput, function () { if (backup.token) tokenInput.value = ''; tokenInput.focus(); });
-    tokenInput._ondone = function (v) {
-      v = (v || '').replace(/\s+/g, '');
-      if (!v || v.indexOf('…') >= 0) { tokenInput.value = backup.token ? backup.token.slice(0, 8) + '…' : ''; return; }
-      backup.token = v;
-      backup.gistId = '';
-      saveBackup();
-      tokenInput.value = v.slice(0, 8) + '…';
-      paintBackup(tr('Token guardado. Buscando una copia anterior…'));
-      findBackupGist().then(function (id) {
-        paintBackup(id ? tr('Hay una copia en GitHub: pulsa Restaurar para recuperarla o Guardar para sustituirla.') : tr('No hay copias todavía: pulsa Guardar copia ahora.'));
-      }).catch(function (e) { paintBackup('✗ ' + e.message); });
+      heading(tr('Servicio debrid'));
+      opt('Servicio', function () { return DEBRID_NAMES[settings.debrid]; }, cycle('debrid', ['realdebrid', 'alldebrid']));
+
+      var field = el('div', 'field');
+      field.appendChild(el('label', null, tr('Clave API (pulsa OK para escribirla)')));
+      var input = el('input');
+      input.type = 'text';
+      input.value = settings.key;
+      input.placeholder = tr('Pega o escribe aquí tu clave');
+      input.setAttribute('autocomplete', 'off');
+      input.setAttribute('spellcheck', 'false');
+      focusable(input, function () { input.focus(); });
+      input._ondone = function (v) {
+        settings.key = (v || '').replace(/\s+/g, '');
+        input.value = settings.key;
+        saveSettings();
+        if (settings.key) testKey();
+      };
+      field.appendChild(input);
+      box.appendChild(field);
+      box.appendChild(el('div', 'note', 'Real-Debrid: real-debrid.com/apitoken · AllDebrid: alldebrid.com/apikeys'));
+
+      var testBtn = el('div', 'btn', tr('Probar clave'));
+      var status = el('span', 'note');
+      status.style.marginLeft = '20px';
+      focusable(testBtn, testKey);
+      box.appendChild(testBtn);
+      box.appendChild(status);
+
+      function testKey() {
+        if (!settings.key) { status.textContent = tr('Escribe primero la clave.'); return; }
+        var da = debridAddon();
+        if (!da) { status.textContent = tr('Añade primero un addon de fuentes (arriba, en Addons).'); return; }
+        status.textContent = tr('Comprobando…');
+        getJSON(sourcesBase(da) + '/stream/movie/' + PROBE_ID + '.json').then(function (d) {
+          var s = (d.streams || []).map(parseStream);
+          if (s.length === 1 && s[0].error) status.textContent = tr('✗ Clave no válida para {0}', DEBRID_NAMES[settings.debrid]);
+          else status.textContent = tr('✓ Clave válida · {0} fuentes de prueba', s.filter(function (x) { return x.url; }).length);
+        }).catch(function (e) { status.textContent = tr('No se pudo comprobar ({0})', e.message); });
+      }
+
+      heading(tr('Opciones de fuentes'));
+      opt('Solo enlaces en caché (instantáneos)', function () { return yesNo(settings.onlyCached); }, function () { settings.onlyCached = !settings.onlyCached; });
+      opt('Calidad máxima', function () { return tr(QUALITY_NAMES[settings.maxQ]); }, cycle('maxQ', ['all', '1080', '720']));
+      var rateOpt = opt('Tasa máxima de las fuentes', function () {
+        return tr(RATE_NAMES[settings.maxRate]) + (settings.maxRate === 'auto' ? (settings.measuredMbps ? ' (~' + rateLimit() + ' Mb/s)' : tr(' (sin medir)')) : '');
+      }, cycle('maxRate', ['auto', 'none', '10', '20', '40']));
+      var speedBtn = el('div', 'btn', tr('Medir mi conexión'));
+      var speedNote = el('span', 'note', settings.measuredMbps ? tr('Última medida: {0} Mb/s', num(settings.measuredMbps)) : tr('Sin medir todavía'));
+      speedNote.style.marginLeft = '20px';
+      focusable(speedBtn, function () {
+        speedNote.textContent = tr('Midiendo… (unos segundos)');
+        measureSpeed().then(function (mbps) {
+          settings.measuredMbps = mbps;
+          settings.measuredAt = Date.now();
+          saveSettings();
+          speedNote.textContent = tr('Tu conexión: {0} Mb/s → fuentes de hasta ~{1} Mb/s', num(mbps), Math.round(mbps * 0.7));
+          rateOpt.lastChild.textContent = tr(RATE_NAMES[settings.maxRate]) + (settings.maxRate === 'auto' ? ' (~' + rateLimit() + ' Mb/s)' : '');
+        }).catch(function (e) { speedNote.textContent = tr('No se pudo medir ({0})', e.message); });
+      });
+      box.appendChild(speedBtn);
+      box.appendChild(speedNote);
+      box.appendChild(el('div', 'note', tr('Las fuentes más pesadas que tu conexión salen al final, marcadas como «pesada»: suelen pararse a cargar.')));
+      opt('Mostrar primero las fuentes que la tele puede reproducir', function () { return yesNo(settings.compatFirst); }, function () { settings.compatFirst = !settings.compatFirst; });
+      opt('Mostrar primero las fuentes en español', function () { return yesNo(settings.preferEs); }, function () { settings.preferEs = !settings.preferEs; });
+
     };
-    bf.appendChild(tokenInput);
-    box.appendChild(bf);
-    box.appendChild(el('div', 'note', esc(tr('Créalo en github.com/settings/tokens/new marcando solo «gist».'))));
-    var saveBtn = el('div', 'btn', tr('Guardar copia ahora'));
-    var restoreBtn = el('div', 'btn', tr('Restaurar copia'));
-    var bStatus = el('div', 'note');
-    function paintBackup(msg) {
-      bStatus.textContent = msg || (!backup.token ? tr('Sin configurar.') :
-        backup.err ? tr('✗ La última copia falló ({0})', backup.err) :
-        backup.at ? tr('✓ Última copia: {0}', fmtDate(new Date(backup.at)) + ' ' + new Date(backup.at).toTimeString().slice(0, 5)) : tr('Aún no se ha hecho ninguna copia.'));
-    }
-    focusable(saveBtn, function () {
-      paintBackup(tr('Guardando…'));
-      backupNow().then(function () { paintBackup(); toast(tr('Copia guardada en GitHub')); }).catch(function (e) { paintBackup('✗ ' + e.message); });
-    });
-    focusable(restoreBtn, function () {
-      menu(tr('¿Restaurar la copia? Se sustituyen los ajustes, el progreso y los addons de esta tele.'),
-        [{ label: tr('Restaurar'), value: 1 }, { label: tr('Cancelar'), value: 0, selected: true }], function (it) {
+
+    build.playback = function () {
+      opt('Al pulsar Ver, reproducir directamente la mejor fuente', function () { return yesNo(settings.quickPlay); }, function () { settings.quickPlay = !settings.quickPlay; });
+      opt('Saltar solo las intros de anime', function () { return yesNo(settings.autoSkip); }, function () { settings.autoSkip = !settings.autoSkip; });
+      opt('Pasar solo al siguiente episodio', function () { return yesNo(settings.autoNext); }, function () { settings.autoNext = !settings.autoNext; });
+      opt('Idioma del audio', function () {
+        return settings.audioLang === 'orig' ? tr('El que traiga el archivo') : tr('{0} si lo hay', tr(LANG_NAMES[settings.audioLang]));
+      }, cycle('audioLang', AUDIO_LANGS));
+      box.appendChild(el('div', 'note', tr('La pista que elijas con ▼ se recuerda en esa película o serie. Si un archivo no trae tu idioma, se prueba el último que elegiste y después inglés.')));
+
+    };
+
+    build.subs = function () {
+      opt('Idioma automático', function () { return tr(SUB_NAMES[settings.subLang]); }, cycle('subLang', ['spa', 'eng', 'fre', 'ger', 'ita', 'por', 'off']));
+      opt('Color', function () { return settings.subColor === 'yellow' ? tr('Amarillo') : tr('Blanco'); }, function () { settings.subColor = settings.subColor === 'yellow' ? 'white' : 'yellow'; });
+      opt('Posición', function () { return settings.subPos === 'high' ? tr('Más arriba') : tr('Abajo'); }, function () { settings.subPos = settings.subPos === 'high' ? 'low' : 'high'; });
+      opt('Fondo detrás del texto', function () { return yesNo(settings.subBg); }, function () { settings.subBg = !settings.subBg; });
+      opt('Tamaño', function () { return settings.subSize === 'big' ? tr('Grande') : tr('Normal'); }, function () { settings.subSize = settings.subSize === 'big' ? 'normal' : 'big'; });
+
+    };
+
+    build.accounts = function () {
+      heading('Trakt');
+      var tStatus = el('div', 'note');
+      box.appendChild(tStatus);
+
+      function textField(label, key, placeholder) {
+        var f = el('div', 'field');
+        f.appendChild(el('label', null, esc(tr(label))));
+        var inp = el('input');
+        inp.type = 'text';
+        inp.value = trakt[key] || '';
+        inp.placeholder = tr(placeholder);
+        inp.setAttribute('autocomplete', 'off');
+        inp.setAttribute('spellcheck', 'false');
+        focusable(inp, function () { inp.focus(); });
+        inp._ondone = function (v) {
+          trakt[key] = (v || '').replace(/\s+/g, '');
+          inp.value = trakt[key];
+          saveTrakt();
+          paintTrakt();
+        };
+        f.appendChild(inp);
+        box.appendChild(f);
+      }
+      textField('Client ID de tu app de Trakt', 'clientId', 'Client ID');
+      textField('Client Secret (solo apps antiguas de Trakt; déjalo vacío si no tienes)', 'clientSecret', 'Opcional');
+      box.appendChild(el('div', 'note', tr('Créala gratis en trakt.tv/oauth/applications/new · Redirect URI: http://localhost')));
+
+      var linkBtn = el('div', 'btn primary');
+      focusable(linkBtn, function () {
+        if (Trakt.linked()) {
+          Trakt.unlink();
+          paintTrakt();
+          toast(tr('Trakt desvinculado'));
+          return;
+        }
+        if (!trakt.clientId) { toast(tr('Escribe primero el Client ID de tu app de Trakt')); return; }
+        traktLinkScreen(paintTrakt);
+      });
+      box.appendChild(linkBtn);
+
+      function paintTrakt() {
+        tStatus.textContent = Trakt.linked()
+          ? tr('✓ Vinculado') + (trakt.user ? tr(' como {0}', trakt.user) : '') + tr('. Lo que veas se registra automáticamente (visto al pasar del 80 %).')
+          : tr('Sin vincular. Registra lo que ves, tu lista y recomendaciones.');
+        linkBtn.textContent = Trakt.linked() ? tr('Desvincular Trakt') : tr('Vincular con Trakt');
+      }
+      paintTrakt();
+
+      heading(tr('Títulos en español (TMDB)'));
+      var tf = el('div', 'field');
+      tf.appendChild(el('label', null, esc(tr('Títulos y sinopsis en español: clave de TMDB (pulsa OK para escribirla)'))));
+      var tmdbInput = el('input');
+      tmdbInput.type = 'text';
+      tmdbInput.value = settings.tmdbKey;
+      tmdbInput.placeholder = tr('Clave de la API o token de lectura de themoviedb.org');
+      tmdbInput.setAttribute('autocomplete', 'off');
+      tmdbInput.setAttribute('spellcheck', 'false');
+      focusable(tmdbInput, function () { tmdbInput.focus(); });
+      var tmdbStatus = el('div', 'note', esc(tr('Gratis en themoviedb.org → Ajustes → API. Solo se usa con la app en español.')));
+      tmdbInput._ondone = function (v) {
+        settings.tmdbKey = (v || '').replace(/\s+/g, '');
+        tmdbInput.value = settings.tmdbKey;
+        saveSettings();
+        if (!settings.tmdbKey) { tmdbStatus.textContent = tr('Sin clave: los títulos salen en inglés.'); return; }
+        tmdbStatus.textContent = tr('Comprobando…');
+        tmdbGet('/movie/278').then(function (d) {
+          tmdbStatus.textContent = tr('✓ Clave válida («{0}»). Los cambios se ven al volver a Inicio.', d.title);
+        }).catch(function (e) { tmdbStatus.textContent = '✗ ' + e.message; });
+      };
+      tf.appendChild(tmdbInput);
+      box.appendChild(tf);
+      box.appendChild(tmdbStatus);
+
+      heading(tr('Copia de seguridad (GitHub)'));
+      box.appendChild(el('div', 'note', esc(tr('Guarda tus ajustes, claves, Trakt, progreso y addons en un Gist secreto de tu cuenta de GitHub, una vez al día. Si se borran los datos de la app, escribe el token y pulsa Restaurar.'))));
+      var bf = el('div', 'field');
+      bf.appendChild(el('label', null, esc(tr('Token de GitHub con permiso «gist» (pulsa OK para escribirlo)'))));
+      var tokenInput = el('input');
+      tokenInput.type = 'text';
+      tokenInput.value = backup.token ? backup.token.slice(0, 8) + '…' : '';
+      tokenInput.placeholder = 'ghp_…';
+      tokenInput.setAttribute('autocomplete', 'off');
+      tokenInput.setAttribute('spellcheck', 'false');
+      focusable(tokenInput, function () { if (backup.token) tokenInput.value = ''; tokenInput.focus(); });
+      tokenInput._ondone = function (v) {
+        v = (v || '').replace(/\s+/g, '');
+        if (!v || v.indexOf('…') >= 0) { tokenInput.value = backup.token ? backup.token.slice(0, 8) + '…' : ''; return; }
+        backup.token = v;
+        backup.gistId = '';
+        saveBackup();
+        tokenInput.value = v.slice(0, 8) + '…';
+        paintBackup(tr('Token guardado. Buscando una copia anterior…'));
+        findBackupGist().then(function (id) {
+          paintBackup(id ? tr('Hay una copia en GitHub: pulsa Restaurar para recuperarla o Guardar para sustituirla.') : tr('No hay copias todavía: pulsa Guardar copia ahora.'));
+        }).catch(function (e) { paintBackup('✗ ' + e.message); });
+      };
+      bf.appendChild(tokenInput);
+      box.appendChild(bf);
+      box.appendChild(el('div', 'note', esc(tr('Créalo en github.com/settings/tokens/new marcando solo «gist».'))));
+      var saveBtn = el('div', 'btn', tr('Guardar copia ahora'));
+      var restoreBtn = el('div', 'btn', tr('Restaurar copia'));
+      var bStatus = el('div', 'note');
+      function paintBackup(msg) {
+        bStatus.textContent = msg || (!backup.token ? tr('Sin configurar.') :
+          backup.err ? tr('✗ La última copia falló ({0})', backup.err) :
+          backup.at ? tr('✓ Última copia: {0}', fmtDate(new Date(backup.at)) + ' ' + new Date(backup.at).toTimeString().slice(0, 5)) : tr('Aún no se ha hecho ninguna copia.'));
+      }
+      focusable(saveBtn, function () {
+        paintBackup(tr('Guardando…'));
+        backupNow().then(function () { paintBackup(); toast(tr('Copia guardada en GitHub')); }).catch(function (e) { paintBackup('✗ ' + e.message); });
+      });
+      focusable(restoreBtn, function () {
+        menu(tr('¿Restaurar la copia? Se sustituyen los ajustes, el progreso y los addons de esta tele.'),
+          [{ label: tr('Restaurar'), value: 1 }, { label: tr('Cancelar'), value: 0, selected: true }], function (it) {
+            if (!it.value) return;
+            paintBackup(tr('Restaurando…'));
+            restoreBackup().then(function (d) {
+              toast(tr('Copia del {0} restaurada. Reiniciando…', fmtDate(new Date(d.at))));
+              setTimeout(function () { location.reload(); }, 1500);
+            }).catch(function (e) { paintBackup('✗ ' + e.message); });
+          });
+      });
+      box.appendChild(saveBtn);
+      box.appendChild(restoreBtn);
+      box.appendChild(bStatus);
+      paintBackup();
+
+    };
+
+    build.general = function () {
+      opt('Idioma de la app', function () { return LANGS[settings.lang]; }, function () {
+        settings.lang = settings.lang === 'en' ? 'es' : 'en';
+        saveSettings();
+        setTimeout(rebuildUI, 0);
+      });
+
+      opt('Ocultar lo que ya he visto (Trakt y esta app)', function () { return yesNo(settings.hideWatched); }, function () { settings.hideWatched = !settings.hideWatched; Seen.at = 0; });
+    };
+
+    build.data = function () {
+      var clear = el('div', 'btn', tr('Borrar historial de reproducción'));
+      focusable(clear, function () {
+        menu(tr('¿Borrar «Continuar viendo» y el progreso?'), [{ label: tr('Borrar'), value: 1 }, { label: tr('Cancelar'), value: 0, selected: true }], function (it) {
           if (!it.value) return;
-          paintBackup(tr('Restaurando…'));
-          restoreBackup().then(function (d) {
-            toast(tr('Copia del {0} restaurada. Reiniciando…', fmtDate(new Date(d.at))));
-            setTimeout(function () { location.reload(); }, 1500);
-          }).catch(function (e) { paintBackup('✗ ' + e.message); });
+          progress = {};
+          save('progress', progress);
+          toast(tr('Historial borrado'));
         });
-    });
-    box.appendChild(saveBtn);
-    box.appendChild(restoreBtn);
-    box.appendChild(bStatus);
-    paintBackup();
-
-    box.appendChild(el('div', 'row-title', tr('Datos')));
-    box.lastChild.style.padding = '30px 0 16px 0';
-    var clear = el('div', 'btn', tr('Borrar historial de reproducción'));
-    focusable(clear, function () {
-      menu(tr('¿Borrar «Continuar viendo» y el progreso?'), [{ label: tr('Borrar'), value: 1 }, { label: tr('Cancelar'), value: 0, selected: true }], function (it) {
-        if (!it.value) return;
-        progress = {};
-        save('progress', progress);
-        toast(tr('Historial borrado'));
       });
-    });
-    box.appendChild(clear);
-    var sendLog = el('div', 'btn', tr('Enviar registro de diagnóstico'));
-    focusable(sendLog, function () {
-      if (!backup.token) { toast(tr('Configura antes la copia de seguridad (token de GitHub)')); return; }
-      toast(tr('Enviando…'));
-      backupNow().then(function () { toast(tr('Registro enviado. ID: {0}', backup.gistId), 8000); }).catch(function (e) { toast('✗ ' + e.message); });
-    });
-    box.appendChild(sendLog);
-    var viewLog = el('div', 'btn', tr('Ver registro'));
-    focusable(viewLog, function () {
-      var last = diagLog.slice(-60).reverse();
-      menu(tr('Registro (lo más reciente arriba)'), last.length ? last.map(function (e) {
-        return { label: e.t.slice(5, 16).replace('T', ' ') + ' · ' + e.k + ' · ' + e.m + (e.d ? ' · ' + JSON.stringify(e.d).slice(0, 160) : '') };
-      }) : [{ label: tr('Vacío') }], function () { /* solo lectura */ });
-    });
-    box.appendChild(viewLog);
-    if (backup.gistId) box.appendChild(el('div', 'note', esc(tr('ID del Gist de la copia y del registro: {0}', backup.gistId))));
-    var diag = el('div', 'btn', tr('Diagnóstico de reproducción'));
-    focusable(diag, function () {
-      var yn = function (v) { return v ? tr('sí ({0})', v) : tr('no'); };
-      var chrome = (navigator.userAgent.match(/Chrome\/(\d+)/) || [])[1] || '?';
-      menu(tr('Diagnóstico'), [
-        { label: tr('Reproductor: {0}', Player.hasAV() ? tr('nativo (AVPlay)') : 'HTML5') },
-        { label: 'API tizen: ' + yesNo(window.tizen) + ' · webapis: ' + yesNo(window.webapis) },
-        { label: tr('Navegador: Chromium {0}', chrome) },
-        { label: 'H.264: ' + yn(Codecs.h264) },
-        { label: 'HEVC 8-bit: ' + yn(Codecs.hevc) },
-        { label: 'HEVC 10-bit: ' + yn(Codecs.hevc10) },
-        { label: 'AV1: ' + yn(Codecs.av1) },
-        { label: 'MKV: ' + yn(Codecs.mkv) },
-        { label: 'Audio AC3: ' + yn(Codecs.ac3) + ' · EAC3: ' + yn(Codecs.eac3) },
-        { label: 'Audio DTS: ' + yn(Codecs.dts) }
-      ], function () { /* solo informativo */ });
-    });
-    box.appendChild(diag);
-    box.appendChild(el('div', 'note', esc(tr('Certificado de la app válido hasta el {0}', fmtDate(CERT_EXPIRES)))));
-    box.appendChild(el('div', 'note', 'StremTV ' + VERSION + tr(' · Catálogo: Cinemeta · Fuentes: tus addons · Subtítulos: OpenSubtitles · Reproductor: {0}', Player.hasAV() ? tr('nativo (AVPlay)') : 'HTML5')));
+      box.appendChild(clear);
+      var sendLog = el('div', 'btn', tr('Enviar registro de diagnóstico'));
+      focusable(sendLog, function () {
+        if (!backup.token) { toast(tr('Configura antes la copia de seguridad (token de GitHub)')); return; }
+        toast(tr('Enviando…'));
+        backupNow().then(function () { toast(tr('Registro enviado. ID: {0}', backup.gistId), 8000); }).catch(function (e) { toast('✗ ' + e.message); });
+      });
+      box.appendChild(sendLog);
+      var viewLog = el('div', 'btn', tr('Ver registro'));
+      focusable(viewLog, function () {
+        var last = diagLog.slice(-60).reverse();
+        menu(tr('Registro (lo más reciente arriba)'), last.length ? last.map(function (e) {
+          return { label: e.t.slice(5, 16).replace('T', ' ') + ' · ' + e.k + ' · ' + e.m + (e.d ? ' · ' + JSON.stringify(e.d).slice(0, 160) : '') };
+        }) : [{ label: tr('Vacío') }], function () { /* solo lectura */ });
+      });
+      box.appendChild(viewLog);
+      if (backup.gistId) box.appendChild(el('div', 'note', esc(tr('ID del Gist de la copia y del registro: {0}', backup.gistId))));
+      var diag = el('div', 'btn', tr('Diagnóstico de reproducción'));
+      focusable(diag, function () {
+        var yn = function (v) { return v ? tr('sí ({0})', v) : tr('no'); };
+        var chrome = (navigator.userAgent.match(/Chrome\/(\d+)/) || [])[1] || '?';
+        menu(tr('Diagnóstico'), [
+          { label: tr('Reproductor: {0}', Player.hasAV() ? tr('nativo (AVPlay)') : 'HTML5') },
+          { label: 'API tizen: ' + yesNo(window.tizen) + ' · webapis: ' + yesNo(window.webapis) },
+          { label: tr('Navegador: Chromium {0}', chrome) },
+          { label: 'H.264: ' + yn(Codecs.h264) },
+          { label: 'HEVC 8-bit: ' + yn(Codecs.hevc) },
+          { label: 'HEVC 10-bit: ' + yn(Codecs.hevc10) },
+          { label: 'AV1: ' + yn(Codecs.av1) },
+          { label: 'MKV: ' + yn(Codecs.mkv) },
+          { label: 'Audio AC3: ' + yn(Codecs.ac3) + ' · EAC3: ' + yn(Codecs.eac3) },
+          { label: 'Audio DTS: ' + yn(Codecs.dts) }
+        ], function () { /* solo informativo */ });
+      });
+      box.appendChild(diag);
+      box.appendChild(el('div', 'note', esc(tr('Certificado de la app válido hasta el {0}', fmtDate(CERT_EXPIRES)))));
+      box.appendChild(el('div', 'note', 'StremTV ' + VERSION + tr(' · Catálogo: Cinemeta · Fuentes: tus addons · Subtítulos: OpenSubtitles · Reproductor: {0}', Player.hasAV() ? tr('nativo (AVPlay)') : 'HTML5')));
 
+    };
+
+    build[section]();
     return { el: root, initialFocus: function () { return box.querySelector('.f'); } };
   }
 
@@ -3634,11 +3710,12 @@
     document.documentElement.lang = settings.lang;
     push(homeScreen());
     push(settingsScreen());
+    push(settingsScreen('general'));
   }
 
   // ---------------------------------------------------------------- arranque
 
-  var VERSION = '0.15.0';
+  var VERSION = '0.16.0';
 
   function fitScreen() {
     var z = window.innerWidth / 1920;
@@ -3684,5 +3761,5 @@
   else start();
 
   // exponer para depurar desde la consola
-  window.StremTV = { bootLog: function () { return load('boot', []); }, settings: settings, Player: Player, Nav: Nav, stack: stack, toast: function (m, ms) { toast(tr(m), ms); }, open: function (type, id) { push(detailScreen(type, id)); } };
+  window.StremTV = { bootLog: function () { return load('boot', []); }, settings: settings, Player: Player, Nav: Nav, stack: stack, toast: function (m, ms) { toast(tr(m), ms); }, open: function (type, id) { push(detailScreen(type, id)); }, openSettings: function (id) { push(settingsScreen(id)); } };
 })();

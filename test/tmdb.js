@@ -32,7 +32,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   await p.reload({ waitUntil: 'networkidle2' }); await sleep(2000);
   console.log('sin clave, 1ª tarjeta:', await p.evaluate(() => document.querySelector('.card .name').textContent), '· llamadas TMDB:', calls.length);
   // poner la clave en Ajustes
-  await p.evaluate(() => StremTV.Nav.focus(Array.from(document.querySelectorAll('.tab')).filter((x) => x.textContent === 'Ajustes')[0])); await key('Enter'); await sleep(800);
+  await p.evaluate(() => StremTV.openSettings('accounts')); await sleep(800);
   const setKey = async (v) => { await p.evaluate((v) => { const i = Array.from(document.querySelectorAll('input')).filter((x) => /themoviedb/.test(x.placeholder))[0]; StremTV.Nav.focus(i); i.focus(); i.value = v; }, v); await key('Enter'); await sleep(1200);
     return p.evaluate(() => { const i = Array.from(document.querySelectorAll('input')).filter((x) => /themoviedb/.test(x.placeholder))[0]; return i.parentNode.nextSibling.textContent; }); };
   console.log('clave mala:', await setKey('MALA'));

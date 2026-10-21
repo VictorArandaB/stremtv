@@ -22,8 +22,7 @@ const OUT = __dirname + '/shots';
   await p.reload({ waitUntil: 'networkidle2' }); await sleep(1500);
   console.log('ES pestañas:', await text('.tab'));
   // ir a Ajustes y cambiar el idioma (primera opción)
-  await p.evaluate(() => { const t = Array.from(document.querySelectorAll('.tab')).filter((x) => x.textContent === 'Ajustes')[0]; StremTV.Nav.focus(t); });
-  await key('Enter'); await sleep(800);
+  await p.evaluate(() => StremTV.openSettings('general')); await sleep(800);
   console.log('foco en ajustes:', await p.evaluate(() => StremTV.Nav.cur.textContent));
   await key('Enter'); await sleep(1500);
   console.log('tras cambiar → foco:', await p.evaluate(() => StremTV.Nav.cur && StremTV.Nav.cur.textContent), '· pila:', await p.evaluate(() => StremTV.stack.length), '· lang:', await p.evaluate(() => document.documentElement.lang));

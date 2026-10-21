@@ -23,7 +23,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   await p.screenshot({ path: __dirname + '/shots/60-rate.png' });
   // medir conexión desde ajustes
   await p.keyboard.press('Escape'); await p.keyboard.press('Escape'); await sleep(500);
-  await p.evaluate(() => { const t = Array.from(document.querySelectorAll('.tab')).filter((x) => x.textContent === 'Ajustes')[0]; t._onclick(t); }); await sleep(600);
+  await p.evaluate(() => StremTV.openSettings('sources')); await sleep(600);
   await p.evaluate(() => { const bt = Array.from(document.querySelectorAll('.btn')).filter((x) => /Medir/.test(x.textContent))[0]; bt._onclick(bt); }); await sleep(12000);
   console.log('medida:', await p.evaluate(() => Array.from(document.querySelectorAll('.note')).map((n) => n.textContent).filter((t) => /Mb\/s|Midiendo|medir/.test(t)).join(' | ')));
   console.log('opción:', await p.evaluate(() => Array.from(document.querySelectorAll('.opt')).filter((o) => /Tasa/.test(o.textContent))[0].textContent));

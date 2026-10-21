@@ -32,7 +32,7 @@ Escrito en ES5 y CSS sin funciones modernas para que funcione en el motor web de
 ## Instalar en TizenBrew
 Módulos → Añadir módulo GitHub → `<usuario>/stremtv`
 
-Después, en **Ajustes** de la app:
+Después, en **Ajustes → Fuentes y debrid** (se abre solo mientras no haya ningún addon de fuentes):
 1. En **Addons**, pega la URL del manifest del addon de fuentes que uses (el mismo que en Stremio).
 2. Si es un addon con debrid, elige el servicio y escribe tu clave API:
 - Real-Debrid: https://real-debrid.com/apitoken

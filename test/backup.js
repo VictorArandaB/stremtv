@@ -24,7 +24,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   });
   const key = async (k, n = 1) => { for (let i = 0; i < n; i++) { await p.keyboard.press(k); await sleep(250); } };
   const status = () => p.evaluate(() => { const b = Array.from(document.querySelectorAll('.btn')).filter((x) => /Restaurar copia/.test(x.textContent))[0]; return b && b.nextSibling ? b.nextSibling.textContent : '?'; });
-  const goSettings = async () => { await p.evaluate(() => StremTV.Nav.focus(Array.from(document.querySelectorAll('.tab')).filter((x) => x.textContent === 'Ajustes')[0])); await key('Enter'); await sleep(800); };
+  const goSettings = async () => { await p.evaluate(() => StremTV.openSettings('accounts')); await sleep(800); };
   const typeToken = async (t) => { await p.evaluate((t) => { const i = Array.from(document.querySelectorAll('input')).filter((x) => x.placeholder === 'ghp_…')[0]; StremTV.Nav.focus(i); i.focus(); i.value = t; }, t); await key('Enter'); await sleep(1500); };
   const press = async (label) => { await p.evaluate((label) => StremTV.Nav.focus(Array.from(document.querySelectorAll('.btn,.mi')).filter((x) => x.textContent === label)[0]), label); await key('Enter'); await sleep(1500); };
 

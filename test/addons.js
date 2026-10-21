@@ -33,7 +33,7 @@ const manifest = { id: 'test.addon', name: 'Prueba', version: '1.0.0', types: ['
   await p.evaluate(() => { localStorage.clear(); localStorage.setItem('stv.settings', JSON.stringify({ key: 'K', debrid: 'alldebrid', quickPlay: false, hideWatched: false })); });
   await p.reload({ waitUntil: 'networkidle2' }); await sleep(1000);
   // Ajustes → escribir la URL del addon
-  await p.evaluate(() => StremTV.Nav.focus(Array.from(document.querySelectorAll('.tab')).filter((x) => x.textContent === 'Ajustes')[0])); await key('Enter'); await sleep(800);
+  await p.evaluate(() => StremTV.openSettings('sources')); await sleep(800);
   const typeUrl = async (u) => { await p.evaluate((u) => { const i = Array.from(document.querySelectorAll('input')).filter((x) => /manifest/.test(x.placeholder))[0]; StremTV.Nav.focus(i); i.focus(); i.value = u; }, u); await key('Enter'); await sleep(2500); };
   await typeUrl('stremio://addon.test/cfg/manifest.json');
   console.log('añadido:', await p.evaluate(() => Array.from(document.querySelectorAll('.note')).map((x) => x.textContent).filter((t) => /Añadido|No se pudo/.test(t)).join(' | ')), '· lista:', await p.evaluate(() => Array.from(document.querySelectorAll('.opt')).filter((x) => /Prueba/.test(x.textContent)).map((x) => x.textContent).join()));
@@ -62,7 +62,7 @@ const manifest = { id: 'test.addon', name: 'Prueba', version: '1.0.0', types: ['
   console.log('búsqueda:', (await text('.row-title')).split(' | ').filter((t) => /\(/.test(t)).join(' | '), '·', (await text('.card .name')).split(' | ').filter((t) => /Prueba/.test(t)).join());
   // quitar
   await key('Escape'); await sleep(300);
-  await p.evaluate(() => StremTV.Nav.focus(Array.from(document.querySelectorAll('.tab')).filter((x) => x.textContent === 'Ajustes')[0])); await key('Enter'); await sleep(800);
+  await p.evaluate(() => StremTV.openSettings('sources')); await sleep(800);
   await p.evaluate(() => StremTV.Nav.focus(Array.from(document.querySelectorAll('.opt')).filter((x) => /^Prueba/.test(x.textContent))[0])); await key('Enter'); await sleep(300);
   await p.evaluate(() => StremTV.Nav.focus(Array.from(document.querySelectorAll('.mi')).filter((x) => /Quitar/.test(x.textContent))[0])); await key('Enter'); await sleep(500);
   console.log('tras quitar:', await p.evaluate(() => JSON.parse(localStorage.getItem('stv.addons')).map((a) => a.manifest.name).join()), '· foco:', await p.evaluate(() => StremTV.Nav.cur.tagName));

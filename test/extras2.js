@@ -82,7 +82,7 @@ const VIDEO = 'https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/1080/Big_Buc
   await key('Escape'); await sleep(500);
 
   // registro: ver y enviar
-  await p.evaluate(() => StremTV.Nav.focus(Array.from(document.querySelectorAll('.tab')).filter((x) => x.textContent === 'Ajustes')[0])); await key('Enter'); await sleep(600);
+  await p.evaluate(() => StremTV.openSettings('data')); await sleep(600);
   await p.evaluate(() => StremTV.Nav.focus(Array.from(document.querySelectorAll('.btn')).filter((x) => x.textContent === 'Ver registro')[0])); await key('Enter'); await sleep(400);
   console.log('ver registro:', await p.evaluate(() => Array.from(document.querySelectorAll('.mi')).slice(0, 4).map((x) => x.textContent.slice(0, 110)).join('\n   ')));
   await key('Escape');
