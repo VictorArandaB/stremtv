@@ -6,11 +6,13 @@ Escrito en ES5 y CSS sin funciones modernas para que funcione en el motor web de
 
 ## Qué hace
 - Catálogo y búsqueda de películas y series (Cinemeta).
+- **Anime**: en emisión, tendencias, populares y mejor valorados, con búsqueda (addon Kitsu; acepta IDs de AniDB/MAL/AniList).
 - Fuentes de Torrentio a través de **Real-Debrid** o **AllDebrid** (enlaces directos: la tele solo reproduce).
 - Prioriza fuentes en español y marca las instantáneas (en caché).
 - Reproductor nativo de Samsung (AVPlay) si está disponible, con HTML5 como alternativa. Cambio de pista de audio con AVPlay.
 - Subtítulos en español/inglés de OpenSubtitles, con ajuste de sincronía.
 - «Continuar viendo» y progreso por episodio (guardado en la propia tele).
+- **Trakt**: vinculación con código, scrobble automático (visto al pasar del 80 %), «Continuar», tu lista, recomendaciones y episodios vistos. El anime se registra usando su equivalencia en IMDb.
 
 ## Instalar en TizenBrew
 Módulos → Añadir módulo GitHub → `<usuario>/stremtv`
@@ -20,6 +22,11 @@ Después, en **Ajustes** de la app, elige el servicio y escribe tu clave API:
 - AllDebrid: https://alldebrid.com/apikeys
 
 La clave solo se guarda en la tele.
+
+### Trakt
+1. Crea una app en https://trakt.tv/oauth/applications/new (nombre libre, Redirect URI `urn:ietf:wg:oauth:2.0:oob`).
+2. En Ajustes → Trakt escribe el Client ID y el Client Secret y pulsa «Vincular con Trakt».
+3. Entra en trakt.tv/activate e introduce el código que aparece en la tele.
 
 ## Mando
 | Tecla | Navegación | Reproductor |
@@ -31,5 +38,5 @@ La clave solo se guarda en la tele.
 ## Desarrollo
 ```
 cd app && python3 -m http.server 8090   # abrir http://127.0.0.1:8090 (flechas, Intro, Esc)
-cd test && npm i && node ui.js && node player.js   # pruebas headless con capturas en test/shots
+cd test && npm i && node ui.js && node player.js && node trakt.js   # pruebas headless con capturas en test/shots
 ```

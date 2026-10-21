@@ -5,6 +5,7 @@
   'use strict';
 
   var CINEMETA = 'https://v3-cinemeta.strem.io';
+  var ANIME = 'https://anime-kitsu.strem.fun'; // catálogo de anime (Kitsu, acepta IDs de AniDB/MAL/AniList)
   var TORRENTIO = 'https://torrentio.strem.fun';
   var SUBS_ADDON = 'https://opensubtitles-v3.strem.io';
   var PROBE_ID = 'tt0111161'; // Cadena perpetua: siempre tiene fuentes, sirve para probar la clave
@@ -130,6 +131,146 @@
     return Object.keys(byMeta).map(function (k) { return byMeta[k]; })
       .sort(function (a, b) { return b.ts - a.ts; }).slice(0, 20);
   }
+
+  // ---------------------------------------------------------------- Trakt
+
+  var TRAKT = 'https://api.trakt.tv';
+  var trakt = load('trakt', {}); // clientId, clientSecret, access, refresh, expires, user
+  function saveTrakt() { save('trakt', trakt); }
+
+  function traktReq(method, path, body, auth) {
+    return new Promise(function (resolve, reject) {
+      var x = new XMLHttpRequest();
+      x.open(method, TRAKT + path, true);
+      x.timeout = 20000;
+      x.setRequestHeader('Content-Type', 'application/json');
+      x.setRequestHeader('trakt-api-version', '2');
+      x.setRequestHeader('trakt-api-key', trakt.clientId || '');
+      if (auth !== false && trakt.access) x.setRequestHeader('Authorization', 'Bearer ' + trakt.access);
+      x.onload = function () {
+        var d = null;
+        try { d = x.responseText ? JSON.parse(x.responseText) : null; } catch (e) { /* respuesta vacía */ }
+        if (x.status >= 200 && x.status < 300) return resolve(d);
+        var err = new Error('Trakt ' + x.status);
+        err.status = x.status;
+        reject(err);
+      };
+      x.onerror = function () { reject(new Error('sin conexión')); };
+      x.ontimeout = function () { reject(new Error('tiempo de espera agotado')); };
+      x.send(body ? JSON.stringify(body) : null);
+    });
+  }
+
+  function metahubPoster(imdb) { return 'https://images.metahub.space/poster/small/' + imdb + '/img'; }
+
+  var Trakt = {
+    watchlist: {}, // imdb -> true
+
+    linked: function () { return !!(trakt.clientId && trakt.access); },
+
+    storeTokens: function (t) {
+      trakt.access = t.access_token;
+      trakt.refresh = t.refresh_token;
+      trakt.expires = (t.created_at * 1000) + (t.expires_in * 1000);
+      saveTrakt();
+    },
+
+    ensureFresh: function () {
+      // renovar el token si caduca en menos de un día
+      if (!trakt.refresh || Date.now() < (trakt.expires || 0) - 86400000) return Promise.resolve();
+      return traktReq('POST', '/oauth/token', {
+        refresh_token: trakt.refresh, client_id: trakt.clientId, client_secret: trakt.clientSecret,
+        redirect_uri: 'urn:ietf:wg:oauth:2.0:oob', grant_type: 'refresh_token'
+      }, false).then(Trakt.storeTokens);
+    },
+
+    call: function (method, path, body) {
+      if (!Trakt.linked()) return Promise.reject(new Error('Trakt no vinculado'));
+      return Trakt.ensureFresh().then(function () { return traktReq(method, path, body); }).catch(function (e) {
+        if (e.status === 401) { trakt.access = ''; saveTrakt(); toast('La sesión de Trakt ha caducado. Vuelve a vincularla en Ajustes.'); }
+        throw e;
+      });
+    },
+
+    unlink: function () {
+      if (trakt.access) traktReq('POST', '/oauth/revoke', { token: trakt.access, client_id: trakt.clientId, client_secret: trakt.clientSecret }, false).catch(function () { /* da igual */ });
+      trakt.access = ''; trakt.refresh = ''; trakt.expires = 0; trakt.user = '';
+      Trakt.watchlist = {};
+      saveTrakt();
+    },
+
+    body: function (ctx) {
+      if (!ctx.imdb) return null;
+      if (ctx.type === 'movie') return { movie: { ids: { imdb: ctx.imdb } } };
+      return { show: { ids: { imdb: ctx.imdb } }, episode: { season: +ctx.imdbS, number: +ctx.imdbE } };
+    },
+
+    // start al reproducir, pause al pausar, stop al salir: Trakt lo marca como visto si progress >= 80
+    scrobble: function (action, ctx, pct) {
+      if (!Trakt.linked() || !ctx) return;
+      var b = Trakt.body(ctx);
+      if (!b) return;
+      b.progress = Math.max(0, Math.min(100, Math.round(pct * 100) / 100));
+      Trakt.call('POST', '/scrobble/' + action, b).catch(function () { /* 409 = duplicado reciente; no es grave */ });
+    },
+
+    loadWatchlist: function () {
+      return Trakt.call('GET', '/sync/watchlist?limit=200').then(function (items) {
+        Trakt.watchlist = {};
+        var metas = [];
+        (items || []).forEach(function (it) {
+          var o = it.movie || it.show;
+          if (!o || !o.ids || !o.ids.imdb) return;
+          Trakt.watchlist[o.ids.imdb] = true;
+          metas.push({ id: o.ids.imdb, type: it.movie ? 'movie' : 'series', name: o.title, poster: metahubPoster(o.ids.imdb) });
+        });
+        return metas;
+      });
+    },
+
+    toggleWatchlist: function (type, imdb) {
+      var inList = !!Trakt.watchlist[imdb];
+      var b = {};
+      b[type === 'movie' ? 'movies' : 'shows'] = [{ ids: { imdb: imdb } }];
+      return Trakt.call('POST', '/sync/watchlist' + (inList ? '/remove' : ''), b).then(function () {
+        if (inList) delete Trakt.watchlist[imdb]; else Trakt.watchlist[imdb] = true;
+        return !inList;
+      });
+    },
+
+    playback: function () {
+      return Trakt.call('GET', '/sync/playback?limit=30').then(function (items) {
+        var out = [];
+        (items || []).forEach(function (it) {
+          if (it.type === 'movie' && it.movie && it.movie.ids.imdb) {
+            out.push({ id: it.movie.ids.imdb, type: 'movie', name: it.movie.title, poster: metahubPoster(it.movie.ids.imdb), pct: it.progress / 100 });
+          } else if (it.type === 'episode' && it.show && it.show.ids.imdb && it.episode) {
+            out.push({ id: it.show.ids.imdb, type: 'series', name: it.show.title, poster: metahubPoster(it.show.ids.imdb), pct: it.progress / 100,
+              label: it.show.title + ' · T' + it.episode.season + ':E' + it.episode.number });
+          }
+        });
+        return out;
+      });
+    },
+
+    recommendations: function (kind) {
+      return Trakt.call('GET', '/recommendations/' + kind + '?limit=30&ignore_collected=true').then(function (items) {
+        return (items || []).filter(function (o) { return o.ids && o.ids.imdb; }).map(function (o) {
+          return { id: o.ids.imdb, type: kind === 'movies' ? 'movie' : 'series', name: o.title, poster: metahubPoster(o.ids.imdb) };
+        });
+      });
+    },
+
+    showProgress: function (imdb) {
+      return Trakt.call('GET', '/shows/' + imdb + '/progress/watched?hidden=false&specials=false').then(function (d) {
+        var seen = {};
+        ((d && d.seasons) || []).forEach(function (s) {
+          (s.episodes || []).forEach(function (e) { if (e.completed) seen[s.number + ':' + e.number] = true; });
+        });
+        return { seen: seen, next: d && d.next_episode ? d.next_episode.season + ':' + d.next_episode.number : null };
+      });
+    }
+  };
 
   // ---------------------------------------------------------------- navegación espacial
 
@@ -398,18 +539,30 @@
     return row;
   }
 
-  function asyncRow(container, title, url, onPick) {
+  // fila que se rellena cuando llega la promesa (metas con .pct/.label opcionales)
+  function promiseRow(container, title, promise, onPick, hideIfEmpty) {
     var row = el('div', 'row');
     row.appendChild(el('div', 'row-title', esc(title)));
     row.appendChild(el('div', 'empty', 'Cargando…'));
     container.appendChild(row);
-    getJSON(url).then(function (d) {
-      var metas = (d.metas || []).slice(0, 40);
-      var fresh = metas.length ? posterRow(title, metas, onPick) : el('div', 'row', '<div class="row-title">' + esc(title) + '</div><div class="empty">Sin resultados</div>');
+    promise.then(function (metas) {
+      if (!row.parentNode) return;
+      metas = (metas || []).slice(0, 40);
+      if (!metas.length && hideIfEmpty) { container.removeChild(row); return; }
+      var hadFocus = Nav.cur && row.contains(Nav.cur);
+      var fresh = metas.length
+        ? posterRow(title, metas, onPick, metas.map(function (m) { return m.pct || m.label ? { pct: m.pct, label: m.label } : null; }))
+        : el('div', 'row', '<div class="row-title">' + esc(title) + '</div><div class="empty">Sin resultados</div>');
       container.replaceChild(fresh, row);
+      if (hadFocus) Nav.setRoot(Nav.root);
     }).catch(function (e) {
+      if (hideIfEmpty && row.parentNode) { container.removeChild(row); return; }
       row.lastChild.textContent = 'No se pudo cargar (' + e.message + ')';
     });
+  }
+
+  function asyncRow(container, title, url, onPick) {
+    promiseRow(container, title, getJSON(url).then(function (d) { return d.metas || []; }), onPick);
   }
 
   function openMeta(meta) { push(detailScreen(meta.type, meta.id || meta.metaId)); }
@@ -419,11 +572,12 @@
   function header(active) {
     var h = el('div', 'header');
     h.appendChild(el('div', 'logo', 'StremTV'));
-    [['home', 'Inicio'], ['search', 'Buscar'], ['settings', 'Ajustes']].forEach(function (t) {
+    [['home', 'Inicio'], ['anime', 'Anime'], ['search', 'Buscar'], ['settings', 'Ajustes']].forEach(function (t) {
       var tab = el('div', 'tab', t[1]);
       focusable(tab, function () {
         if (t[0] === active) return;
         if (t[0] === 'search') push(searchScreen());
+        else if (t[0] === 'anime') push(animeScreen());
         else if (t[0] === 'settings') push(settingsScreen());
         else while (stack.length > 1) pop();
       });
@@ -463,17 +617,55 @@
     }
     renderTop();
 
+    var traktWrap = el('div');
+    vs.appendChild(traktWrap);
+    var traktLoaded = 0;
+    function renderTrakt() {
+      if (!Trakt.linked()) { traktWrap.innerHTML = ''; traktLoaded = 0; return; }
+      if (Date.now() - traktLoaded < 120000) return; // como mucho cada 2 minutos
+      traktLoaded = Date.now();
+      traktWrap.innerHTML = '';
+      var local = {};
+      continueList().forEach(function (p) { local[p.metaId] = true; });
+      promiseRow(traktWrap, 'Continuar (Trakt)', Trakt.playback().then(function (items) {
+        var seen = {};
+        return items.filter(function (m) {
+          if (local[m.id] || seen[m.id]) return false; // ya está en «Continuar viendo»
+          seen[m.id] = true;
+          return true;
+        });
+      }), openMeta, true);
+      promiseRow(traktWrap, 'Mi lista (Trakt)', Trakt.loadWatchlist(), openMeta, true);
+      promiseRow(traktWrap, 'Recomendadas para ti: películas', Trakt.recommendations('movies'), openMeta, true);
+      promiseRow(traktWrap, 'Recomendadas para ti: series', Trakt.recommendations('shows'), openMeta, true);
+    }
+    renderTrakt();
+
     asyncRow(vs, 'Películas populares', CINEMETA + '/catalog/movie/top.json', openMeta);
     asyncRow(vs, 'Series populares', CINEMETA + '/catalog/series/top.json', openMeta);
     asyncRow(vs, 'Películas mejor valoradas', CINEMETA + '/catalog/movie/imdbRating.json', openMeta);
     asyncRow(vs, 'Series mejor valoradas', CINEMETA + '/catalog/series/imdbRating.json', openMeta);
 
-    return { el: root, onResume: renderTop };
+    return { el: root, onResume: function () { renderTop(); renderTrakt(); } };
   }
 
   function resumeMovie(p) {
     // pasar por el detalle permite elegir otra fuente si la guardada caducó
     push(detailScreen('movie', p.metaId));
+  }
+
+  // ---------------------------------------------------------------- pantalla: anime
+
+  function animeScreen() {
+    var root = el('div', 'screen');
+    var vs = el('div', 'vscroll');
+    root.appendChild(vs);
+    vs.appendChild(header('anime'));
+    asyncRow(vs, 'En emisión esta temporada', ANIME + '/catalog/anime/kitsu-anime-airing.json', openMeta);
+    asyncRow(vs, 'Tendencias', ANIME + '/catalog/anime/kitsu-anime-trending.json', openMeta);
+    asyncRow(vs, 'Más populares', ANIME + '/catalog/anime/kitsu-anime-popular.json', openMeta);
+    asyncRow(vs, 'Mejor valorados', ANIME + '/catalog/anime/kitsu-anime-rating.json', openMeta);
+    return { el: root, initialFocus: function () { return vs.querySelectorAll('.tab')[1]; } };
   }
 
   // ---------------------------------------------------------------- pantalla: búsqueda
@@ -502,6 +694,7 @@
       var enc = encodeURIComponent(q);
       asyncRow(results, 'Películas', CINEMETA + '/catalog/movie/top/search=' + enc + '.json', openMeta);
       asyncRow(results, 'Series', CINEMETA + '/catalog/series/top/search=' + enc + '.json', openMeta);
+      asyncRow(results, 'Anime', ANIME + '/catalog/anime/kitsu-anime-list/search=' + enc + '.json', openMeta);
     }
 
     return { el: root, initialFocus: function () { return input; } };
@@ -519,10 +712,31 @@
     root.appendChild(d);
     var screen = { el: root };
     var meta = null, curSeason = null, episodesBox = null, actions = null;
+    var traktSeen = {}, traktNext = null;
 
-    getJSON(CINEMETA + '/meta/' + type + '/' + id + '.json').then(function (res) {
+    function watchlistButton(container) {
+      if (!Trakt.linked()) return;
+      var b = el('div', 'btn');
+      var imdb = imdbOf();
+      if (!imdb) return; // anime sin correspondencia en IMDb: Trakt no lo puede identificar
+      var paint = function () { b.textContent = Trakt.watchlist[imdb] ? '✓ En mi lista' : '＋ Mi lista'; };
+      paint();
+      focusable(b, function () {
+        Trakt.toggleWatchlist(type, imdb).then(function (added) {
+          paint();
+          toast(added ? 'Añadido a tu lista de Trakt' : 'Quitado de tu lista de Trakt');
+        }).catch(function (e) { toast('Trakt: ' + e.message); });
+      });
+      container.appendChild(b);
+    }
+
+    var isAnime = String(id).indexOf('kitsu:') === 0;
+    function imdbOf() { return meta.imdb_id || (String(meta.id).indexOf('tt') === 0 ? meta.id : null); }
+
+    getJSON(isAnime ? ANIME + '/meta/anime/' + id + '.json' : CINEMETA + '/meta/' + type + '/' + id + '.json').then(function (res) {
       meta = res.meta;
       if (!meta) throw new Error('sin datos');
+      if (isAnime) type = meta.type === 'movie' ? 'movie' : 'series';
       render();
     }).catch(function (e) {
       d.innerHTML = '';
@@ -539,6 +753,7 @@
     }
 
     function render() {
+      var focusEl = null;
       if (meta.background) bd.style.backgroundImage = 'url("' + meta.background + '")';
       d.innerHTML = '';
       d.appendChild(el('h1', null, esc(meta.name)));
@@ -551,13 +766,14 @@
         renderMovieActions();
       } else {
         desc.style.maxHeight = '114px';
-        renderSeries();
+        focusEl = renderSeries();
       }
-      Nav.setRoot(root);
+      Nav.setRoot(root, focusEl);
+      screen.autoFocus = Nav.cur;
     }
 
     function base() {
-      return { type: type, metaId: meta.id, name: meta.name, poster: meta.poster, background: meta.background };
+      return { type: type, metaId: meta.id, imdb: imdbOf(), name: meta.name, poster: meta.poster, background: meta.background };
     }
 
     function renderMovieActions() {
@@ -575,6 +791,7 @@
         });
         actions.appendChild(fromStart);
       }
+      watchlistButton(actions);
     }
 
     function seasonsOf() {
@@ -588,6 +805,11 @@
       });
       nums.forEach(function (n) { map[n].sort(function (a, b) { return a.episode - b.episode; }); });
       return { nums: nums, map: map };
+    }
+
+    // temporada:episodio en IMDb/Trakt (el anime de Kitsu trae su propia numeración)
+    function traktKey(v) {
+      return (v.imdbSeason !== undefined ? v.imdbSeason : v.season) + ':' + (v.imdbEpisode !== undefined ? v.imdbEpisode : v.episode);
     }
 
     function lastWatchedSeason(seasons) {
@@ -611,10 +833,36 @@
         var lw = lastWatchedSeason(seasons);
         curSeason = lw !== null ? lw : seasons.nums[0];
       }
+      if (Trakt.linked()) {
+        var wl = el('div');
+        watchlistButton(wl);
+        actions.appendChild(wl);
+        if (imdbOf()) Trakt.showProgress(imdbOf()).then(function (tp) {
+          traktSeen = tp.seen;
+          traktNext = tp.next;
+          // si no hay progreso local, ir a la temporada del siguiente episodio según Trakt
+          if (traktNext && lastWatchedSeason(seasons) === null) {
+            var ns = null;
+            seasons.nums.forEach(function (n) {
+              seasons.map[n].forEach(function (v) { if (ns === null && traktKey(v) === traktNext) ns = n; });
+            });
+            if (seasons.map[ns] && ns !== curSeason) {
+              curSeason = ns;
+              Array.prototype.forEach.call(sRow.children, function (x) {
+                x.classList.toggle('primary', x._season === ns);
+              });
+            }
+          }
+          var target = renderEpisodes(seasons.map[curSeason]);
+          // solo mover el foco si el usuario aún no se ha movido
+          if (target && Nav.root === root && Nav.cur === screen.autoFocus) Nav.focus(target);
+        }).catch(function () { /* sin datos de Trakt */ });
+      }
       var sRow = el('div', 'seasons hscroll');
       sRow.style.position = 'relative';
       seasons.nums.forEach(function (n) {
         var b = el('div', 'btn' + (n === curSeason ? ' primary' : ''), n === 0 ? 'Especiales' : 'Temporada ' + n);
+        b._season = n;
         focusable(b, function () {
           curSeason = n;
           Array.prototype.forEach.call(sRow.children, function (x) { x.classList.remove('primary'); });
@@ -627,9 +875,9 @@
       episodesBox = el('div', 'vscroll');
       episodesBox.setAttribute('data-pad', '0');
       episodesBox.style.position = 'relative';
-      episodesBox.style.height = '520px';
+      episodesBox.style.height = Trakt.linked() ? '440px' : '520px';
       actions.appendChild(episodesBox);
-      renderEpisodes(seasons.map[curSeason]);
+      return renderEpisodes(seasons.map[curSeason]);
     }
 
     function renderEpisodes(eps) {
@@ -649,7 +897,8 @@
         row.appendChild(th);
         var txt = el('div');
         var epTitle = v.name || v.title || ('Episodio ' + v.episode);
-        txt.appendChild(el('div', 'ep-title', esc(v.episode + '. ' + epTitle) + (p && p.done ? ' <span class="badge ok">Visto</span>' : '')));
+        var seen = (p && p.done) || traktSeen[traktKey(v)];
+        txt.appendChild(el('div', 'ep-title', esc(v.episode + '. ' + epTitle) + (seen ? ' <span class="badge ok">Visto</span>' : '')));
         var date = v.released ? new Date(v.released) : null;
         var sub = [];
         if (date && !isNaN(date)) sub.push(date.toLocaleDateString ? date.toLocaleDateString('es-ES') : date.toDateString());
@@ -660,11 +909,14 @@
         focusable(row, function () {
           push(streamsScreen(extend(base(), {
             videoId: v.id, label: meta.name + ' — ' + label, epLabel: label,
+            imdb: v.imdb_id || imdbOf(),
+            imdbS: v.imdbSeason !== undefined ? v.imdbSeason : v.season,
+            imdbE: v.imdbEpisode !== undefined ? v.imdbEpisode : v.episode,
             startAt: p && !p.done ? p.t : 0
           })));
         });
         episodesBox.appendChild(row);
-        if (!focusTarget && p && !p.done) focusTarget = row;
+        if (!focusTarget && ((p && !p.done) || traktNext === traktKey(v))) focusTarget = row;
       });
       return focusTarget;
     }
@@ -819,7 +1071,9 @@
     },
     fetchList: function (ctx) {
       var self = this;
-      return getJSON(SUBS_ADDON + '/subtitles/' + ctx.type + '/' + ctx.videoId + '.json').then(function (d) {
+      if (!ctx.imdb) { self.list = []; return Promise.resolve([]); }
+      var sid = ctx.type === 'movie' ? ctx.imdb : ctx.imdb + ':' + ctx.imdbS + ':' + ctx.imdbE;
+      return getJSON(SUBS_ADDON + '/subtitles/' + ctx.type + '/' + sid + '.json').then(function (d) {
         var order = { spa: 0, eng: 1 };
         self.list = (d.subtitles || []).filter(function (s) { return s.lang === 'spa' || s.lang === 'eng'; })
           .sort(function (a, b) { return order[a.lang] - order[b.lang]; }).slice(0, 25);
@@ -865,7 +1119,7 @@
     open: function (stream, ctx) {
       var self = this;
       this.ctx = ctx; this.stream = stream;
-      this.duration = 0; this.time = 0; this.paused = false; this.started = false;
+      this.duration = 0; this.time = 0; this.paused = false; this.started = false; this.lastPaused = null;
       this.startAt = ctx.startAt || 0;
       this.seekTarget = null;
       $('#player').classList.remove('hidden');
@@ -970,6 +1224,11 @@
           this.paused = st === 'PAUSED';
           if (!this.duration) this.duration = webapis.avplay.getDuration() / 1000;
         } catch (e) { /* aún no preparado */ }
+      }
+      // avisar a Trakt al empezar, pausar y reanudar
+      if (this.started && this.lastPaused !== this.paused) {
+        this.lastPaused = this.paused;
+        Trakt.scrobble(this.paused ? 'pause' : 'start', this.ctx, this.pct());
       }
       var shown = this.seekTarget !== null ? this.seekTarget : this.time;
       $('#osd-cur').textContent = fmtTime(shown);
@@ -1114,6 +1373,8 @@
       return false; // Atrás lo gestiona la pila (cierra el reproductor)
     },
 
+    pct: function () { return this.duration ? this.time / this.duration * 100 : 0; },
+
     saveProgress: function () {
       var c = this.ctx;
       if (!c || !this.started || !this.duration || this.time < 5) return;
@@ -1138,6 +1399,7 @@
     },
 
     close: function () {
+      if (this.started) Trakt.scrobble('stop', this.ctx, this.pct()); // >= 80 % lo marca como visto
       this.saveProgress();
       clearInterval(this.tickTimer);
       clearInterval(this.saveTimer);
@@ -1161,6 +1423,61 @@
       } catch (e) { /* sin control del salvapantallas */ }
     }
   };
+
+  // ---------------------------------------------------------------- vinculación con Trakt (código de dispositivo)
+
+  function traktLinkScreen(onDone) {
+    var root = el('div', 'modal');
+    var box = el('div', 'modal-box');
+    box.style.cssText = 'left:410px;width:1100px;top:180px;text-align:center';
+    box.appendChild(el('h2', null, 'Vincular Trakt'));
+    var msg = el('div', null, 'Pidiendo código…');
+    msg.style.cssText = 'font-size:30px;line-height:46px;margin-bottom:30px';
+    box.appendChild(msg);
+    var cancel = el('div', 'btn', 'Cancelar');
+    focusable(cancel, function () { pop(); });
+    box.appendChild(cancel);
+    root.appendChild(box);
+    var timer = null, alive = true;
+    push({ el: root, overlay: true, onClose: function () { alive = false; clearTimeout(timer); } });
+
+    traktReq('POST', '/oauth/device/code', { client_id: trakt.clientId }, false).then(function (d) {
+      if (!alive) return;
+      msg.innerHTML = 'En el móvil o el ordenador entra en<br><b style="font-size:42px">' + esc(d.verification_url) +
+        '</b><br>e introduce este código:<div style="font-size:90px;letter-spacing:12px;margin:24px 0;color:#8a7dff;font-weight:bold">' +
+        esc(d.user_code) + '</div><span style="color:#99a">Esperando confirmación…</span>';
+      var interval = (d.interval || 5) * 1000, deadline = Date.now() + d.expires_in * 1000;
+      var poll = function () {
+        if (!alive) return;
+        if (Date.now() > deadline) { msg.textContent = 'El código ha caducado. Vuelve a intentarlo.'; return; }
+        traktReq('POST', '/oauth/device/token', { code: d.device_code, client_id: trakt.clientId, client_secret: trakt.clientSecret }, false)
+          .then(function (t) {
+            Trakt.storeTokens(t);
+            return Trakt.call('GET', '/users/settings').then(function (st) {
+              trakt.user = st && st.user ? st.user.username : '';
+              saveTrakt();
+            }).catch(function () { /* el nombre es opcional */ });
+          })
+          .then(function () {
+            if (!alive) return;
+            pop();
+            toast('Trakt vinculado' + (trakt.user ? ' como ' + trakt.user : ''));
+            if (onDone) onDone();
+          }, function (e) {
+            if (!alive) return;
+            if (e.status === 400) { timer = setTimeout(poll, interval); return; } // aún no confirmado
+            if (e.status === 429) { interval += 1000; timer = setTimeout(poll, interval); return; }
+            msg.textContent = e.status === 418 ? 'Has rechazado la vinculación.'
+              : e.status === 410 || e.status === 404 ? 'El código ha caducado. Vuelve a intentarlo.'
+              : e.status === 401 ? 'El Client Secret no es correcto.'
+              : 'Error al vincular (' + e.message + ')';
+          });
+      };
+      timer = setTimeout(poll, interval);
+    }).catch(function (e) {
+      msg.textContent = e.status === 401 || e.status === 403 ? 'El Client ID no es válido.' : 'No se pudo contactar con Trakt (' + e.message + ')';
+    });
+  }
 
   // ---------------------------------------------------------------- pantalla: ajustes
 
@@ -1241,6 +1558,55 @@
     opt('Idioma automático', function () { return SUB_NAMES[settings.subLang]; }, cycle('subLang', ['spa', 'eng', 'off']));
     opt('Tamaño', function () { return settings.subSize === 'big' ? 'Grande' : 'Normal'; }, function () { settings.subSize = settings.subSize === 'big' ? 'normal' : 'big'; });
 
+    box.appendChild(el('div', 'row-title', 'Trakt'));
+    box.lastChild.style.padding = '30px 0 16px 0';
+    var tStatus = el('div', 'note');
+    box.appendChild(tStatus);
+
+    function textField(label, key, placeholder) {
+      var f = el('div', 'field');
+      f.appendChild(el('label', null, esc(label)));
+      var inp = el('input');
+      inp.type = 'text';
+      inp.value = trakt[key] || '';
+      inp.placeholder = placeholder;
+      inp.setAttribute('autocomplete', 'off');
+      inp.setAttribute('spellcheck', 'false');
+      focusable(inp, function () { inp.focus(); });
+      inp._ondone = function (v) {
+        trakt[key] = (v || '').replace(/\s+/g, '');
+        inp.value = trakt[key];
+        saveTrakt();
+        paintTrakt();
+      };
+      f.appendChild(inp);
+      box.appendChild(f);
+    }
+    textField('Client ID de tu app de Trakt', 'clientId', 'Client ID');
+    textField('Client Secret de tu app de Trakt', 'clientSecret', 'Client Secret');
+    box.appendChild(el('div', 'note', 'Créala gratis en trakt.tv/oauth/applications/new · Redirect URI: urn:ietf:wg:oauth:2.0:oob'));
+
+    var linkBtn = el('div', 'btn primary');
+    focusable(linkBtn, function () {
+      if (Trakt.linked()) {
+        Trakt.unlink();
+        paintTrakt();
+        toast('Trakt desvinculado');
+        return;
+      }
+      if (!trakt.clientId || !trakt.clientSecret) { toast('Escribe primero el Client ID y el Client Secret'); return; }
+      traktLinkScreen(paintTrakt);
+    });
+    box.appendChild(linkBtn);
+
+    function paintTrakt() {
+      tStatus.textContent = Trakt.linked()
+        ? '✓ Vinculado' + (trakt.user ? ' como ' + trakt.user : '') + '. Lo que veas se registra automáticamente (visto al pasar del 80 %).'
+        : 'Sin vincular. Registra lo que ves, tu lista y recomendaciones.';
+      linkBtn.textContent = Trakt.linked() ? 'Desvincular Trakt' : 'Vincular con Trakt';
+    }
+    paintTrakt();
+
     box.appendChild(el('div', 'row-title', 'Datos'));
     box.lastChild.style.padding = '30px 0 16px 0';
     var clear = el('div', 'btn', 'Borrar historial de reproducción');
@@ -1260,7 +1626,7 @@
 
   // ---------------------------------------------------------------- arranque
 
-  var VERSION = '0.1.0';
+  var VERSION = '0.2.0';
 
   function fitScreen() {
     var z = window.innerWidth / 1920;
@@ -1278,5 +1644,5 @@
   else start();
 
   // exponer para depurar desde la consola
-  window.StremTV = { settings: settings, Player: Player, Nav: Nav, stack: stack };
+  window.StremTV = { settings: settings, Player: Player, Nav: Nav, stack: stack, open: function (type, id) { push(detailScreen(type, id)); } };
 })();
