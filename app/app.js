@@ -1062,8 +1062,9 @@
         if (dir === 'left' || dir === 'right') {
           var gapX = dir === 'right' ? b.left - r.right : r.left - b.right;
           if ((dir === 'right' ? cx - rcx : rcx - cx) <= 1) continue;
-          var overlapY = b.top < r.bottom - 4 && b.bottom > r.top + 4;
-          score = Math.max(0, gapX) + Math.abs(cy - rcy) * 2 + (overlapY ? 0 : 100000);
+          // ◀ ▶ solo dentro de la misma fila: al final de una lista el foco se queda, no salta a la de abajo
+          if (!(b.top < r.bottom - 4 && b.bottom > r.top + 4)) continue;
+          score = Math.max(0, gapX) + Math.abs(cy - rcy) * 2;
         } else {
           var gapY = dir === 'down' ? b.top - r.bottom : r.top - b.bottom;
           if ((dir === 'down' ? cy - rcy : rcy - cy) <= 1) continue;
@@ -3428,7 +3429,7 @@
 
   // ---------------------------------------------------------------- arranque
 
-  var VERSION = '0.13.0';
+  var VERSION = '0.13.1';
 
   function fitScreen() {
     var z = window.innerWidth / 1920;
