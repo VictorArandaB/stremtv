@@ -7,6 +7,7 @@ window.__boot = { nav: (performance.timing || {}).navigationStart || 0, loader: 
 (function () {
   var REPO = 'VictorArandaB/stremtv';
   var KEY = 'stv.code';
+  var BAD = 'stv.code.bad'; // commit cuya versión falló al arrancar: no volver a bajarlo
   var PKG_VERSION = '__PKG_VERSION__'; // lo rellena build-wgt.sh; fuera del paquete se queda sin rellenar
   function ver(v) { var m = /(\d+)\.(\d+)\.(\d+)/.exec(v || ''); return m ? (+m[1]) * 1e6 + (+m[2]) * 1e3 + (+m[3]) : 0; }
   var cached = null;
@@ -43,7 +44,15 @@ window.__boot = { nav: (performance.timing || {}).navigationStart || 0, loader: 
   var dev = location.port === '8090';
   var cachedVer = cached && cached.js ? (/var VERSION = '([\d.]+)'/.exec(cached.js) || [])[1] : '';
   if (!dev && cached && cached.js && cached.css && ver(cachedVer) >= ver(PKG_VERSION)) {
-    try { inject(cached.css, cached.js); window.__boot.src = 'guardada ' + cachedVer; } catch (e) { loadFiles(); window.__boot.src = 'paquete (fallo la guardada)'; }
+    try { inject(cached.css, cached.js); window.__boot.src = 'guardada ' + cachedVer; } catch (e) {
+      // pudo fallar a medias con parte ya en marcha (teclas, temporizadores): cargar el paquete encima la duplicaría.
+      // Se descarta la guardada y se vuelve a empezar limpio con la del paquete
+      var cleared = false;
+      try { localStorage.setItem(BAD, cached.sha || ''); localStorage.removeItem(KEY); cleared = !localStorage.getItem(KEY); } catch (x) { /* sin almacenamiento */ }
+      if (cleared) { location.reload(); return; }
+      loadFiles(); // no se ha podido borrar: recargar entraría en bucle
+      window.__boot.src = 'paquete (fallo la guardada)';
+    }
   } else {
     loadFiles();
     window.__boot.src = 'paquete ' + PKG_VERSION;
@@ -54,7 +63,7 @@ window.__boot = { nav: (performance.timing || {}).navigationStart || 0, loader: 
   setTimeout(function () {
     get('https://api.github.com/repos/' + REPO + '/commits/main', 15000, { Accept: 'application/vnd.github.sha' }).then(function (sha) {
       sha = sha.replace(/\s+/g, '');
-      if (!/^[0-9a-f]{40}$/.test(sha) || (cached && cached.sha === sha)) return;
+      if (!/^[0-9a-f]{40}$/.test(sha) || (cached && cached.sha === sha) || localStorage.getItem(BAD) === sha) return;
       var base = 'https://cdn.jsdelivr.net/gh/' + REPO + '@' + sha + '/app/';
       return Promise.all([get(base + 'app.js', 30000), get(base + 'style.css', 30000)]).then(function (r) {
         var newVer = (/var VERSION = '([\d.]+)'/.exec(r[0]) || [])[1];

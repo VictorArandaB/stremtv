@@ -699,16 +699,23 @@
       trakt.access = t.access_token;
       trakt.refresh = t.refresh_token;
       trakt.expires = (t.created_at * 1000) + (t.expires_in * 1000);
+      trakt.ttl = t.expires_in * 1000;
       saveTrakt();
     },
 
+    refreshing: null,
     ensureFresh: function () {
-      // renovar el token si caduca en menos de un día
-      if (!trakt.refresh || Date.now() < (trakt.expires || 0) - 86400000) return Promise.resolve();
-      return traktReq('POST', '/oauth/token', withSecret({
-        refresh_token: trakt.refresh, client_id: trakt.clientId,
-        redirect_uri: 'http://localhost', grant_type: 'refresh_token'
-      }), false).then(Trakt.storeTokens);
+      // renovar el token si caduca en menos de un día (o de un cuarto de su vida, si dura poco)
+      var margin = Math.min(86400000, (trakt.ttl || 7776000000) / 4);
+      if (!trakt.refresh || Date.now() < (trakt.expires || 0) - margin) return Promise.resolve();
+      // el refresh_token solo vale una vez: las llamadas que llegan a la vez esperan a la misma renovación
+      if (!Trakt.refreshing) {
+        Trakt.refreshing = traktReq('POST', '/oauth/token', withSecret({
+          refresh_token: trakt.refresh, client_id: trakt.clientId,
+          redirect_uri: 'http://localhost', grant_type: 'refresh_token'
+        }), false).then(function (t) { Trakt.refreshing = null; Trakt.storeTokens(t); }, function (e) { Trakt.refreshing = null; throw e; });
+      }
+      return Trakt.refreshing;
     },
 
     call: function (method, path, body) {
@@ -944,8 +951,8 @@
         var d = null;
         try { d = x.responseText ? JSON.parse(x.responseText) : null; } catch (e) { /* respuesta vacía */ }
         if (x.status >= 200 && x.status < 300) return resolve(d);
-        reject(new Error(x.status === 401 ? tr('el token de GitHub no es válido') :
-          x.status === 403 || x.status === 404 ? tr('el token no tiene permiso para Gists') : 'GitHub ' + x.status));
+        reject(extend(new Error(x.status === 401 ? tr('el token de GitHub no es válido') :
+          x.status === 403 || x.status === 404 ? tr('el token no tiene permiso para Gists') : 'GitHub ' + x.status), { status: x.status }));
       };
       x.onerror = function () { reject(new Error(tr('sin conexión'))); };
       x.ontimeout = function () { reject(new Error(tr('tiempo de espera agotado'))); };
@@ -974,7 +981,7 @@
     return findBackupGist().then(function (id) {
       if (id) {
         return ghReq('PATCH', '/gists/' + id, { files: files }).catch(function (e) {
-          backup.gistId = ''; // borrado desde GitHub: crear otro
+          if (e.status === 404) backup.gistId = ''; // borrado desde GitHub: crear otro (no por un fallo de red)
           throw e;
         });
       }
@@ -1183,6 +1190,8 @@
       Nav.setRoot(top.el, top.lastFocus);
     }
   }
+
+  function isTop(screen) { return stack[stack.length - 1] === screen; }
 
   function goBack() {
     if (stack.length > 1) pop();
@@ -1592,10 +1601,10 @@
       loadPage();
     }
 
-    function loadPage() {
+    function loadPage(keepFocus) {
       if (loading) return;
       loading = true;
-      var hadFocus = more && Nav.cur === more;
+      var hadFocus = keepFocus === true || (more && Nav.cur === more);
       if (more && more.parentNode) more.parentNode.removeChild(more);
       more = null;
       var status = el('div', 'empty', tr('Cargando…'));
@@ -1620,14 +1629,14 @@
         loadImages(cards, first + 13);
         var hasMore = raw.length >= 20;
         // con año y género puede que una página entera no tenga ninguno: seguir buscando un poco
-        if (!metas.length && hasMore && ++emptyPages < 4) { loadPage(); return; }
+        if (!metas.length && hasMore && ++emptyPages < 4) { loadPage(hadFocus); return; }
         if (hasMore) {
           more = el('div', 'btn', tr('Cargar más'));
           focusable(more, loadPage);
           results.appendChild(more);
         }
         if (!cards.length) results.appendChild(el('div', 'empty', tr('Sin resultados')));
-        if (hadFocus) Nav.focus(cards[first] || more);
+        if (hadFocus && (cards[first] || more)) Nav.focus(cards[first] || more);
       }).catch(function (e) {
         if (g !== gen) return;
         loading = false;
@@ -1899,6 +1908,7 @@
     }
 
     function render() {
+      if (stack.indexOf(screen) < 0) return; // cerrada mientras cargaba
       var focusEl = null;
       if (meta.background) bd.style.backgroundImage = 'url("' + meta.background + '")';
       d.innerHTML = '';
@@ -1914,8 +1924,9 @@
         desc.style.maxHeight = '114px';
         focusEl = renderSeries();
       }
-      Nav.setRoot(root, focusEl);
-      screen.autoFocus = Nav.cur;
+      if (isTop(screen)) Nav.setRoot(root, focusEl);
+      else screen.lastFocus = focusEl;
+      screen.autoFocus = focusEl || (isTop(screen) ? Nav.cur : null);
       if (Trakt.linked() && imdbOf()) Trakt.resumeMap().then(applyResume);
     }
 
@@ -2313,6 +2324,7 @@
     var screen = { el: root, streamsOf: ctx.videoId };
 
     function message(text, withSettings) {
+      if (stack.indexOf(screen) < 0) return; // cerrada mientras buscaba
       list.innerHTML = '';
       list.appendChild(el('div', 'loading', esc(text)));
       if (withSettings) {
@@ -2320,7 +2332,7 @@
         focusable(b, function () { openSettings('sources'); });
         list.appendChild(b);
       }
-      Nav.setRoot(root);
+      if (isTop(screen)) Nav.setRoot(root);
     }
 
     function fetchStreams() {
@@ -2341,6 +2353,7 @@
       var fromDebrid = dAddon ? getJSON(sourcesBase(dAddon) + '/stream/' + ctx.type + '/' + ctx.videoId + '.json').catch(function (e) { return { failed: e }; })
         : Promise.resolve({ streams: [] });
       Promise.all([fromDebrid, fromAddons]).then(function (r) {
+        if (stack.indexOf(screen) < 0) return; // Atrás antes de que respondan los addons: ni pintar ni reproducir
         var d = r[0], extra = [].concat.apply([], r[1]);
         if (d.failed && !extra.length) throw d.failed;
         var streams = (d.streams || []).map(parseStream);
@@ -2406,14 +2419,14 @@
           if (ctx.autoPlay && !auto && (s.pref >= 2 || (s.cached && !s.heavy))) auto = { s: s, row: row };
         });
         if (ctx.autoPlay && !auto) auto = { s: streams[0], row: list.firstChild };
-        if (auto) {
+        if (auto && isTop(screen)) {
           sub.textContent += tr(' · elegida automáticamente: pulsa OK en otra para cambiar');
           Nav.setRoot(root, auto.row);
           ctx.autoPlay = false; // al volver a esta lista no arrancar otra vez
           Player.open(auto.s, ctx, auto.row);
           return;
         }
-        Nav.setRoot(root);
+        if (isTop(screen)) Nav.setRoot(root);
       }).catch(function (e) {
         logEv('fuentes', e.message, { id: ctx.videoId });
         sub.textContent = '';
@@ -2535,6 +2548,8 @@
       this.seekTarget = null;
       this.upNext = null; this.upNextOff = false; this.nextCtx = undefined; this.audioKey = ''; this.audioRetried = false; this.audioChosen = false;
       this.skips = []; this.skipNow = null;
+      // el temporizador solo sigue al pasar solo al siguiente episodio, no en otro vídeo abierto después
+      if (!ctx.continued) Player.sleep = null;
       logEv('reproducir', ctx.label, { archivo: stream.file, calidad: stream.quality, addon: stream.addon, cache: stream.cached, desde: Math.round(this.startAt) || (ctx.startPct ? ctx.startPct + '%' : 0) });
       skipTimes(ctx).then(function (list) { if (self.ctx === ctx) self.skips = list; });
       $('#player').classList.remove('hidden');
@@ -2611,7 +2626,7 @@
 
     // --- backend AVPlay (reproductor nativo de Samsung: MKV, HEVC, varias pistas)
     openAV: function (url) {
-      var self = this, av = webapis.avplay;
+      var self = this, av = webapis.avplay, mine = this.stream;
       this.backend = 'av';
       $('#video').classList.add('hidden');
       $('#avplayer').classList.remove('hidden');
@@ -2649,13 +2664,14 @@
               }, 400);
             }
           },
-          onstreamcompleted: function () { self.finished(); },
-          onerror: function (e) { self.fail(tr('Error del reproductor: {0}', e)); },
+          onstreamcompleted: function () { if (self.stream === mine) self.finished(); },
+          onerror: function (e) { if (self.stream === mine) self.fail(tr('Error del reproductor: {0}', e)); },
           onsubtitlechange: function (duration, text) {
             if (Subs.embedded) Subs.show((text || '').replace(/<[^>]+>/g, ''));
           }
         });
         av.prepareAsync(function () {
+          if (self.stream !== mine) { try { av.close(); } catch (x) { /* ya cerrado */ } return; } // salió mientras preparaba
           self.duration = av.getDuration() / 1000;
           try {
             logEv('pistas', Math.round(self.duration) + ' s', webapis.avplay.getTotalTrackInfo().map(function (t) { return { tipo: t.type, i: t.index, info: t.extra_info }; }));
@@ -2667,6 +2683,7 @@
           if (self.startAt > 5) av.seekTo(Math.floor(self.startAt * 1000), go, go);
           else go();
         }, function (e) {
+          if (self.stream !== mine) return;
           try { av.close(); } catch (x) { /* ya cerrado */ }
           self.fail(tr('El reproductor nativo no ha podido abrir esta fuente ({0}).', e && e.name ? e.name : e));
         });
@@ -2779,7 +2796,7 @@
       if (this.started) return;
       this.started = true;
       var c = this.ctx, s = this.stream;
-      if (c.type === 'series') saveSrcPref(c.metaId, { hash: s.hash, binge: s.binge, group: s.group });
+      if (s && c.type === 'series') saveSrcPref(c.metaId, { hash: s.hash, binge: s.binge, group: s.group });
     },
 
     // --- siguiente episodio: aviso en los últimos 40 s y cuenta atrás de 10 s
@@ -2825,16 +2842,16 @@
     },
 
     playNext: function () {
-      var next = this.nextCtx, me = this.screen;
+      var next = this.nextCtx;
       if (!next) return;
       if (Player.sleep && Player.sleep.end) { this.sleepNow(); return; } // «al terminar este vídeo»: no seguir
       this.upNext = null;
       this.paintUpNext();
-      while (stack.length > 1 && stack[stack.length - 1] !== me) pop(); // cerrar menús abiertos
-      pop(); // cierra el reproductor: guarda el progreso y avisa a Trakt
+      if (!this.leave()) return; // cierra menús y reproductor: guarda el progreso y avisa a Trakt
       var top = stack[stack.length - 1];
       if (top && top.streamsOf) pop(); // la lista de fuentes del episodio anterior ya no sirve
       next.autoPlay = true;
+      next.continued = true;
       push(streamsScreen(next));
     },
 
@@ -2883,6 +2900,7 @@
             Subs.select(null);
             Subs.embedded = true;
             Subs.auto = true;
+            this.applySubOffset();
           } catch (e) { /* se quedan los de OpenSubtitles */ }
           break;
         }
@@ -3013,7 +3031,7 @@
 
     sleepNow: function () {
       Player.sleep = null;
-      pop();
+      this.leave();
       toast(tr('Temporizador: reproducción detenida'), 8000);
     },
 
@@ -3043,6 +3061,7 @@
             webapis.avplay.setSelectTrack('TEXT', it.index);
             webapis.avplay.setSilentSubtitle(false);
             Subs.embedded = true;
+            self.applySubOffset();
           } catch (e) { toast(tr('No se pudo activar el subtítulo incrustado')); }
           return;
         }
@@ -3069,12 +3088,15 @@
       box.classList.remove('hidden');
     },
 
+    // los incrustados los pinta AVPlay: el desfase se le pasa a él (los de OpenSubtitles lo aplica Subs.update)
+    applySubOffset: function () {
+      try { webapis.avplay.setSubtitlePosition(Math.round(Subs.offset * 1000)); } catch (e) { /* no soportado */ }
+    },
+
     adjustSync: function (delta) {
       Subs.offset = Math.round((Subs.offset + delta) * 100) / 100;
       Subs.idx = 0;
-      if (Subs.embedded) {
-        try { webapis.avplay.setSubtitlePosition(Math.round(Subs.offset * 1000)); } catch (e) { /* no soportado */ }
-      }
+      if (Subs.embedded) this.applySubOffset();
       saveSubOffset(this.ctx && this.ctx.videoId, Subs.offset);
       this.paintSync();
     },
@@ -3165,14 +3187,23 @@
       if (Player.sleep && Player.sleep.end) { this.sleepNow(); return; }
       if (this.nextCtx && settings.autoNext && !this.upNextOff) { this.playNext(); return; }
       this.saveProgress();
+      this.leave();
+    },
+
+    // cierra el reproductor aunque tenga un menú (▲/▼) encima; false si ya estaba cerrado
+    leave: function () {
+      var me = this.screen;
+      if (!me || stack.indexOf(me) < 0) return false;
+      while (!isTop(me)) pop();
       pop();
+      return true;
     },
 
     fail: function (msg) {
       logEv('fallo', msg, { archivo: this.stream && this.stream.file, addon: this.stream && this.stream.addon });
       var row = this.row;
       this.spinner(false);
-      pop();
+      if (!this.leave()) return;
       // volver a la lista con la siguiente fuente ya seleccionada
       if (row && row.parentNode) {
         var t1 = row.querySelector('.t1');
@@ -3216,6 +3247,7 @@
       $('#player').style.background = '';
       $('#player').classList.add('hidden');
       this.spinner(false);
+      this.stream = null; // las respuestas que lleguen tarde (comprobación del enlace, AVPlay) ya no son de este vídeo
       try {
         if (window.webapis && webapis.appcommon) webapis.appcommon.setScreenSaver(webapis.appcommon.AppCommonScreenSaverState.SCREEN_SAVER_ON);
       } catch (e) { /* sin control del salvapantallas */ }
@@ -3684,7 +3716,7 @@
 
   // ---------------------------------------------------------------- arranque
 
-  var VERSION = '0.16.1';
+  var VERSION = '0.16.2';
 
   function fitScreen() {
     var z = window.innerWidth / 1920;
