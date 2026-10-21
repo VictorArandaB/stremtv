@@ -551,6 +551,7 @@
     row.appendChild(el('div', 'empty', 'Cargando…'));
     container.appendChild(row);
     promise.then(function (metas) {
+      bootMark('firstRow');
       if (!row.parentNode) return;
       metas = (metas || []).slice(0, 40);
       if (!metas.length && hideIfEmpty) { container.removeChild(row); return; }
@@ -1756,14 +1757,26 @@
 
   // ---------------------------------------------------------------- arranque
 
-  var VERSION = '0.4.3';
+  var VERSION = '0.4.5';
 
   function fitScreen() {
     var z = window.innerWidth / 1920;
     document.body.style.zoom = Math.abs(z - 1) > 0.01 ? z : '';
   }
 
+  // registro de arranque (últimos 5) para medir en la tele dónde se va el tiempo
+  function bootMark(name) {
+    var b = window.__boot;
+    if (!b || b[name]) return;
+    b[name] = Date.now();
+    if (name !== 'firstRow') return;
+    var log = load('boot', []);
+    log.unshift({ at: new Date(b.nav || b.loader).toISOString(), loader: b.loader - b.nav, app: b.app - b.nav, firstRow: b.firstRow - b.nav });
+    save('boot', log.slice(0, 5));
+  }
+
   function start() {
+    bootMark('app');
     fitScreen();
     window.addEventListener('resize', fitScreen);
     registerKeys();
@@ -1774,5 +1787,5 @@
   else start();
 
   // exponer para depurar desde la consola
-  window.StremTV = { settings: settings, Player: Player, Nav: Nav, stack: stack, toast: toast, open: function (type, id) { push(detailScreen(type, id)); } };
+  window.StremTV = { bootLog: function () { return load('boot', []); }, settings: settings, Player: Player, Nav: Nav, stack: stack, toast: toast, open: function (type, id) { push(detailScreen(type, id)); } };
 })();

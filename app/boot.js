@@ -1,0 +1,66 @@
+/* Arranque de StremTV. Va en un archivo aparte porque en Tizen 3 los scripts en línea
+   no se ejecutan en el arranque en frío de la app. */
+// Cargador: arranca al momento con la última versión guardada (o con los archivos que vienen
+// en el paquete) y busca actualizaciones en segundo plano: si en GitHub hay un commit nuevo,
+// descarga app.js/style.css de ese commit y los guarda para el siguiente arranque.
+window.__boot = { nav: (performance.timing || {}).navigationStart || 0, loader: Date.now() };
+(function () {
+  var REPO = 'VictorArandaB/stremtv';
+  var KEY = 'stv.code';
+  var PKG_VERSION = '__PKG_VERSION__'; // lo rellena build-wgt.sh; fuera del paquete se queda sin rellenar
+  function ver(v) { var m = /(\d+)\.(\d+)\.(\d+)/.exec(v || ''); return m ? (+m[1]) * 1e6 + (+m[2]) * 1e3 + (+m[3]) : 0; }
+  var cached = null;
+  try { cached = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { cached = null; }
+
+  function inject(css, js) {
+    var st = document.createElement('style');
+    st.textContent = css;
+    document.head.appendChild(st);
+    var sc = document.createElement('script');
+    sc.text = js;
+    document.body.appendChild(sc);
+  }
+  function loadFiles() {
+    var l = document.createElement('link');
+    l.rel = 'stylesheet';
+    l.href = 'style.css';
+    document.head.appendChild(l);
+    var sc = document.createElement('script');
+    sc.src = 'app.js';
+    document.body.appendChild(sc);
+  }
+  function get(url, timeout, headers) {
+    return new Promise(function (resolve, reject) {
+      var x = new XMLHttpRequest();
+      x.open('GET', url, true);
+      x.timeout = timeout;
+      for (var h in headers || {}) x.setRequestHeader(h, headers[h]);
+      x.onload = function () { x.status === 200 ? resolve(x.responseText) : reject(new Error('HTTP ' + x.status)); };
+      x.onerror = x.ontimeout = function () { reject(new Error('red')); };
+      x.send();
+    });
+  }
+
+  var dev = location.port === '8090';
+  var cachedVer = cached && cached.js ? (/var VERSION = '([\d.]+)'/.exec(cached.js) || [])[1] : '';
+  if (!dev && cached && cached.js && cached.css && ver(cachedVer) >= ver(PKG_VERSION)) {
+    try { inject(cached.css, cached.js); } catch (e) { loadFiles(); }
+  } else {
+    loadFiles();
+  }
+  if (dev) return;
+
+  // actualización en segundo plano (no retrasa el arranque)
+  setTimeout(function () {
+    get('https://api.github.com/repos/' + REPO + '/commits/main', 15000, { Accept: 'application/vnd.github.sha' }).then(function (sha) {
+      sha = sha.replace(/\s+/g, '');
+      if (!/^[0-9a-f]{40}$/.test(sha) || (cached && cached.sha === sha)) return;
+      var base = 'https://cdn.jsdelivr.net/gh/' + REPO + '@' + sha + '/app/';
+      return Promise.all([get(base + 'app.js', 30000), get(base + 'style.css', 30000)]).then(function (r) {
+        if (r[0].indexOf('StremTV') < 0) return;
+        localStorage.setItem(KEY, JSON.stringify({ sha: sha, js: r[0], css: r[1], ts: Date.now() }));
+        if (window.StremTV && window.StremTV.toast) window.StremTV.toast('Actualización descargada: se aplicará la próxima vez que abras StremTV');
+      });
+    }).catch(function () { /* sin conexión o límite de GitHub: se reintenta en el próximo arranque */ });
+  }, 8000);
+})();
