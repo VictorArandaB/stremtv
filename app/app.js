@@ -202,6 +202,22 @@
     'Datos': 'Data', 'Borrar historial de reproducción': 'Clear playback history',
     '¿Borrar «Continuar viendo» y el progreso?': 'Clear “Continue watching” and progress?', 'Borrar': 'Clear', 'Historial borrado': 'History cleared',
     'Diagnóstico de reproducción': 'Playback diagnostics',
+    'el token de GitHub no es válido': 'the GitHub token is not valid', 'el token no tiene permiso para Gists': 'the token has no Gist permission',
+    'falta el token de GitHub': 'the GitHub token is missing', 'no hay ninguna copia en esta cuenta de GitHub': 'there is no backup in this GitHub account',
+    'la copia está vacía': 'the backup is empty', 'la copia no es de StremTV': 'the backup is not from StremTV',
+    'Copia de seguridad': 'Backup',
+    'Guarda tus ajustes, claves, Trakt, progreso y addons en un Gist secreto de tu cuenta de GitHub, una vez al día. Si se borran los datos de la app, escribe el token y pulsa Restaurar.':
+      'Saves your settings, keys, Trakt, progress and add-ons to a secret Gist in your GitHub account, once a day. If the app data is wiped, type the token and press Restore.',
+    'Token de GitHub con permiso «gist» (pulsa OK para escribirlo)': 'GitHub token with “gist” permission (press OK to type it)',
+    'Token guardado. Buscando una copia anterior…': 'Token saved. Looking for a previous backup…',
+    'Hay una copia en GitHub: pulsa Restaurar para recuperarla o Guardar para sustituirla.': 'There is a backup on GitHub: press Restore to recover it or Save to replace it.',
+    'No hay copias todavía: pulsa Guardar copia ahora.': 'No backups yet: press Save backup now.',
+    'Créalo en github.com/settings/tokens/new marcando solo «gist».': 'Create it at github.com/settings/tokens/new ticking only “gist”.',
+    'Guardar copia ahora': 'Save backup now', 'Restaurar copia': 'Restore backup', 'Sin configurar.': 'Not set up.',
+    '✗ La última copia falló ({0})': '✗ The last backup failed ({0})', '✓ Última copia: {0}': '✓ Last backup: {0}',
+    'Aún no se ha hecho ninguna copia.': 'No backup made yet.', 'Guardando…': 'Saving…', 'Copia guardada en GitHub': 'Backup saved to GitHub',
+    '¿Restaurar la copia? Se sustituyen los ajustes, el progreso y los addons de esta tele.': 'Restore the backup? It replaces the settings, progress and add-ons on this TV.',
+    'Restaurar': 'Restore', 'Restaurando…': 'Restoring…', 'Copia del {0} restaurada. Reiniciando…': 'Backup from {0} restored. Restarting…',
     'Addons': 'Add-ons', 'la URL debe empezar por https://': 'the URL must start with https://',
     'no es un addon de Stremio': 'it is not a Stremio add-on', '{0} ya viene incluido en StremTV': '{0} is already built into StremTV',
     'hay que configurarlo primero en su web y pegar la URL que te dé': 'configure it on its website first and paste the URL it gives you',
@@ -673,6 +689,96 @@
       });
     }
   };
+
+  // ---------------------------------------------------------------- copia de seguridad en un Gist secreto de GitHub
+
+  var BACKUP_KEYS = ['settings', 'trakt', 'progress', 'suboffsets', 'srcprefs', 'addons', 'explore'];
+  var BACKUP_DESC = 'StremTV · copia de seguridad';
+  var BACKUP_FILE = 'stremtv.json';
+  var backup = load('backup', {}); // token, gistId, at (última copia), err
+  function saveBackup() { save('backup', backup); }
+
+  function ghReq(method, path, body) {
+    return new Promise(function (resolve, reject) {
+      var x = new XMLHttpRequest();
+      x.open(method, 'https://api.github.com' + path, true);
+      x.timeout = 20000;
+      x.setRequestHeader('Accept', 'application/vnd.github+json');
+      x.setRequestHeader('Authorization', 'token ' + backup.token);
+      if (body) x.setRequestHeader('Content-Type', 'application/json');
+      x.onload = function () {
+        var d = null;
+        try { d = x.responseText ? JSON.parse(x.responseText) : null; } catch (e) { /* respuesta vacía */ }
+        if (x.status >= 200 && x.status < 300) return resolve(d);
+        reject(new Error(x.status === 401 ? tr('el token de GitHub no es válido') :
+          x.status === 403 || x.status === 404 ? tr('el token no tiene permiso para Gists') : 'GitHub ' + x.status));
+      };
+      x.onerror = function () { reject(new Error(tr('sin conexión'))); };
+      x.ontimeout = function () { reject(new Error(tr('tiempo de espera agotado'))); };
+      x.send(body ? JSON.stringify(body) : null);
+    });
+  }
+
+  // el Gist de la copia: el guardado o, si no, el que tenga nuestra descripción
+  function findBackupGist() {
+    if (backup.gistId) return Promise.resolve(backup.gistId);
+    return ghReq('GET', '/gists?per_page=100').then(function (list) {
+      var g = (list || []).filter(function (x) { return x.description === BACKUP_DESC && x.files && x.files[BACKUP_FILE]; })[0];
+      if (g) { backup.gistId = g.id; saveBackup(); }
+      return g ? g.id : null;
+    });
+  }
+
+  function backupNow() {
+    if (!backup.token) return Promise.reject(new Error(tr('falta el token de GitHub')));
+    var data = { app: 'StremTV', version: VERSION, at: new Date().toISOString(), data: {} };
+    BACKUP_KEYS.forEach(function (k) { var v = load(k, null); if (v !== null) data.data[k] = v; });
+    var files = {};
+    files[BACKUP_FILE] = { content: JSON.stringify(data) };
+    return findBackupGist().then(function (id) {
+      if (id) {
+        return ghReq('PATCH', '/gists/' + id, { files: files }).catch(function (e) {
+          backup.gistId = ''; // borrado desde GitHub: crear otro
+          throw e;
+        });
+      }
+      return ghReq('POST', '/gists', { description: BACKUP_DESC, 'public': false, files: files }).then(function (g) {
+        backup.gistId = g.id;
+        return g;
+      });
+    }).then(function () {
+      backup.at = Date.now();
+      backup.err = '';
+      saveBackup();
+    }, function (e) {
+      backup.err = e.message;
+      saveBackup();
+      throw e;
+    });
+  }
+
+  function restoreBackup() {
+    if (!backup.token) return Promise.reject(new Error(tr('falta el token de GitHub')));
+    return findBackupGist().then(function (id) {
+      if (!id) throw new Error(tr('no hay ninguna copia en esta cuenta de GitHub'));
+      return ghReq('GET', '/gists/' + id);
+    }).then(function (g) {
+      var f = g && g.files && g.files[BACKUP_FILE];
+      if (!f) throw new Error(tr('la copia está vacía'));
+      return f.truncated ? getText(f.raw_url) : f.content;
+    }).then(function (txt) {
+      var d = JSON.parse(txt);
+      if (!d || d.app !== 'StremTV' || !d.data) throw new Error(tr('la copia no es de StremTV'));
+      BACKUP_KEYS.forEach(function (k) { if (d.data[k] !== undefined) save(k, d.data[k]); });
+      return d;
+    });
+  }
+
+  // una copia al día como mucho, en segundo plano
+  function autoBackup() {
+    if (!backup.token || Date.now() - (backup.at || 0) < 86400000) return;
+    setTimeout(function () { backupNow().catch(function () { /* se reintenta en el próximo arranque */ }); }, 30000);
+  }
 
   // ---------------------------------------------------------------- ocultar lo ya visto
 
@@ -2722,6 +2828,61 @@
     box.appendChild(addonStatus);
     box.appendChild(el('div', 'note', esc(tr('Los addons de fuentes que piden configuración (Comet, MediaFusion…) se configuran en su web con tu debrid y se pega aquí la URL que dan. Sus catálogos salen en Inicio y en la búsqueda.'))));
 
+    box.appendChild(el('div', 'row-title', tr('Copia de seguridad')));
+    box.lastChild.style.padding = '30px 0 16px 0';
+    box.appendChild(el('div', 'note', esc(tr('Guarda tus ajustes, claves, Trakt, progreso y addons en un Gist secreto de tu cuenta de GitHub, una vez al día. Si se borran los datos de la app, escribe el token y pulsa Restaurar.'))));
+    var bf = el('div', 'field');
+    bf.appendChild(el('label', null, esc(tr('Token de GitHub con permiso «gist» (pulsa OK para escribirlo)'))));
+    var tokenInput = el('input');
+    tokenInput.type = 'text';
+    tokenInput.value = backup.token ? backup.token.slice(0, 8) + '…' : '';
+    tokenInput.placeholder = 'ghp_…';
+    tokenInput.setAttribute('autocomplete', 'off');
+    tokenInput.setAttribute('spellcheck', 'false');
+    focusable(tokenInput, function () { if (backup.token) tokenInput.value = ''; tokenInput.focus(); });
+    tokenInput._ondone = function (v) {
+      v = (v || '').replace(/\s+/g, '');
+      if (!v || v.indexOf('…') >= 0) { tokenInput.value = backup.token ? backup.token.slice(0, 8) + '…' : ''; return; }
+      backup.token = v;
+      backup.gistId = '';
+      saveBackup();
+      tokenInput.value = v.slice(0, 8) + '…';
+      paintBackup(tr('Token guardado. Buscando una copia anterior…'));
+      findBackupGist().then(function (id) {
+        paintBackup(id ? tr('Hay una copia en GitHub: pulsa Restaurar para recuperarla o Guardar para sustituirla.') : tr('No hay copias todavía: pulsa Guardar copia ahora.'));
+      }).catch(function (e) { paintBackup('✗ ' + e.message); });
+    };
+    bf.appendChild(tokenInput);
+    box.appendChild(bf);
+    box.appendChild(el('div', 'note', esc(tr('Créalo en github.com/settings/tokens/new marcando solo «gist».'))));
+    var saveBtn = el('div', 'btn', tr('Guardar copia ahora'));
+    var restoreBtn = el('div', 'btn', tr('Restaurar copia'));
+    var bStatus = el('div', 'note');
+    function paintBackup(msg) {
+      bStatus.textContent = msg || (!backup.token ? tr('Sin configurar.') :
+        backup.err ? tr('✗ La última copia falló ({0})', backup.err) :
+        backup.at ? tr('✓ Última copia: {0}', fmtDate(new Date(backup.at)) + ' ' + new Date(backup.at).toTimeString().slice(0, 5)) : tr('Aún no se ha hecho ninguna copia.'));
+    }
+    focusable(saveBtn, function () {
+      paintBackup(tr('Guardando…'));
+      backupNow().then(function () { paintBackup(); toast(tr('Copia guardada en GitHub')); }).catch(function (e) { paintBackup('✗ ' + e.message); });
+    });
+    focusable(restoreBtn, function () {
+      menu(tr('¿Restaurar la copia? Se sustituyen los ajustes, el progreso y los addons de esta tele.'),
+        [{ label: tr('Restaurar'), value: 1 }, { label: tr('Cancelar'), value: 0, selected: true }], function (it) {
+          if (!it.value) return;
+          paintBackup(tr('Restaurando…'));
+          restoreBackup().then(function (d) {
+            toast(tr('Copia del {0} restaurada. Reiniciando…', fmtDate(new Date(d.at))));
+            setTimeout(function () { location.reload(); }, 1500);
+          }).catch(function (e) { paintBackup('✗ ' + e.message); });
+        });
+    });
+    box.appendChild(saveBtn);
+    box.appendChild(restoreBtn);
+    box.appendChild(bStatus);
+    paintBackup();
+
     box.appendChild(el('div', 'row-title', tr('Datos')));
     box.lastChild.style.padding = '30px 0 16px 0';
     var clear = el('div', 'btn', tr('Borrar historial de reproducción'));
@@ -2772,7 +2933,7 @@
 
   // ---------------------------------------------------------------- arranque
 
-  var VERSION = '0.10.1';
+  var VERSION = '0.11.0';
 
   function fitScreen() {
     var z = window.innerWidth / 1920;
@@ -2805,6 +2966,7 @@
     bootMark('app');
     autoMeasure();
     refreshAddons();
+    autoBackup();
     fitScreen();
     window.addEventListener('resize', fitScreen);
     registerKeys();
