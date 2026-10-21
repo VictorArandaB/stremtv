@@ -22,44 +22,65 @@
 </div>
 <div id="toast" class="hidden"></div>
 <script>
-// Cargador: jsDelivr cachea la rama durante horas, así que se pide a GitHub el último commit
-// y se cargan app.js/style.css fijados a ese commit (se sirven al momento).
-// Si GitHub no responde, se usan los archivos que vienen junto a esta página.
+// Cargador: arranca al momento con la última versión guardada (o con los archivos que vienen
+// en el paquete) y busca actualizaciones en segundo plano: si en GitHub hay un commit nuevo,
+// descarga app.js/style.css de ese commit y los guarda para el siguiente arranque.
 (function () {
   var REPO = 'VictorArandaB/stremtv';
-  var done = false;
-  function load(base) {
-    if (done) return;
-    done = true;
-    var css = document.createElement('link');
-    css.rel = 'stylesheet';
-    css.href = base + 'style.css';
-    document.head.appendChild(css);
-    var js = document.createElement('script');
-    js.src = base + 'app.js';
-    js.onerror = function () {
-      if (!base) return;
-      css.href = 'style.css';
-      var local = document.createElement('script');
-      local.src = 'app.js';
-      document.body.appendChild(local);
-    };
-    document.body.appendChild(js);
+  var KEY = 'stv.code';
+  var cached = null;
+  try { cached = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { cached = null; }
+
+  function inject(css, js) {
+    var st = document.createElement('style');
+    st.textContent = css;
+    document.head.appendChild(st);
+    var sc = document.createElement('script');
+    sc.text = js;
+    document.body.appendChild(sc);
   }
-  if (location.port === '8090') { load(''); return; } // desarrollo local
-  setTimeout(function () { load(''); }, 4000);
-  try {
-    var x = new XMLHttpRequest();
-    x.open('GET', 'https://api.github.com/repos/' + REPO + '/commits/main', true);
-    x.setRequestHeader('Accept', 'application/vnd.github.sha');
-    x.timeout = 3500;
-    x.onload = function () {
-      var sha = (x.responseText || '').replace(/\s+/g, '');
-      load(/^[0-9a-f]{40}$/.test(sha) ? 'https://cdn.jsdelivr.net/gh/' + REPO + '@' + sha + '/app/' : '');
-    };
-    x.onerror = x.ontimeout = function () { load(''); };
-    x.send();
-  } catch (e) { load(''); }
+  function loadFiles() {
+    var l = document.createElement('link');
+    l.rel = 'stylesheet';
+    l.href = 'style.css';
+    document.head.appendChild(l);
+    var sc = document.createElement('script');
+    sc.src = 'app.js';
+    document.body.appendChild(sc);
+  }
+  function get(url, timeout, headers) {
+    return new Promise(function (resolve, reject) {
+      var x = new XMLHttpRequest();
+      x.open('GET', url, true);
+      x.timeout = timeout;
+      for (var h in headers || {}) x.setRequestHeader(h, headers[h]);
+      x.onload = function () { x.status === 200 ? resolve(x.responseText) : reject(new Error('HTTP ' + x.status)); };
+      x.onerror = x.ontimeout = function () { reject(new Error('red')); };
+      x.send();
+    });
+  }
+
+  var dev = location.port === '8090';
+  if (!dev && cached && cached.js && cached.css) {
+    try { inject(cached.css, cached.js); } catch (e) { loadFiles(); }
+  } else {
+    loadFiles();
+  }
+  if (dev) return;
+
+  // actualización en segundo plano (no retrasa el arranque)
+  setTimeout(function () {
+    get('https://api.github.com/repos/' + REPO + '/commits/main', 15000, { Accept: 'application/vnd.github.sha' }).then(function (sha) {
+      sha = sha.replace(/\s+/g, '');
+      if (!/^[0-9a-f]{40}$/.test(sha) || (cached && cached.sha === sha)) return;
+      var base = 'https://cdn.jsdelivr.net/gh/' + REPO + '@' + sha + '/app/';
+      return Promise.all([get(base + 'app.js', 30000), get(base + 'style.css', 30000)]).then(function (r) {
+        if (r[0].indexOf('StremTV') < 0) return;
+        localStorage.setItem(KEY, JSON.stringify({ sha: sha, js: r[0], css: r[1], ts: Date.now() }));
+        if (window.StremTV && window.StremTV.toast) window.StremTV.toast('Actualización descargada: se aplicará la próxima vez que abras StremTV');
+      });
+    }).catch(function () { /* sin conexión o límite de GitHub: se reintenta en el próximo arranque */ });
+  }, 8000);
 })();
 </script>
 </body>

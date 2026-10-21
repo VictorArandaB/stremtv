@@ -1716,7 +1716,7 @@
 
   // ---------------------------------------------------------------- arranque
 
-  var VERSION = '0.4.1';
+  var VERSION = '0.4.2';
 
   function fitScreen() {
     var z = window.innerWidth / 1920;
@@ -1734,5 +1734,5 @@
   else start();
 
   // exponer para depurar desde la consola
-  window.StremTV = { settings: settings, Player: Player, Nav: Nav, stack: stack, open: function (type, id) { push(detailScreen(type, id)); } };
+  window.StremTV = { settings: settings, Player: Player, Nav: Nav, stack: stack, toast: toast, open: function (type, id) { push(detailScreen(type, id)); } };
 })();
