@@ -82,7 +82,7 @@
     // inicio, anime y búsqueda
     'Inicio': 'Home', 'Anime': 'Anime', 'Buscar': 'Search', 'Ajustes': 'Settings',
     'Configura tu Real-Debrid o AllDebrid para poder reproducir': 'Set up Real-Debrid or AllDebrid to be able to play',
-    'Continuar viendo': 'Continue watching', 'Continuar (Trakt)': 'Continue (Trakt)', 'Mi lista (Trakt)': 'My list (Trakt)',
+    'Continuar viendo': 'Continue watching', 'Continuar (Trakt)': 'Continue (Trakt)',
     'Recomendadas para ti: películas': 'Recommended for you: movies', 'Recomendadas para ti: series': 'Recommended for you: shows',
     'Películas populares': 'Popular movies', 'Series populares': 'Popular shows',
     'Películas mejor valoradas': 'Top rated movies', 'Series mejor valoradas': 'Top rated shows',
@@ -213,7 +213,8 @@
       'Source add-ons that need setup (Comet, MediaFusion…) are configured on their website with your debrid; paste the URL they give you here. Their catalogs show up on Home and in search.',
     'Explorar': 'Explore', 'Tipo': 'Type', 'Género': 'Genre', 'Año': 'Year', 'Orden': 'Sort', 'Todos': 'All',
     'Populares': 'Popular', 'Mejor valoradas': 'Top rated', 'Cargar más': 'Load more',
-    'Esta semana en tus series': 'This week in your shows', 'Hoy': 'Today', 'Mañana': 'Tomorrow', 'Ayer': 'Yesterday',
+    'Esta semana en tus series': 'This week in your shows', 'Siguientes episodios': 'Up next',
+    'Mi lista: películas': 'My list: movies', 'Mi lista: series': 'My list: shows', 'Hoy': 'Today', 'Mañana': 'Tomorrow', 'Ayer': 'Yesterday',
     ' · elegida automáticamente: pulsa OK en otra para cambiar': ' · picked automatically: press OK on another one to switch',
     'termina a las {0}': 'ends at {0}', 'Fondo detrás del texto': 'Background behind the text',
     'Al pulsar Ver, reproducir directamente la mejor fuente': 'When pressing Watch, play the best source directly',
@@ -554,17 +555,44 @@
     },
 
     loadWatchlist: function () {
-      return Trakt.call('GET', '/sync/watchlist?limit=200').then(function (items) {
+      return Trakt.call('GET', '/sync/watchlist?limit=500').then(function (items) {
         Trakt.watchlist = {};
         var metas = [];
         (items || []).forEach(function (it) {
           var o = it.movie || it.show;
-          if (!o || !o.ids || !o.ids.imdb) return;
+          if (!o || !o.ids || !o.ids.imdb) return; // sin IMDb, Cinemeta y Torrentio no lo encuentran
           Trakt.watchlist[o.ids.imdb] = true;
           metas.push({ id: o.ids.imdb, type: it.movie ? 'movie' : 'series', name: o.title, poster: metahubPoster(o.ids.imdb) });
         });
         return metas;
       });
+    },
+
+    // series empezadas con episodios pendientes, de la vista más recientemente a la más antigua (el «Up Next» de Trakt)
+    upNext: function () {
+      return Promise.all([
+        Trakt.call('GET', '/sync/watched/shows?extended=full'),
+        Trakt.call('GET', '/users/hidden/progress_watched?type=show&limit=500').catch(function () { return []; })
+      ]).then(function (r) {
+        var hidden = {};
+        (r[1] || []).forEach(function (h) { if (h.show && h.show.ids) hidden[h.show.ids.trakt] = true; });
+        var shows = (r[0] || []).filter(function (it) {
+          var sh = it.show;
+          if (!sh || !sh.ids || !sh.ids.imdb || hidden[sh.ids.trakt]) return false;
+          var n = 0;
+          (it.seasons || []).forEach(function (se) { if (se.number > 0) n += (se.episodes || []).length; });
+          return !sh.aired_episodes || n < sh.aired_episodes;
+        }).sort(function (a, b) { return new Date(b.last_watched_at) - new Date(a.last_watched_at); }).slice(0, 25);
+        return Promise.all(shows.map(function (it) {
+          var sh = it.show;
+          return Trakt.call('GET', '/shows/' + sh.ids.trakt + '/progress/watched?hidden=false&specials=false').then(function (d) {
+            var e = d && d.next_episode;
+            if (!e) return null;
+            return { id: sh.ids.imdb, type: 'series', name: sh.title, poster: metahubPoster(sh.ids.imdb),
+              label: sh.title + ' · ' + tr('T{0}:E{1}', e.season, e.number) };
+          }).catch(function () { return null; });
+        }));
+      }).then(function (list) { return list.filter(Boolean); });
     },
 
     toggleWatchlist: function (type, imdb) {
@@ -940,7 +968,7 @@
   }
 
   // fila que se rellena cuando llega la promesa (metas con .pct/.label opcionales)
-  function promiseRow(container, title, promise, onPick, hideIfEmpty) {
+  function promiseRow(container, title, promise, onPick, hideIfEmpty, max) {
     var row = el('div', 'row');
     row.appendChild(el('div', 'row-title', esc(title)));
     row.appendChild(el('div', 'empty', tr('Cargando…')));
@@ -948,7 +976,7 @@
     promise.then(function (metas) {
       bootMark('firstRow');
       if (!row.parentNode) return;
-      metas = (metas || []).slice(0, 40);
+      metas = (metas || []).slice(0, max || 40);
       if (!metas.length && hideIfEmpty) { container.removeChild(row); return; }
       var hadFocus = Nav.cur && row.contains(Nav.cur);
       var fresh = metas.length
@@ -1040,16 +1068,25 @@
       traktWrap.innerHTML = '';
       var local = {};
       continueList().forEach(function (p) { local[p.metaId] = true; });
-      promiseRow(traktWrap, tr('Continuar (Trakt)'), Trakt.playback().then(function (items) {
+      var paused = Trakt.playback().then(function (items) {
         var seen = {};
         return items.filter(function (m) {
           if (local[m.id] || seen[m.id]) return false; // ya está en «Continuar viendo»
           seen[m.id] = true;
           return true;
         });
-      }), openMeta, true);
+      });
+      promiseRow(traktWrap, tr('Continuar (Trakt)'), paused, openMeta, true);
+      // series con el siguiente episodio pendiente (sin repetir las que ya salen arriba)
+      promiseRow(traktWrap, tr('Siguientes episodios'), Promise.all([Trakt.upNext(), paused.catch(function () { return []; })]).then(function (r) {
+        var above = {};
+        r[1].forEach(function (m) { above[m.id] = true; });
+        return r[0].filter(function (m) { return !local[m.id] && !above[m.id]; });
+      }), openMeta, true, 25);
       promiseRow(traktWrap, tr('Esta semana en tus series'), Trakt.calendar(), openMeta, true);
-      promiseRow(traktWrap, tr('Mi lista (Trakt)'), Trakt.loadWatchlist(), openMeta, true);
+      var wl = Trakt.loadWatchlist();
+      promiseRow(traktWrap, tr('Mi lista: películas'), wl.then(function (m) { return m.filter(function (x) { return x.type === 'movie'; }); }), openMeta, true, 100);
+      promiseRow(traktWrap, tr('Mi lista: series'), wl.then(function (m) { return m.filter(function (x) { return x.type === 'series'; }); }), openMeta, true, 100);
       var seenThen = function (pr) { return Promise.all([pr, seenReady()]).then(function (r) { return filterSeen(r[0]); }); };
       promiseRow(traktWrap, tr('Recomendadas para ti: películas'), seenThen(Trakt.recommendations('movies')), openMeta, true);
       promiseRow(traktWrap, tr('Recomendadas para ti: series'), seenThen(Trakt.recommendations('shows')), openMeta, true);
@@ -2735,7 +2772,7 @@
 
   // ---------------------------------------------------------------- arranque
 
-  var VERSION = '0.10.0';
+  var VERSION = '0.10.1';
 
   function fitScreen() {
     var z = window.innerWidth / 1920;
