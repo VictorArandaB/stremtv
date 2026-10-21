@@ -157,3 +157,5 @@ html, body { width: 1920px; height: 1080px; overflow: hidden; background: #0d0f1
 .chips.hscroll { padding: 10px 80px; }
 .chips .btn { padding: 10px 26px; font-size: 24px; margin-right: 12px; }
 .grid { padding-top: 24px; }
+
+.badge.addon { background: #2d4a6b; color: #fff; }

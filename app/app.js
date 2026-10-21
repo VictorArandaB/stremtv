@@ -202,6 +202,15 @@
     'Datos': 'Data', 'Borrar historial de reproducción': 'Clear playback history',
     '¿Borrar «Continuar viendo» y el progreso?': 'Clear “Continue watching” and progress?', 'Borrar': 'Clear', 'Historial borrado': 'History cleared',
     'Diagnóstico de reproducción': 'Playback diagnostics',
+    'Addons': 'Add-ons', 'la URL debe empezar por https://': 'the URL must start with https://',
+    'no es un addon de Stremio': 'it is not a Stremio add-on', '{0} ya viene incluido en StremTV': '{0} is already built into StremTV',
+    'hay que configurarlo primero en su web y pegar la URL que te dé': 'configure it on its website first and paste the URL it gives you',
+    'Ninguno añadido. Torrentio, Cinemeta, Kitsu y OpenSubtitles ya vienen incluidos.': 'None added. Torrentio, Cinemeta, Kitsu and OpenSubtitles are built in.',
+    'fuentes': 'sources', 'catálogos': 'catalogs', 'subtítulos': 'subtitles', 'Quitar este addon': 'Remove this add-on',
+    'Addon quitado': 'Add-on removed', 'Añadir addon: URL de su manifest (pulsa OK para escribirla)': 'Add an add-on: its manifest URL (press OK to type it)',
+    '✓ Añadido: {0}': '✓ Added: {0}', '✗ No se pudo añadir ({0})': '✗ Could not add it ({0})',
+    'Los addons de fuentes que piden configuración (Comet, MediaFusion…) se configuran en su web con tu debrid y se pega aquí la URL que dan. Sus catálogos salen en Inicio y en la búsqueda.':
+      'Source add-ons that need setup (Comet, MediaFusion…) are configured on their website with your debrid; paste the URL they give you here. Their catalogs show up on Home and in search.',
     'Explorar': 'Explore', 'Tipo': 'Type', 'Género': 'Genre', 'Año': 'Year', 'Orden': 'Sort', 'Todos': 'All',
     'Populares': 'Popular', 'Mejor valoradas': 'Top rated', 'Cargar más': 'Load more',
     'Esta semana en tus series': 'This week in your shows', 'Hoy': 'Today', 'Mañana': 'Tomorrow', 'Ayer': 'Yesterday',
@@ -340,6 +349,86 @@
       parts.push(settings.debrid + '=' + settings.key);
     }
     return TORRENTIO + '/' + parts.join('|');
+  }
+
+  // ---------------------------------------------------------------- addons de Stremio añadidos en Ajustes
+
+  // [{ url: base sin /manifest.json, manifest: {id, name, resources, types, idPrefixes, catalogs} }]
+  var addons = load('addons', []);
+  var BUILTIN_ADDONS = ['com.stremio.torrentio.addon', 'com.linvo.cinemeta', 'org.stremio.opensubtitlesv3'];
+
+  function addonBase(u) {
+    return String(u || '').replace(/^\s+|\s+$/g, '').replace(/^stremio:\/\//, 'https://')
+      .replace(/\/manifest\.json(\?.*)?$/, '').replace(/\/+$/, '');
+  }
+
+  function slimManifest(m) {
+    return { id: m.id, name: m.name || m.id, resources: m.resources || [], types: m.types || [], idPrefixes: m.idPrefixes || null,
+      catalogs: m.catalogs || [] };
+  }
+
+  // ¿sirve este addon el recurso (stream, meta, subtitles…) para ese tipo e id?
+  function addonHas(a, resource, type, id) {
+    var m = a.manifest;
+    return (m.resources || []).some(function (r) {
+      var name = typeof r === 'string' ? r : r.name;
+      if (name !== resource) return false;
+      var types = (typeof r === 'object' && r.types) || m.types || [];
+      var prefixes = (typeof r === 'object' && r.idPrefixes) || m.idPrefixes;
+      if (type && types.indexOf(type) < 0) return false;
+      if (id && prefixes && prefixes.length) return prefixes.some(function (pre) { return String(id).indexOf(pre) === 0; });
+      return true;
+    });
+  }
+  function addonsFor(resource, type, id) { return addons.filter(function (a) { return addonHas(a, resource, type, id); }); }
+
+  function installAddon(url) {
+    var base = addonBase(url);
+    if (!/^https?:\/\//.test(base)) return Promise.reject(new Error(tr('la URL debe empezar por https://')));
+    return getJSON(base + '/manifest.json').then(function (m) {
+      if (!m || !m.id || !m.resources) throw new Error(tr('no es un addon de Stremio'));
+      if (BUILTIN_ADDONS.indexOf(m.id) >= 0) throw new Error(tr('{0} ya viene incluido en StremTV', m.name));
+      if (m.behaviorHints && m.behaviorHints.configurationRequired) throw new Error(tr('hay que configurarlo primero en su web y pegar la URL que te dé'));
+      addons = addons.filter(function (a) { return a.url !== base; });
+      addons.push({ url: base, manifest: slimManifest(m) });
+      save('addons', addons);
+      return addons[addons.length - 1];
+    });
+  }
+
+  function removeAddon(a) {
+    addons = addons.filter(function (x) { return x !== a; });
+    save('addons', addons);
+  }
+
+  // al arrancar, actualizar en segundo plano lo que declara cada addon (catálogos nuevos, etc.)
+  function refreshAddons() {
+    addons.forEach(function (a) {
+      getJSON(a.url + '/manifest.json').then(function (m) {
+        if (m && m.id) { a.manifest = slimManifest(m); save('addons', addons); }
+      }).catch(function () { /* se queda lo guardado */ });
+    });
+  }
+
+  // catálogos de película/serie/anime que se pueden pedir sin datos extra (o con búsqueda, si search es true)
+  function addonCatalogs(search) {
+    var out = [];
+    addons.forEach(function (a) {
+      (a.manifest.catalogs || []).forEach(function (c) {
+        if (['movie', 'series', 'anime'].indexOf(c.type) < 0) return;
+        var hasSearch = false, required = false;
+        (c.extra || []).forEach(function (e) {
+          if (e.name === 'search') { hasSearch = true; if (e.isRequired && !search) required = true; }
+          else if (e.isRequired) required = true;
+        });
+        (c.extraRequired || []).forEach(function (n) { if (n !== 'search' || !search) required = true; });
+        if ((c.extraSupported || []).indexOf('search') >= 0) hasSearch = true;
+        if (required || (search && !hasSearch)) return;
+        var kind = c.type === 'series' ? tr('Series') : c.type === 'movie' ? tr('Películas') : tr('Anime');
+        out.push({ addon: a, catalog: c, title: (c.name ? c.name + ' · ' : '') + kind + ' (' + a.manifest.name + ')' });
+      });
+    });
+    return out;
   }
 
   // ---------------------------------------------------------------- progreso
@@ -879,7 +968,11 @@
     }), onPick);
   }
 
-  function openMeta(meta) { push(detailScreen(meta.type, meta.id || meta.metaId)); }
+  function openMeta(meta) {
+    var id = String(meta.id || meta.metaId || '');
+    if (meta.imdb_id && id.indexOf('tt') !== 0 && id.indexOf('kitsu:') !== 0) id = meta.imdb_id;
+    push(detailScreen(meta.type === 'anime' && id.indexOf('tt') === 0 ? 'series' : meta.type, id));
+  }
 
   // ---------------------------------------------------------------- pantalla: inicio
 
@@ -967,6 +1060,16 @@
     asyncRow(vs, tr('Series populares'), CINEMETA + '/catalog/series/top.json', openMeta);
     asyncRow(vs, tr('Películas mejor valoradas'), CINEMETA + '/catalog/movie/imdbRating.json', openMeta);
     asyncRow(vs, tr('Series mejor valoradas'), CINEMETA + '/catalog/series/imdbRating.json', openMeta);
+    // catálogos de los addons añadidos: como mucho 4 filas por addon para no llenar el inicio
+    var perAddon = {};
+    addonCatalogs(false).forEach(function (c) {
+      var n = perAddon[c.addon.url] = (perAddon[c.addon.url] || 0) + 1;
+      if (n > 4) return;
+      // si el catálogo viene vacío o el addon falla, la fila desaparece
+      promiseRow(vs, c.title, Promise.all([getJSON(c.addon.url + '/catalog/' + c.catalog.type + '/' + c.catalog.id + '.json'), seenReady()]).then(function (r) {
+        return filterSeen(r[0].metas || []);
+      }), openMeta, true);
+    });
 
     return { el: root, onResume: function () { renderTop(); renderTrakt(); } };
   }
@@ -1131,6 +1234,9 @@
       asyncRow(results, tr('Películas'), CINEMETA + '/catalog/movie/top/search=' + enc + '.json', openMeta);
       asyncRow(results, tr('Series'), CINEMETA + '/catalog/series/top/search=' + enc + '.json', openMeta);
       asyncRow(results, tr('Anime'), ANIME + '/catalog/anime/kitsu-anime-list/search=' + enc + '.json', openMeta);
+      addonCatalogs(true).forEach(function (c) {
+        asyncRow(results, c.title, c.addon.url + '/catalog/' + c.catalog.type + '/' + c.catalog.id + '/search=' + enc + '.json', openMeta);
+      });
     }
 
     return { el: root, initialFocus: function () { return input; } };
@@ -1169,7 +1275,12 @@
     var isAnime = String(id).indexOf('kitsu:') === 0;
     function imdbOf() { return meta.imdb_id || (String(meta.id).indexOf('tt') === 0 ? meta.id : null); }
 
-    getJSON(isAnime ? ANIME + '/meta/anime/' + id + '.json' : CINEMETA + '/meta/' + type + '/' + id + '.json').then(function (res) {
+    var metaFrom = isAnime ? ANIME + '/meta/anime/' + id + '.json' : CINEMETA + '/meta/' + type + '/' + id + '.json';
+    if (!isAnime && String(id).indexOf('tt') !== 0) {
+      var own = addonsFor('meta', type, id)[0];
+      metaFrom = own ? own.url + '/meta/' + type + '/' + id + '.json' : null;
+    }
+    (metaFrom ? getJSON(metaFrom) : Promise.reject(new Error(tr('sin datos')))).then(function (res) {
       meta = res.meta;
       if (!meta) throw new Error(tr('sin datos'));
       if (isAnime) type = meta.type === 'movie' ? 'movie' : 'series';
@@ -1546,18 +1657,27 @@
 
     function fetchStreams() {
       sub.textContent = tr('Buscando fuentes…');
-      getJSON(torrentioBase() + '/stream/' + ctx.type + '/' + ctx.videoId + '.json').then(function (d) {
+      var fromAddons = Promise.all(addonsFor('stream', ctx.type, ctx.videoId).map(function (a) {
+        return getJSON(a.url + '/stream/' + ctx.type + '/' + ctx.videoId + '.json').then(function (d) {
+          return (d.streams || []).map(function (x) { var st = parseStream(x); st.addon = a.manifest.name; return st; })
+            .filter(function (st) { return st.url && !st.error; });
+        }).catch(function () { return []; }); // un addon caído no estropea el resto
+      }));
+      var fromTorrentio = getJSON(torrentioBase() + '/stream/' + ctx.type + '/' + ctx.videoId + '.json').catch(function (e) { return { failed: e }; });
+      Promise.all([fromTorrentio, fromAddons]).then(function (r) {
+        var d = r[0], extra = [].concat.apply([], r[1]);
+        if (d.failed && !extra.length) throw d.failed;
         var streams = (d.streams || []).map(parseStream);
-        if (streams.length === 1 && streams[0].error) {
+        if (streams.length === 1 && streams[0].error && !extra.length) {
           sub.textContent = '';
           return message(tr('La clave de {0} no es válida o ha caducado.', DEBRID_NAMES[settings.debrid]) + ' ' +
             (streams[0].raw.title || ''), true);
         }
-        if (!settings.key) {
+        if (!settings.key && !extra.length) {
           sub.textContent = tr('{0} torrents encontrados', streams.length);
           return message(tr('Sin un servicio debrid configurado la tele no puede reproducir torrents. Añade tu clave de Real-Debrid o AllDebrid en Ajustes.'), true);
         }
-        streams = streams.filter(function (s) { return s.url && !s.error; });
+        streams = streams.filter(function (s) { return s.url && !s.error; }).concat(extra);
         // tasa estimada (Mb/s) = tamaño / duración; las que no caben en la conexión van al final
         var limit = rateLimit();
         streams.forEach(function (x) {
@@ -1589,6 +1709,7 @@
           var info = el('div', 'info');
           var badges = '';
           if (s.pref >= 2) badges += '<span class="badge ok">' + tr('↺ Como el anterior') + '</span>';
+          if (s.addon) badges += '<span class="badge addon">' + esc(s.addon) + '</span>';
           if (s.cached) badges += '<span class="badge ok">' + tr('⚡ Instantáneo') + '</span>';
           else if (s.download) badges += '<span class="badge">' + tr('Descargar en debrid') + '</span>';
           if (s.es) badges += '<span class="badge es">ES</span>';
@@ -1675,12 +1796,17 @@
       var self = this;
       if (!ctx.imdb) { self.list = []; return Promise.resolve([]); }
       var sid = ctx.type === 'movie' ? ctx.imdb : ctx.imdb + ':' + ctx.imdbS + ':' + ctx.imdbE;
-      return getJSON(SUBS_ADDON + '/subtitles/' + ctx.type + '/' + sid + '.json').then(function (d) {
+      var sources = [{ url: SUBS_ADDON, name: '' }].concat(addonsFor('subtitles', ctx.type, sid).map(function (a) { return { url: a.url, name: a.manifest.name }; }));
+      return Promise.all(sources.map(function (src) {
+        return getJSON(src.url + '/subtitles/' + ctx.type + '/' + sid + '.json').then(function (d) {
+          return (d.subtitles || []).map(function (x) { return extend(extend({}, x), { lang: langKey(x.lang), addon: src.name }); });
+        }).catch(function () { return []; });
+      })).then(function (r) {
         var order = { spa: 0, eng: 1 };
-        self.list = (d.subtitles || []).filter(function (s) { return s.lang === 'spa' || s.lang === 'eng'; })
-          .sort(function (a, b) { return order[a.lang] - order[b.lang]; }).slice(0, 25);
+        self.list = [].concat.apply([], r).filter(function (x) { return x.lang === 'spa' || x.lang === 'eng'; })
+          .sort(function (a, b) { return order[a.lang] - order[b.lang]; }).slice(0, 30);
         return self.list;
-      }).catch(function () { self.list = []; return []; });
+      });
     },
     select: function (s) {
       var self = this;
@@ -2098,7 +2224,7 @@
         });
       }
       Subs.list.forEach(function (s) {
-        items.push({ label: tr(s.lang === 'spa' ? 'Español' : 'Inglés') + ' · ' + (s.subtitleFileName || s.id), value: 'ext', sub: s, selected: Subs.current === s });
+        items.push({ label: tr(s.lang === 'spa' ? 'Español' : 'Inglés') + ' · ' + (s.addon ? s.addon + ' · ' : '') + (s.subtitleFileName || s.id), value: 'ext', sub: s, selected: Subs.current === s });
       });
       if (Subs.current || Subs.embedded) {
         items.unshift({ label: tr('Sincronizar subtítulos… (ahora {0})', fmtOffset(Subs.offset)), value: 'sync' });
@@ -2508,6 +2634,57 @@
     }
     paintTrakt();
 
+    box.appendChild(el('div', 'row-title', tr('Addons')));
+    box.lastChild.style.padding = '30px 0 16px 0';
+    var addonList = el('div');
+    box.appendChild(addonList);
+    function paintAddons() {
+      addonList.innerHTML = '';
+      if (!addons.length) addonList.appendChild(el('div', 'note', esc(tr('Ninguno añadido. Torrentio, Cinemeta, Kitsu y OpenSubtitles ya vienen incluidos.'))));
+      addons.forEach(function (a) {
+        var what = [];
+        if (addonHas(a, 'stream')) what.push(tr('fuentes'));
+        if ((a.manifest.catalogs || []).length) what.push(tr('catálogos'));
+        if (addonHas(a, 'subtitles')) what.push(tr('subtítulos'));
+        var o = el('div', 'opt');
+        o.appendChild(el('span', null, esc(a.manifest.name)));
+        o.appendChild(el('span', 'val', esc(what.join(', ') || '—')));
+        focusable(o, function () {
+          menu(a.manifest.name, [{ label: tr('Quitar este addon'), value: 1 }, { label: tr('Cancelar'), value: 0, selected: true }], function (it) {
+            if (!it.value) return;
+            removeAddon(a);
+            paintAddons();
+            Nav.focus(addonInput);
+            toast(tr('Addon quitado'));
+          });
+        });
+        addonList.appendChild(o);
+      });
+    }
+    paintAddons();
+    var af = el('div', 'field');
+    af.appendChild(el('label', null, esc(tr('Añadir addon: URL de su manifest (pulsa OK para escribirla)'))));
+    var addonInput = el('input');
+    addonInput.type = 'text';
+    addonInput.placeholder = 'https://…/manifest.json';
+    addonInput.setAttribute('autocomplete', 'off');
+    addonInput.setAttribute('spellcheck', 'false');
+    focusable(addonInput, function () { addonInput.focus(); });
+    var addonStatus = el('div', 'note');
+    addonInput._ondone = function (v) {
+      if (!v || !v.replace(/\s+/g, '')) return;
+      addonStatus.textContent = tr('Comprobando…');
+      installAddon(v).then(function (a) {
+        addonInput.value = '';
+        addonStatus.textContent = tr('✓ Añadido: {0}', a.manifest.name);
+        paintAddons();
+      }).catch(function (e) { addonStatus.textContent = tr('✗ No se pudo añadir ({0})', e.message); });
+    };
+    af.appendChild(addonInput);
+    box.appendChild(af);
+    box.appendChild(addonStatus);
+    box.appendChild(el('div', 'note', esc(tr('Los addons de fuentes que piden configuración (Comet, MediaFusion…) se configuran en su web con tu debrid y se pega aquí la URL que dan. Sus catálogos salen en Inicio y en la búsqueda.'))));
+
     box.appendChild(el('div', 'row-title', tr('Datos')));
     box.lastChild.style.padding = '30px 0 16px 0';
     var clear = el('div', 'btn', tr('Borrar historial de reproducción'));
@@ -2558,7 +2735,7 @@
 
   // ---------------------------------------------------------------- arranque
 
-  var VERSION = '0.9.0';
+  var VERSION = '0.10.0';
 
   function fitScreen() {
     var z = window.innerWidth / 1920;
@@ -2590,6 +2767,7 @@
   function start() {
     bootMark('app');
     autoMeasure();
+    refreshAddons();
     fitScreen();
     window.addEventListener('resize', fitScreen);
     registerKeys();

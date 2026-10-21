@@ -14,6 +14,7 @@ Escrito en ES5 y CSS sin funciones modernas para que funcione en el motor web de
 - «Continuar viendo» y progreso por episodio (guardado en la propia tele).
 - **Siguiente episodio automático**: aviso en los últimos 40 s con cuenta atrás de 10 s (OK lo pone ya, Atrás lo descarta).
 - En cada serie recuerda la **fuente** (misma release o pack) y la **pista de audio** elegidas y las usa en los demás episodios.
+- **Addons de Stremio**: en Ajustes → Addons se pega la URL de un manifest; sus fuentes se suman a las de Torrentio, sus catálogos salen en Inicio (hasta 4 filas) y en la búsqueda, y sus subtítulos en el menú ▲.
 - **Explorar**: películas o series por género y año, populares o mejor valoradas.
 - **Esta semana en tus series** (Trakt): episodios de las series que sigues, de hace dos días a una semana vista.
 - **Reproducción directa**: «▶ Ver» arranca la mejor fuente (instantánea, que quepa en la conexión, o la misma release que en el episodio anterior); Atrás lleva a la lista para elegir otra.
