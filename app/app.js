@@ -517,6 +517,22 @@
     try { return d.toLocaleDateString(settings.lang === 'en' ? 'en-GB' : 'es-ES', { weekday: 'short', day: 'numeric' }); } catch (e) { return fmtDate(d); }
   }
 
+  // como Promise.all(items.map(fn)) pero con como mucho «limit» promesas en marcha; conserva el orden
+  function mapLimit(items, limit, fn) {
+    return new Promise(function (resolve) {
+      var out = new Array(items.length), next = 0, done = 0;
+      if (!items.length) return resolve(out);
+      function run() {
+        var i = next++;
+        if (i >= items.length) return;
+        fn(items[i]).then(function (v) { out[i] = v; }, function () { out[i] = null; }).then(function () {
+          if (++done === items.length) resolve(out); else run();
+        });
+      }
+      for (var k = 0; k < Math.min(limit, items.length); k++) run();
+    });
+  }
+
   function metahubPoster(imdb) { return 'https://images.metahub.space/poster/small/' + imdb + '/img'; }
 
   var Trakt = {
@@ -584,9 +600,13 @@
       });
     },
 
-    // series empezadas con episodios pendientes, de la vista más recientemente a la más antigua (el «Up Next» de Trakt)
+    // series empezadas con episodios ya emitidos pendientes, de la vista más recientemente a la más antigua (el «Up Next» de Trakt).
+    // Se guarda 10 minutos (o hasta terminar de ver algo): son muchas consultas
+    upNextCache: null,
     upNext: function () {
-      return Promise.all([
+      var c = Trakt.upNextCache;
+      if (c && Date.now() - c.at < 600000) return c.promise;
+      var promise = Promise.all([
         Trakt.call('GET', '/sync/watched/shows?extended=full'),
         Trakt.call('GET', '/users/hidden/progress_watched?type=show&limit=500').catch(function () { return []; })
       ]).then(function (r) {
@@ -598,17 +618,22 @@
           var n = 0;
           (it.seasons || []).forEach(function (se) { if (se.number > 0) n += (se.episodes || []).length; });
           return !sh.aired_episodes || n < sh.aired_episodes;
-        }).sort(function (a, b) { return new Date(b.last_watched_at) - new Date(a.last_watched_at); }).slice(0, 25);
-        return Promise.all(shows.map(function (it) {
+        }).sort(function (a, b) { return new Date(b.last_watched_at) - new Date(a.last_watched_at); }).slice(0, 150);
+        // todas las series (no solo las recientes), como mucho 6 consultas a la vez para no saturar la tele ni Trakt
+        return mapLimit(shows, 6, function (it) {
           var sh = it.show;
-          return Trakt.call('GET', '/shows/' + sh.ids.trakt + '/progress/watched?hidden=false&specials=false').then(function (d) {
+          return Trakt.call('GET', '/shows/' + sh.ids.trakt + '/progress/watched?hidden=false&specials=false&count_specials=false&extended=full').then(function (d) {
             var e = d && d.next_episode;
-            if (!e) return null;
+            if (!e || (d.aired && d.completed >= d.aired)) return null; // al día: lo «siguiente» aún no se ha emitido
+            if (e.first_aired && new Date(e.first_aired) > new Date()) return null;
             return { id: sh.ids.imdb, type: 'series', name: sh.title, poster: metahubPoster(sh.ids.imdb),
               label: sh.title + ' · ' + tr('T{0}:E{1}', e.season, e.number) };
           }).catch(function () { return null; });
-        }));
+        });
       }).then(function (list) { return list.filter(Boolean); });
+      Trakt.upNextCache = { at: Date.now(), promise: promise };
+      promise.catch(function () { Trakt.upNextCache = null; });
+      return promise;
     },
 
     toggleWatchlist: function (type, imdb) {
@@ -1188,7 +1213,7 @@
         var above = {};
         r[1].forEach(function (m) { above[m.id] = true; });
         return r[0].filter(function (m) { return !local[m.id] && !above[m.id]; });
-      }), openMeta, true, 25);
+      }), openMeta, true, 100);
       promiseRow(traktWrap, tr('Esta semana en tus series'), Trakt.calendar(), openMeta, true);
       var wl = Trakt.loadWatchlist();
       promiseRow(traktWrap, tr('Mi lista: películas'), wl.then(function (m) { return m.filter(function (x) { return x.type === 'movie'; }); }), openMeta, true, 100);
@@ -2529,7 +2554,10 @@
       this.paintSync();
       this.upNext = null;
       this.paintUpNext();
-      if (this.started) Trakt.scrobble('stop', this.ctx, this.pct()); // >= 80 % lo marca como visto
+      if (this.started) {
+        Trakt.scrobble('stop', this.ctx, this.pct()); // >= 80 % lo marca como visto
+        Trakt.upNextCache = null; // el siguiente episodio ha podido cambiar
+      }
       this.saveProgress();
       clearInterval(this.tickTimer);
       clearInterval(this.saveTimer);
@@ -2933,7 +2961,7 @@
 
   // ---------------------------------------------------------------- arranque
 
-  var VERSION = '0.11.0';
+  var VERSION = '0.11.1';
 
   function fitScreen() {
     var z = window.innerWidth / 1920;

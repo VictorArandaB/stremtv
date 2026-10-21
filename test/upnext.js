@@ -8,6 +8,7 @@ const show = (trakt, imdb, title, aired, watched, when) => ({ last_watched_at: w
   const p = await b.newPage(); const errs = []; p.on('pageerror', (e) => errs.push(e.message));
   await p.setRequestInterception(true);
   const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*' };
+  let inFlight = 0, maxInFlight = 0;
   const json = (req, o) => req.respond({ status: 200, headers: cors, contentType: 'application/json', body: JSON.stringify(o) });
   p.on('request', (req) => {
     const u = req.url();
@@ -19,10 +20,20 @@ const show = (trakt, imdb, title, aired, watched, when) => ({ last_watched_at: w
       show(3, 'tt2861424', 'Rick and Morty', 71, 30, '2026-10-15T00:00:00Z'),    // a medias, más reciente
       show(4, 'tt0386676', 'The Office', 201, 50, '2026-10-12T00:00:00Z'),       // oculta en Trakt
       show(5, null, 'Sin IMDb', 10, 2, '2026-10-16T00:00:00Z'),
-      show(6, 'tt1475582', 'Sherlock', 13, 5, '2026-10-14T00:00:00Z')]);         // está en pausa a medias (playback)
+      show(6, 'tt1475582', 'Sherlock', 13, 5, '2026-10-14T00:00:00Z'),          // está en pausa a medias (playback)
+      show(7, 'tt7366338', 'Al día', 10, 9, '2026-10-13T00:00:00Z'),             // Trakt dice 10 emitidos pero en progreso está al día
+      show(8, 'tt5753856', 'Estreno futuro', 10, 9, '2026-10-13T00:00:00Z')]     // el pendiente aún no se ha emitido
+      .concat(Array.from({ length: 40 }, (_, i) => show(100 + i, 'tt70000' + (10 + i), 'Antigua ' + i, 10, 3, '2024-0' + (1 + (i % 9)) + '-01T00:00:00Z'))));
     if (u.indexOf('/users/hidden/progress_watched') >= 0) return json(req, [{ show: { ids: { trakt: 4 } } }]);
     const pm = /\/shows\/(\d+)\/progress\/watched/.exec(u);
-    if (pm) return json(req, { next_episode: { season: 1, number: { 2: 21, 3: 31, 6: 6 }[pm[1]] || 1 } });
+    if (pm) {
+      inFlight++; maxInFlight = Math.max(maxInFlight, inFlight);
+      const id = +pm[1];
+      const body = id === 7 ? { aired: 9, completed: 9, next_episode: { season: 1, number: 10, first_aired: '2026-11-20T00:00:00Z' } }
+        : id === 8 ? { aired: 10, completed: 9, next_episode: { season: 1, number: 10, first_aired: '2026-12-01T00:00:00Z' } }
+        : { aired: 10, completed: 3, next_episode: { season: 1, number: { 2: 21, 3: 31, 6: 6 }[id] || 4, first_aired: '2020-01-01T00:00:00Z' } };
+      return setTimeout(() => { inFlight--; json(req, body); }, 60);
+    }
     if (u.indexOf('/sync/playback') >= 0) return json(req, [{ type: 'episode', progress: 40, show: { title: 'Sherlock', ids: { imdb: 'tt1475582' } }, episode: { season: 1, number: 6 } }]);
     if (u.indexOf('/sync/watchlist') >= 0) return json(req, Array.from({ length: 60 }, (_, i) => ({ movie: { title: 'Peli ' + i, ids: { imdb: 'tt90000' + (10 + i) } } }))
       .concat(Array.from({ length: 10 }, (_, i) => ({ show: { title: 'Serie ' + i, ids: { imdb: 'tt80000' + (10 + i) } } }))));
@@ -31,12 +42,14 @@ const show = (trakt, imdb, title, aired, watched, when) => ({ last_watched_at: w
   await p.goto('http://127.0.0.1:8090/', { waitUntil: 'networkidle2' });
   await p.evaluate(() => { localStorage.clear(); localStorage.setItem('stv.settings', JSON.stringify({ key: 'K', debrid: 'alldebrid', hideWatched: false }));
     localStorage.setItem('stv.trakt', JSON.stringify({ clientId: 'c', access: 'a', refresh: 'r', expires: Date.now() + 9e9 })); });
-  await p.reload({ waitUntil: 'networkidle2' }); await sleep(4000);
+  await p.reload({ waitUntil: 'networkidle2' }); await sleep(6000);
   const rows = await p.evaluate(() => Array.from(document.querySelectorAll('.row')).map((r) => {
     const t = r.querySelector('.row-title'); const names = Array.from(r.querySelectorAll('.card .name')).map((x) => x.textContent);
     return (t ? t.textContent : '') + ' [' + names.length + ']: ' + names.slice(0, 4).join(' | ');
   }).filter((x) => /Trakt|Siguientes|Mi lista/.test(x)));
   console.log(rows.join('\n'));
+  const upn = await p.evaluate(() => { const r = Array.from(document.querySelectorAll('.row')).filter((x) => /Siguientes/.test(x.textContent))[0]; return Array.from(r.querySelectorAll('.card .name')).map((x) => x.textContent); });
+  console.log('antiguas incluidas:', upn.filter((t) => /Antigua/.test(t)).length, '· al día / futuro:', upn.filter((t) => /Al día|Estreno/.test(t)).join() || 'ninguna', '· consultas a la vez (máx):', maxInFlight);
   console.log('ERRORES:', errs.length ? errs : 'ninguno');
   await b.close();
 })();
