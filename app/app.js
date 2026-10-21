@@ -93,13 +93,63 @@
 
   var DEFAULTS = {
     debrid: 'realdebrid', key: '', onlyCached: true, maxQ: 'all',
-    preferEs: true, compatFirst: true, hideWatched: true, subLang: 'spa', subSize: 'normal'
+    preferEs: true, compatFirst: true, hideWatched: true, maxRate: 'auto', measuredMbps: 0, measuredAt: 0,
+    subLang: 'spa', subSize: 'normal'
   };
   var settings = extend(extend({}, DEFAULTS), load('settings', {}));
   function saveSettings() { save('settings', settings); }
 
   var DEBRID_NAMES = { realdebrid: 'Real-Debrid', alldebrid: 'AllDebrid' };
   var QUALITY_NAMES = { all: 'Todas', '1080': 'Hasta 1080p', '720': 'Hasta 720p' };
+  var RATE_NAMES = { auto: 'Automática', none: 'Sin límite', '10': '10 Mb/s', '20': '20 Mb/s', '40': '40 Mb/s' };
+
+  // tasa máxima en Mb/s (0 = sin límite); en automático, 70 % de la velocidad medida
+  function rateLimit() {
+    if (settings.maxRate === 'none') return 0;
+    if (settings.maxRate === 'auto') return settings.measuredMbps ? Math.round(settings.measuredMbps * 0.7) : 0;
+    return +settings.maxRate;
+  }
+
+  // mide la velocidad real de la tele descargando ~25 MB de Cloudflare (o lo que dé en 8 s)
+  function measureSpeed() {
+    return new Promise(function (resolve, reject) {
+      var x = new XMLHttpRequest(), t0 = 0, done = false;
+      x.open('GET', 'https://speed.cloudflare.com/__down?bytes=25000000&t=' + Date.now(), true);
+      x.responseType = 'arraybuffer';
+      x.timeout = 30000;
+      var finish = function (bytes) {
+        if (done) return;
+        done = true;
+        var secs = (Date.now() - t0) / 1000;
+        if (!t0 || secs <= 0 || bytes < 500000) return reject(new Error('medida no válida'));
+        resolve(Math.round(bytes * 8 / secs / 1e5) / 10);
+      };
+      x.onprogress = function (e) {
+        if (!t0) t0 = Date.now(); // empezar a contar con el primer byte (sin la conexión TLS)
+        if (Date.now() - t0 > 8000) { finish(e.loaded); try { x.abort(); } catch (er) { /* ya cerrada */ } }
+      };
+      x.onload = function () { finish(x.response ? x.response.byteLength : 0); };
+      x.onerror = x.ontimeout = function () { if (!done) { done = true; reject(new Error('sin conexión')); } };
+      x.send();
+    });
+  }
+
+  function parseRuntime(r) {
+    if (!r) return 0;
+    var h = /(\d+)\s*h/i.exec(r), m = /(\d+)\s*m/i.exec(r);
+    if (h || m) return (h ? +h[1] * 60 : 0) + (m ? +m[1] : 0);
+    var n = parseInt(r, 10);
+    return n > 0 ? n : 0;
+  }
+
+  function parseSizeGB(text) {
+    var m = /([\d.,]+)\s*(GB|MB|TB)/i.exec(text || '');
+    if (!m) return 0;
+    var v = parseFloat(m[1].replace(',', '.'));
+    var u = m[2].toUpperCase();
+    return u === 'TB' ? v * 1024 : u === 'MB' ? v / 1024 : v;
+  }
+
   var SUB_NAMES = { spa: 'Español', eng: 'Inglés', off: 'Desactivados' };
 
   function torrentioBase() {
@@ -835,7 +885,8 @@
     }
 
     function base() {
-      return { type: type, metaId: meta.id, imdb: imdbOf(), name: meta.name, poster: meta.poster, background: meta.background };
+      return { type: type, metaId: meta.id, imdb: imdbOf(), name: meta.name, poster: meta.poster, background: meta.background,
+        runtime: parseRuntime(meta.runtime) };
     }
 
     function renderMovieActions() {
@@ -1006,7 +1057,8 @@
             imdb: v.imdb_id || imdbOf(),
             imdbS: v.imdbSeason !== undefined ? v.imdbSeason : v.season,
             imdbE: v.imdbEpisode !== undefined ? v.imdbEpisode : v.episode,
-            startAt: p && !p.done ? p.t : 0
+            startAt: p && !p.done ? p.t : 0,
+            runtime: parseRuntime(v.runtime) || parseRuntime(meta.runtime)
           })));
         });
         episodesBox.appendChild(row);
@@ -1138,8 +1190,15 @@
           return message('Sin un servicio debrid configurado la tele no puede reproducir torrents. Añade tu clave de Real-Debrid o AllDebrid en Ajustes.', true);
         }
         streams = streams.filter(function (s) { return s.url && !s.error; });
-        // orden: primero lo que la tele puede reproducir, después español, después el orden de Torrentio
-        var tier = function (x) { return !settings.compatFirst ? 0 : x.media.risk <= 1 ? 0 : x.media.risk <= 3 ? 1 : 2; };
+        // tasa estimada (Mb/s) = tamaño / duración; las que no caben en la conexión van al final
+        var limit = rateLimit();
+        streams.forEach(function (x) {
+          var gb = parseSizeGB(x.stats);
+          x.mbps = gb && ctx.runtime ? Math.round(gb * 8192 / (ctx.runtime * 60) * 10) / 10 : 0;
+          x.heavy = !!(limit && x.mbps && x.mbps > limit);
+        });
+        // orden: primero lo que la tele puede reproducir y cabe en la conexión, después español, después Torrentio
+        var tier = function (x) { return (x.heavy ? 3 : 0) + (!settings.compatFirst ? 0 : x.media.risk <= 1 ? 0 : x.media.risk <= 3 ? 1 : 2); };
         streams = streams.map(function (s, i) { s._i = i; return s; }).sort(function (a, b) {
           return (tier(a) - tier(b)) || (settings.preferEs ? b.es - a.es : 0) || (a._i - b._i);
         });
@@ -1149,7 +1208,8 @@
             ? 'No hay fuentes en caché para este título. Puedes desactivar «Solo en caché» en Ajustes para ver más.'
             : 'No se han encontrado fuentes.', settings.onlyCached);
         }
-        sub.textContent = streams.length + ' fuentes · ' + DEBRID_NAMES[settings.debrid];
+        sub.textContent = streams.length + ' fuentes · ' + DEBRID_NAMES[settings.debrid] +
+          (limit ? ' · tu conexión: hasta ~' + limit + ' Mb/s' : '');
         list.innerHTML = '';
         streams.forEach(function (s) {
           var row = el('div', 'stream');
@@ -1166,6 +1226,7 @@
           if (m.dv) badges += '<span class="badge warn">Dolby Vision</span>';
           else if (m.tenbit) badges += '<span class="badge' + (Codecs.hevc10 ? '' : ' warn') + '">10-bit/HDR</span>';
           if (m.dts) badges += '<span class="badge' + (Codecs.dts ? '' : ' warn') + '">DTS/TrueHD</span>';
+          if (s.mbps) badges += '<span class="badge' + (s.heavy ? ' warn' : '') + '">~' + String(s.mbps).replace('.', ',') + ' Mb/s' + (s.heavy ? ' · pesada' : '') + '</span>';
           info.appendChild(el('div', 't1', badges + esc(s.file)));
           info.appendChild(el('div', 't2', esc(s.stats + '   ' + s.langs)));
           row.appendChild(info);
@@ -1364,6 +1425,9 @@
         av.setDisplayRect(0, 0, 1920, 1080);
         try { av.setDisplayMethod('PLAYER_DISPLAY_MODE_LETTER_BOX'); } catch (e) { /* no soportado */ }
         try { av.setStreamingProperty('USER_AGENT', 'Mozilla/5.0 (SMART-TV; Tizen) StremTV'); } catch (e) { /* opcional */ }
+        // más colchón: arrancar con ~15 s cargados y ~20 s tras saltar o atascarse
+        try { av.setBufferingParam('PLAYER_BUFFER_FOR_PLAY', 'PLAYER_BUFFER_SIZE_IN_SECOND', 15); } catch (e) { /* no soportado */ }
+        try { av.setBufferingParam('PLAYER_BUFFER_FOR_RESUME', 'PLAYER_BUFFER_SIZE_IN_SECOND', 20); } catch (e) { /* no soportado */ }
         av.setListener({
           onbufferingstart: function () { self.buffering = true; self.spinner(true, 'Cargando…'); },
           onbufferingprogress: function (p) { self.spinner(true, 'Cargando… ' + p + '%'); },
@@ -1804,6 +1868,25 @@
     box.lastChild.style.padding = '30px 0 16px 0';
     opt('Solo enlaces en caché (instantáneos)', function () { return settings.onlyCached ? 'Sí' : 'No'; }, function () { settings.onlyCached = !settings.onlyCached; });
     opt('Calidad máxima', function () { return QUALITY_NAMES[settings.maxQ]; }, cycle('maxQ', ['all', '1080', '720']));
+    var rateOpt = opt('Tasa máxima de las fuentes', function () {
+      return RATE_NAMES[settings.maxRate] + (settings.maxRate === 'auto' ? (settings.measuredMbps ? ' (~' + rateLimit() + ' Mb/s)' : ' (sin medir)') : '');
+    }, cycle('maxRate', ['auto', 'none', '10', '20', '40']));
+    var speedBtn = el('div', 'btn', 'Medir mi conexión');
+    var speedNote = el('span', 'note', settings.measuredMbps ? 'Última medida: ' + settings.measuredMbps + ' Mb/s' : 'Sin medir todavía');
+    speedNote.style.marginLeft = '20px';
+    focusable(speedBtn, function () {
+      speedNote.textContent = 'Midiendo… (unos segundos)';
+      measureSpeed().then(function (mbps) {
+        settings.measuredMbps = mbps;
+        settings.measuredAt = Date.now();
+        saveSettings();
+        speedNote.textContent = 'Tu conexión: ' + String(mbps).replace('.', ',') + ' Mb/s → fuentes de hasta ~' + Math.round(mbps * 0.7) + ' Mb/s';
+        rateOpt.lastChild.textContent = RATE_NAMES[settings.maxRate] + (settings.maxRate === 'auto' ? ' (~' + rateLimit() + ' Mb/s)' : '');
+      }).catch(function (e) { speedNote.textContent = 'No se pudo medir (' + e.message + ')'; });
+    });
+    box.appendChild(speedBtn);
+    box.appendChild(speedNote);
+    box.appendChild(el('div', 'note', 'Las fuentes más pesadas que tu conexión salen al final, marcadas como «pesada»: suelen pararse a cargar.'));
     opt('Mostrar primero las fuentes que la tele puede reproducir', function () { return settings.compatFirst ? 'Sí' : 'No'; }, function () { settings.compatFirst = !settings.compatFirst; });
     opt('Ocultar lo que ya he visto (Trakt y esta app)', function () { return settings.hideWatched ? 'Sí' : 'No'; }, function () { settings.hideWatched = !settings.hideWatched; Seen.at = 0; });
     opt('Mostrar primero las fuentes en español', function () { return settings.preferEs ? 'Sí' : 'No'; }, function () { settings.preferEs = !settings.preferEs; });
@@ -1899,7 +1982,7 @@
 
   // ---------------------------------------------------------------- arranque
 
-  var VERSION = '0.5.1';
+  var VERSION = '0.5.2';
 
   function fitScreen() {
     var z = window.innerWidth / 1920;
@@ -1917,8 +2000,20 @@
     save('boot', log.slice(0, 5));
   }
 
+  function autoMeasure() {
+    if (settings.maxRate !== 'auto' || Date.now() - (settings.measuredAt || 0) < 7 * 86400000) return;
+    setTimeout(function () {
+      measureSpeed().then(function (mbps) {
+        settings.measuredMbps = mbps;
+        settings.measuredAt = Date.now();
+        saveSettings();
+      }).catch(function () { /* se reintenta en el próximo arranque */ });
+    }, 15000);
+  }
+
   function start() {
     bootMark('app');
+    autoMeasure();
     fitScreen();
     window.addEventListener('resize', fitScreen);
     registerKeys();
