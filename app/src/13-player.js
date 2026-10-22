@@ -85,11 +85,12 @@
   };
 
   // intro aprendida por serie (las 100 más recientes): donde el usuario saltó hacia delante al principio de un episodio.
-  // En las series sin AniSkip, el siguiente episodio ofrece «saltar intro» en el mismo tramo
+  // En las series sin AniSkip se ofrece «saltar intro» en ese tramo, pero solo cuando dos episodios distintos
+  // coinciden (n >= 2): un salto suelto o una serie con la intro en sitios distintos no deben dar avisos falsos
   var introSkips = load('introskips', {});
   function learnedIntro(ctx) {
     var L = ctx && ctx.type === 'series' && introSkips[ctx.metaId];
-    return L ? [{ type: 'op', s: Math.max(0, L.s - 10), e: L.e, learned: true }] : [];
+    return L && L.n >= 2 ? [{ type: 'op', s: Math.max(0, L.s - 5), e: L.e, learned: true }] : [];
   }
 
   // ---------------------------------------------------------------- reproductor
@@ -115,7 +116,7 @@
       this.startPct = this.startAt ? 0 : ctx.startPct || 0;
       this.seekTarget = null;
       this.upNext = null; this.upNextOff = false; this.nextCtx = undefined; this.audioKey = ''; this.audioRetried = false; this.audioChosen = false;
-      this.skips = []; this.skipNow = null;
+      this.skips = []; this.skipNow = null; this.showSkip(false); // que no se quede el del vídeo anterior
       this.stalls = { n: 0, ms: 0, at: [] }; this.stallStart = 0; this.lastSeekAt = 0; this.stallOffer = null; this.stallOffered = false;
       // el temporizador solo sigue al pasar solo al siguiente episodio, no en otro vídeo abierto después
       if (!ctx.continued) Player.sleep = null;
@@ -429,16 +430,27 @@
         this.skipTo(cur.e);
         cur = null;
       }
-      if (cur === this.skipNow) return;
+      if (cur === this.skipNow) {
+        // si no se pulsa en 5 s, se quita (vuelve con el OSD mientras siga en el tramo)
+        if (cur && !this.skipHidden && Date.now() - this.skipShownAt > 5000) this.showSkip(false);
+        return;
+      }
       this.skipNow = cur;
-      var box = $('#skipbox');
+      this.showSkip(!!cur);
+    },
+
+    showSkip: function (on) {
+      var box = $('#skipbox'), cur = this.skipNow;
       if (!box) { // el index.html de la app instalada no trae este elemento
         box = el('div', 'hidden');
         box.id = 'skipbox';
         $('#player').appendChild(box);
       }
-      box.textContent = cur ? (cur.type === 'op' ? tr('⏭ OK: saltar intro') : tr('⏭ OK: saltar ending')) : '';
-      box.classList.toggle('hidden', !cur);
+      on = on && !!cur;
+      this.skipHidden = !on;
+      if (on) this.skipShownAt = Date.now();
+      box.textContent = on ? (cur.type === 'op' ? tr('⏭ OK: saltar intro') : tr('⏭ OK: saltar ending')) : '';
+      box.classList.toggle('hidden', !on);
     },
 
     skipTo: function (t) {
@@ -600,6 +612,7 @@
       osd.classList.remove('off');
       if (top) top.classList.remove('off');
       $('#subs').classList.add('up');
+      if (this.skipNow && this.skipHidden) this.showSkip(true);
       clearTimeout(this.osdTimer);
       if (!sticky) this.osdTimer = setTimeout(function () { osd.classList.add('off'); if (top) top.classList.add('off'); $('#subs').classList.remove('up'); }, 4000);
     },
@@ -649,15 +662,20 @@
       this.seekTimer = setTimeout(function () { self.commitSeek(); }, 800);
     },
 
-    // un salto de 30 s-3 min hacia delante en los 10 primeros minutos de un episodio suele ser la intro: se recuerda
+    // un salto de 30 s-3 min hacia delante en los 10 primeros minutos de un episodio suele ser la intro: se recuerda.
+    // Si en otro episodio se salta lo mismo (inicio ±20 s, duración ±15 s) queda confirmada; si no, se empieza de cero
     learnIntro: function (from, to) {
       var c = this.ctx;
       if (!c || c.type !== 'series' || !this.started || from > 600 || to - from < 30 || to - from > 180) return;
       for (var i = 0; i < this.skips.length; i++) if (this.skips[i].type === 'op' && !this.skips[i].learned) return; // AniSkip ya la sabe
-      introSkips[c.metaId] = { s: Math.round(from), e: Math.round(to), ts: Date.now() };
+      var L = introSkips[c.metaId], s = Math.round(from), e = Math.round(to);
+      var same = L && Math.abs(L.s - s) <= 20 && Math.abs((L.e - L.s) - (e - s)) <= 15;
+      var n = !same ? 1 : L.v === c.videoId ? L.n || 1 : (L.n || 1) + 1;
+      // confirmada: desde el inicio más temprano de los saltos, hasta el final del último
+      introSkips[c.metaId] = { s: same ? Math.min(L.s, s) : s, e: e, n: n, v: c.videoId, ts: Date.now() };
       capByTs(introSkips, 100);
       save('introskips', introSkips);
-      logEv('intro', 'aprendida', { serie: c.name, s: Math.round(from), e: Math.round(to) });
+      logEv('intro', n >= 2 ? 'confirmada' : 'aprendida', { serie: c.name, s: introSkips[c.metaId].s, e: e, n: n });
     },
 
     commitSeek: function () {
@@ -930,7 +948,7 @@
         if (code === K.ENTER) { this.switchTo(alt, 'cambiada por cortes'); return true; }
         if (code === K.BACK || code === K.ESC || code === K.BKSP) return true;
       }
-      if (this.skipNow && code === K.ENTER) { this.skipTo(this.skipNow.e); return true; }
+      if (this.skipNow && !this.skipHidden && code === K.ENTER) { this.skipTo(this.skipNow.e); return true; }
       switch (code) {
         case K.ENTER: case K.PLAYPAUSE: this.toggle(); return true;
         case K.PLAY:

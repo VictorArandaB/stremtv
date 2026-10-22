@@ -155,19 +155,41 @@ const ADDONS = JSON.stringify([{ url: 'https://torrentio.strem.fun', manifest: {
     await new Promise((r) => setTimeout(r, 800));
     return { saved: JSON.parse(localStorage.getItem('stv.introskips') || '{}').tt0903747, bubble, time: P.time };
   });
-  check(learned.saved && learned.saved.s === 25 && learned.saved.e === 125, 'salto de 100 s al principio: intro aprendida ' + JSON.stringify(learned.saved));
+  check(learned.saved && learned.saved.s === 25 && learned.saved.e === 125 && learned.saved.n === 1, 'salto de 100 s al principio: intro aprendida ' + JSON.stringify(learned.saved));
   check(/<small>\+1:40<\/small>/.test(learned.bubble), 'la burbuja muestra cuánto se salta: ' + learned.bubble);
   await p.screenshot({ path: OUT + '/201-seek-bubble.png' });
+  const skipbox = () => ev(() => document.getElementById('skipbox') ? document.getElementById('skipbox').className + '|' + document.getElementById('skipbox').textContent : '');
+  const playEp = async (i) => {
+    await key('Escape'); await sleep(600); // del vídeo a la ficha
+    await ev((i) => StremTV.Nav.focus(document.querySelectorAll('.ep')[i]), i); await key('Enter'); await sleep(1500);
+    await ev(() => StremTV.Nav.focus(document.querySelector('.stream'))); await key('Enter'); await sleep(500);
+  };
+  // episodio 2: con un solo salto aún no se ofrece; el mismo salto aquí la confirma
+  await playEp(1);
+  await ev(() => { StremTV.Player.time = 22; }); await sleep(500);
+  check(!/saltar intro/.test(await skipbox()), 'episodio 2: un solo salto aún no ofrece saltar la intro');
+  const conf = await ev(async () => {
+    const P = StremTV.Player; P.time = 30;
+    P.seekBy(1); P.seekBy(1); P.seekBy(1);
+    await new Promise((r) => setTimeout(r, 1200));
+    return JSON.parse(localStorage.getItem('stv.introskips') || '{}').tt0903747;
+  });
+  check(conf && conf.n === 2 && conf.s === 25 && conf.e === 130, 'episodio 2: el mismo salto confirma la intro ' + JSON.stringify(conf));
   // otro episodio: ofrece saltarla
-  await key('Escape'); await sleep(600); // del vídeo a la ficha
-  await ev(() => StremTV.Nav.focus(document.querySelectorAll('.ep')[1])); await key('Enter'); await sleep(1500);
-  await ev(() => StremTV.Nav.focus(document.querySelector('.stream'))); await key('Enter'); await sleep(500);
-  await ev(() => { StremTV.Player.time = 20; }); await sleep(500);
-  const offer = await ev(() => document.getElementById('skipbox') && document.getElementById('skipbox').className + '|' + document.getElementById('skipbox').textContent);
-  check(/\|.*saltar intro/.test(offer) && !/hidden/.test(offer.split('|')[0]), 'episodio 2: ofrece saltar la intro aprendida → ' + offer);
+  await playEp(2);
+  await ev(() => { StremTV.Player.time = 21; }); await sleep(500);
+  const offer = await skipbox();
+  check(/\|.*saltar intro/.test(offer) && !/hidden/.test(offer.split('|')[0]), 'episodio 3: ofrece saltar la intro confirmada → ' + offer);
   await p.screenshot({ path: OUT + '/202-learned-intro.png' });
+  // a los 5 s sin pulsar se quita, y OK vuelve a pausar
+  await ev(() => { StremTV.Player.skipShownAt -= 6000; StremTV.Player.checkSkip(); });
+  check(/hidden/.test(await skipbox()), 'el botón se quita a los 5 s');
   await key('Enter'); await sleep(300);
-  check(await ev(() => Math.round(StremTV.Player.time) === 125), 'OK salta al final de la intro');
+  check(await ev(() => StremTV.Player.paused && Math.round(StremTV.Player.time) < 125), 'oculto, OK pausa en vez de saltar');
+  // con el OSD vuelve mientras siga en la intro, y entonces OK salta
+  check(!/hidden/.test(await skipbox()), 'vuelve a salir con el OSD');
+  await key('Enter'); await sleep(300);
+  check(await ev(() => Math.round(StremTV.Player.time) === 130), 'OK salta al final de la intro');
   // teclas numéricas: 5 → 50 %, sin aprender nada
   await ev(() => { localStorage.removeItem('stv.introskips'); StremTV.Player.time = 60; });
   await key('5'); await sleep(1000);
