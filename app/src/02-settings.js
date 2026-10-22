@@ -3,11 +3,13 @@
   var DEFAULTS = {
     debrid: 'realdebrid', key: '', onlyCached: true, maxQ: 'all',
     preferEs: true, compatFirst: true, hideWatched: true, maxRate: 'auto', measuredMbps: 0, measuredAt: 0,
-    subLang: 'spa', subSize: 'normal', autoNext: true, audioLang: 'spa', lang: 'es', quickPlay: true, subBg: true, tmdbKey: '', autoSkip: false, lastAudio: '', subColor: 'white', subPos: 'low', saver: 3,
+    subLang: 'spa', subSize: 'normal', autoNext: true, audioLang: 'spa', lang: 'es', quickPlay: true, subBg: true, tmdbKey: '', autoSkip: false, lastAudio: '', lastAudioAnime: '', subColor: 'white', subPos: 'low', saver: 3,
     idleSaver: 10, saverShow: 'mix', saverEvery: 20
   };
   var settings = extend(extend({}, DEFAULTS), load('settings', {}));
   function saveSettings() { save('settings', settings); }
+  // hasta 0.19 había un solo «último audio»: el japonés del anime pasaba a las películas y series normales
+  if (/^(jp|ja)/.test(settings.lastAudio)) { settings.lastAudioAnime = 'jpn'; settings.lastAudio = ''; saveSettings(); }
 
   var DEBRID_NAMES = { realdebrid: 'Real-Debrid', alldebrid: 'AllDebrid' };
   var QUALITY_NAMES = { all: 'Todas', '1080': 'Hasta 1080p', '720': 'Hasta 720p' };
@@ -72,7 +74,7 @@
   var LANG_RE = {
     spa: /^(es($|[-_])|spa|esp|spanish|cas|lat)/, eng: /^(en($|[-_])|eng)/, fre: /^(fr($|[-_])|fre|fra)/,
     ger: /^(de($|[-_])|ger|deu)/, ita: /^(it($|[-_])|ita)/, por: /^(pt($|[-_])|por|pob)/,
-    jpn: /^(ja($|[-_])|jpn|jap)/, kor: /^(ko($|[-_])|kor)/, cat: /^(ca($|[-_])|cat)/
+    jpn: /^(ja($|[-_])|jpn?($|[-_])|jap)/, kor: /^(ko($|[-_])|kor)/, cat: /^(ca($|[-_])|cat)/
   };
   function langKey(l) {
     l = String(l || '').toLowerCase();

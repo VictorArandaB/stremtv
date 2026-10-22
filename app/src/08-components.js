@@ -10,6 +10,7 @@
       bar.style.width = Math.round(extra.pct * 100) + '%';
       p.appendChild(bar);
     }
+    if (extra && extra.isNew) p.appendChild(el('div', 'new', esc(tr('Nuevo'))));
     // ✓ en lo ya visto (en las filas de progreso o historial no hace falta) y la nota al enfocarla
     // (en las pantallas con cabecera grande la nota sale en la cabecera y la de la carátula no se ve)
     if (!extra && isSeenMeta(meta)) p.appendChild(el('div', 'mark', '✓'));
@@ -84,7 +85,7 @@
       if (!metas.length && hideIfEmpty) { container.removeChild(row); return; }
       var hadFocus = Nav.cur && row.contains(Nav.cur);
       var fresh = metas.length
-        ? posterRow(title, metas, onPick, metas.map(function (m) { return m.pct || m.label ? { pct: m.pct, label: m.label } : null; }))
+        ? posterRow(title, metas, onPick, metas.map(function (m) { return m.pct || m.label || m.isNew ? { pct: m.pct, label: m.label, isNew: m.isNew } : null; }))
         : el('div', 'row', '<div class="row-title">' + esc(title) + '</div><div class="empty">' + tr('Sin resultados') + '</div>');
       container.replaceChild(fresh, row);
       if (hadFocus) Nav.setRoot(Nav.root);

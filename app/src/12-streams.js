@@ -139,7 +139,7 @@
     var list = el('div', 'list vscroll');
     list.setAttribute('data-pad', '0');
     root.appendChild(list);
-    var screen = { el: root, streamsOf: ctx.videoId };
+    var screen = { el: root, streamsOf: ctx.videoId, ctx: ctx };
 
     function message(text, withSettings) {
       if (screen.closed) return; // cerrada mientras buscaba (antes del push aún no está en la pila, pero sí viva)

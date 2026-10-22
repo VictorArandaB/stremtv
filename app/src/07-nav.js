@@ -314,7 +314,7 @@
     try {
       if (!window.tizen || !tizen.tvinputdevice) return;
       ['MediaPlay', 'MediaPause', 'MediaPlayPause', 'MediaStop', 'MediaFastForward', 'MediaRewind',
-        'ColorF0Red', 'ColorF1Green', 'ColorF2Yellow', 'ColorF3Blue', 'Info'].forEach(function (k) {
+        'ColorF0Red', 'ColorF1Green', 'ColorF2Yellow', 'ColorF3Blue', 'Info', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9'].forEach(function (k) {
         try { tizen.tvinputdevice.registerKey(k); } catch (e) { /* tecla no disponible */ }
       });
     } catch (e) { /* fuera de Tizen */ }

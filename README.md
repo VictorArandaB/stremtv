@@ -38,6 +38,12 @@ Escrito en ES5 y CSS sin funciones modernas para que funcione en el motor web de
 - **Marcar como visto a mano**: películas (botón en la ficha), episodios y temporadas enteras (botón verde); con Trakt también se añade o quita de su historial.
 - **Botones de colores del mando**: rojo Mi lista, verde visto, amarillo Más como esto (en la ficha y sobre cualquier carátula); azul en el vídeo, cambiar fuente.
 - **Protector de pantalla** (Ajustes → Protector de pantalla): sin tocar el mando unos minutos, fondos a pantalla completa con logo, nota y sinopsis de lo que elijas (pendientes de ver, Mi lista, novedades o un poco de todo); OK abre la ficha del título que se ve. Con el vídeo en pausa sigue el de siempre.
+- **Audio más fino**: si el archivo no trae ninguno de tus idiomas, prefiere el de la app (español) antes que la primera pista; el último audio elegido se recuerda aparte para el anime (el japonés no pasa a las películas) y la tele se queda en silencio el segundo que tarda en aceptar la pista elegida.
+- **Fuentes que se cortan**: tres cortes en 10 minutos ofrecen pasar a una fuente más ligera en el mismo punto (OK); si una fuente falla a mitad de vídeo, sigue sola con otra (hasta dos veces seguidas). Los cortes de cada vídeo quedan en el registro.
+- **Saltar intro en cualquier serie**: si saltas la intro en un episodio (de 30 s a 3 min hacia delante en los 10 primeros minutos), los siguientes ofrecen «⏭ OK: saltar intro» en el mismo tramo. En el anime manda AniSkip.
+- **Teclas 0-9 en el vídeo**: 1-9 van al 10 %-90 % y 0 al principio; la burbuja al avanzar dice también cuánto se salta.
+- **Cola desde el móvil**: escribe títulos o enlaces de IMDb en `cola.txt` del Gist de la copia y llegan a Mi lista en unos minutos («ver …» abre además su ficha).
+- **Siguientes episodios** con «Nuevo» (emitidos en las últimas 48 h, primero) y barra con lo visto de la serie.
 - **Trakt**: vinculación con código, scrobble automático (visto al pasar del 80 %), «Continuar», tu lista, recomendaciones y episodios vistos. El anime se registra usando su equivalencia en IMDb.
 
 ## Instalar en TizenBrew
@@ -60,6 +66,7 @@ La clave solo se guarda en la tele.
 | Tecla | Navegación | Reproductor |
 |---|---|---|
 | Flechas | Moverse | ◀ ▶ retroceder/avanzar (pulsaciones seguidas aceleran), ▲ subtítulos, ▼ audio, fuente y temporizador |
+| 0-9 | — | Ir al 0 %-90 % del vídeo |
 | OK | Abrir | Pausa/continuar |
 | INFO | — | Ficha y datos técnicos (cualquier tecla lo cierra) |
 | 🔴 Rojo | Añadir/quitar de Mi lista | — |
@@ -73,7 +80,7 @@ El código está partido en módulos en `app/src/` (por orden: base, idioma, aju
 ```
 node tools/build-app.js                 # genera app/app.js desde app/src
 cd app && python3 -m http.server 8090   # abrir http://127.0.0.1:8090 (flechas, Intro, Esc)
-cd test && npm i && node ui.js && node player.js && node trakt.js && node v18.js && node saver.js   # pruebas headless con capturas en test/shots
+cd test && npm i && node ui.js && node player.js && node trakt.js && node v18.js && node saver.js && node v20.js   # pruebas headless con capturas en test/shots
 ```
 
 ## Aviso

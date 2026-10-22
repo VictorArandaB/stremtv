@@ -448,6 +448,15 @@
       });
       box.appendChild(viewLog);
       if (backup.gistId) box.appendChild(el('div', 'note', esc(tr('ID del Gist de la copia y del registro: {0}', backup.gistId))));
+      if (backup.token) {
+        var queue = el('div', 'btn', tr('Revisar la cola del móvil'));
+        focusable(queue, function () {
+          toast(tr('Revisando…'));
+          checkQueue().then(function (n) { toast(n ? tr('{0} añadidos desde el móvil', n) : tr('La cola está vacía')); });
+        });
+        box.appendChild(queue);
+        box.appendChild(el('div', 'note', esc(tr('Desde el móvil: escribe títulos o enlaces de IMDb en el archivo cola.txt de ese Gist (gist.github.com) y llegan a Mi lista en unos minutos.'))));
+      }
       var diag = el('div', 'btn', tr('Diagnóstico de reproducción'));
       focusable(diag, function () {
         var yn = function (v) { return v ? tr('sí ({0})', v) : tr('no'); };

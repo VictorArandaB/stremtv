@@ -161,6 +161,12 @@
     'Visto recientemente': 'Recently watched', 'Color': 'Color', 'Amarillo': 'Yellow', 'Blanco': 'White',
     'Posición': 'Position', 'Más arriba': 'Higher', 'Abajo': 'Bottom',
     'Búsquedas recientes': 'Recent searches', 'Más como esto': 'More like this', 'Más como «{0}»': 'More like “{0}”',
+    'ir al %': 'go to %', '⚠ Esta fuente se corta': '⚠ This source keeps stalling', 'Cambiar a {0}': 'Switch to {0}',
+    'OK cambiar · Atrás seguir con esta': 'OK switch · Back keep this one', 'La fuente ha fallado: sigue con otra ({0})': 'The source failed: continuing with another ({0})',
+    'Nuevo': 'New', 'Desde el móvil: {0} en Mi lista': 'From your phone: {0} added to My list', 'Revisar la cola del móvil': 'Check the phone queue',
+    'Revisando…': 'Checking…', '{0} añadidos desde el móvil': '{0} added from your phone', 'La cola está vacía': 'The queue is empty',
+    'Desde el móvil: escribe títulos o enlaces de IMDb en el archivo cola.txt de ese Gist (gist.github.com) y llegan a Mi lista en unos minutos.':
+      'From your phone: write titles or IMDb links in that Gist’s cola.txt file (gist.github.com) and they reach My list within minutes.',
     'Intro saltada': 'Intro skipped', 'Audio cambiado (se recordará para esta película)': 'Audio changed (it will be remembered for this movie)', '⏭ OK: saltar intro': '⏭ OK: skip intro', '⏭ OK: saltar ending': '⏭ OK: skip ending',
     'Saltar solo las intros de anime': 'Skip anime intros automatically',
     '⏾ Temporizador: {0}': '⏾ Sleep timer: {0}', 'desactivado': 'off',

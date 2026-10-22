@@ -1,6 +1,6 @@
   // ---------------------------------------------------------------- arranque
 
-  var VERSION = '0.19.0';
+  var VERSION = '0.20.0';
 
   function fitScreen() {
     var z = window.innerWidth / 1920;
@@ -32,9 +32,12 @@
 
   function start() {
     bootMark('app');
+    // la app se cerró con el sonido quitado mientras esperaba la pista de audio: devolverlo
+    if (load('muted', false)) { try { tizen.tvaudiocontrol.setMute(false); } catch (e) { /* sin permiso */ } save('muted', false); }
     autoMeasure();
     refreshAddons();
     autoBackup();
+    startQueue();
     fitScreen();
     window.addEventListener('resize', fitScreen);
     registerKeys();
@@ -46,5 +49,5 @@
   else start();
 
   // exponer para depurar desde la consola
-  window.StremTV = { bootLog: function () { return load('boot', []); }, settings: settings, Player: Player, Saver: Saver, Nav: Nav, stack: stack, toast: function (m, ms) { toast(tr(m), ms); }, open: function (type, id) { push(detailScreen(type, id)); }, openMeta: openMeta, openSettings: openSettings };
+  window.StremTV = { bootLog: function () { return load('boot', []); }, settings: settings, Player: Player, Saver: Saver, Nav: Nav, stack: stack, toast: function (m, ms) { toast(tr(m), ms); }, open: function (type, id) { push(detailScreen(type, id)); }, openMeta: openMeta, openSettings: openSettings, checkQueue: checkQueue };
 })();
