@@ -64,9 +64,10 @@ const check = (ok, what, got) => { console.log((ok ? '✓ ' : '✗ ') + what + (
   delay.meta = 0;
 
   // 2. Atrás antes de que lleguen las fuentes (reproducción directa): no arranca nada
-  await p.evaluate(() => StremTV.open('movie', 'tt0111161')); await sleep(2500);
-  delay.streams = 1500;
+  // el retraso va antes de abrir la ficha: desde 0.18 ella ya pide las fuentes en segundo plano
+  delay.streams = 4000; // la petición de la ficha sigue en curso al pulsar «▶ Ver»
   delay.video = 5000; // que el vídeo no falle solo y tape el problema
+  await p.evaluate(() => StremTV.open('movie', 'tt0111161')); await sleep(2500);
   await key('Enter'); await sleep(300); // ▶ Ver
   check((await state()).streams, 'lista de fuentes abierta, buscando');
   await key('Escape'); await sleep(2200);

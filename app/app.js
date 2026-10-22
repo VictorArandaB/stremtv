@@ -105,7 +105,14 @@
     'Título de película o serie…': 'Movie or show title…',
     'Pulsa OK para escribir y confirma con «Hecho».': 'Press OK to type and confirm with “Done”.',
     // detalle
-    '✓ En mi lista': '✓ In my list', '＋ Mi lista': '＋ My list',
+    '✓ En mi lista': '✓ In my list', '＋ Mi lista': '＋ My list', 'Mi lista': 'My list',
+    'Añadido a Mi lista': 'Added to My list', 'Quitado de Mi lista': 'Removed from My list',
+    'Trakt no puede identificar este título (no tiene ID de IMDb)': 'Trakt cannot identify this title (no IMDb ID)',
+    '✓ Vista': '✓ Watched', 'Marcar como vista': 'Mark as watched', 'Marcada como vista': 'Marked as watched', 'Marcada como no vista': 'Marked as unwatched',
+    'Marcado como visto': 'Marked as watched', 'Marcado como no visto': 'Marked as unwatched',
+    'Temporada {0} marcada como vista': 'Season {0} marked as watched', 'Temporada {0} marcada como no vista': 'Season {0} marked as unwatched',
+    'Ponte sobre un episodio o una temporada y pulsa el botón verde': 'Highlight an episode or a season and press the green button',
+    'Las series se marcan por episodio o temporada, desde su ficha': 'Shows are marked by episode or season, from their page',
     'Añadido a tu lista de Trakt': 'Added to your Trakt list', 'Quitado de tu lista de Trakt': 'Removed from your Trakt list',
     '▶ Ver': '▶ Watch', '▶ Continuar ({0})': '▶ Resume ({0})', 'Desde el principio': 'From the beginning',
     'T{0}:E{1}': 'S{0}:E{1}', 'Episodio {0}': 'Episode {0}', 'Temporada {0}': 'Season {0}', 'Especiales': 'Specials',
@@ -123,7 +130,7 @@
       'There are no cached sources for this title. You can turn off “Cached only” in Settings to see more.',
     'No se han encontrado fuentes.': 'No sources found.',
     '1 fuente · {0}': '1 source · {0}', '{1} fuentes · {0}': '{1} sources · {0}', ' · tu conexión: hasta ~{0} Mb/s': ' · your connection: up to ~{0} Mb/s',
-    '↺ Como el anterior': '↺ Same as before', '⚡ Instantáneo': '⚡ Instant', 'Descargar en debrid': 'Download on debrid',
+    '↺ Como el anterior': '↺ Same as before', ' · todas instantáneas': ' · all instant', '⚡ Instantáneo': '⚡ Instant', 'Descargar en debrid': 'Download on debrid',
     ' · pesada': ' · heavy', '✗ Falló': '✗ Failed',
     'No se pudieron obtener las fuentes ({0}). Pulsa Atrás e inténtalo de nuevo.': 'Could not get sources ({0}). Press Back and try again.',
     // reproductor
@@ -633,6 +640,48 @@
       .sort(function (a, b) { return b.ts - a.ts; }).slice(0, 20);
   }
 
+  // marcar como visto (o quitarlo) a mano: en la tele y, con Trakt vinculado, en su historial.
+  // ctxs: contextos como los del reproductor (videoId, metaId, type, name, poster, epLabel, imdb, imdbS, imdbE)
+  function setSeen(ctxs, on) {
+    var now = Date.now();
+    ctxs.forEach(function (c, i) {
+      if (on) {
+        progress[c.videoId] = { videoId: c.videoId, metaId: c.metaId, type: c.type, name: c.name, poster: c.poster,
+          label: c.epLabel ? c.name + ' · ' + c.epLabel.split(' · ')[0] : c.name, t: 0, d: 0, done: true, ts: now + i };
+      } else delete progress[c.videoId];
+      if (c.type === 'movie' && c.imdb) { if (on) Seen.movies[c.imdb] = true; else delete Seen.movies[c.imdb]; }
+    });
+    capByTs(progress, 200);
+    save('progress', progress);
+    if (!Trakt.linked()) return Promise.resolve();
+    return Trakt.markWatched(ctxs, on).catch(function (e) { toast('Trakt: ' + e.message); });
+  }
+
+  // Mi lista: con Trakt, su lista; sin Trakt, guardada en la tele (y en la copia de seguridad)
+  var myList = load('mylist', {});
+  function listKey(m) { return imdbOfMeta(m) || String(m.id || m.metaId || ''); }
+  function inMyList(m) { return Trakt.linked() ? !!Trakt.watchlist[imdbOfMeta(m)] : !!myList[listKey(m)]; }
+  function toggleMyList(m) {
+    if (Trakt.linked()) {
+      var imdb = imdbOfMeta(m);
+      if (!imdb) { toast(tr('Trakt no puede identificar este título (no tiene ID de IMDb)')); return Promise.resolve(false); }
+      return Trakt.toggleWatchlist(m.type, imdb).then(function (added) {
+        toast(added ? tr('Añadido a tu lista de Trakt') : tr('Quitado de tu lista de Trakt'));
+        return added;
+      }).catch(function (e) { toast('Trakt: ' + e.message); return inMyList(m); });
+    }
+    var k = listKey(m);
+    if (myList[k]) delete myList[k];
+    else myList[k] = { id: m.id || m.metaId, type: m.type, name: m.name, poster: m.poster, ts: Date.now() };
+    save('mylist', myList);
+    toast(myList[k] ? tr('Añadido a Mi lista') : tr('Quitado de Mi lista'));
+    return Promise.resolve(!!myList[k]);
+  }
+  function myListMetas() {
+    return Object.keys(myList).map(function (k) { return myList[k]; }).sort(function (a, b) { return b.ts - a.ts; });
+  }
+  function canSimilar(imdb) { return !!(imdb && (tmdbOn() || trakt.clientId)); }
+
   // ---------------------------------------------------------------- Trakt
 
   var TRAKT = 'https://api.trakt.tv';
@@ -820,6 +869,22 @@
       return promise;
     },
 
+    // añade o quita del historial películas y episodios marcados a mano
+    markWatched: function (ctxs, on) {
+      var movies = [], shows = {};
+      ctxs.forEach(function (c) {
+        if (!c.imdb) return;
+        if (c.type === 'movie') { movies.push({ ids: { imdb: c.imdb } }); return; }
+        var sh = shows[c.imdb] = shows[c.imdb] || {};
+        (sh[c.imdbS] = sh[c.imdbS] || []).push({ number: +c.imdbE });
+      });
+      var body = { movies: movies, shows: Object.keys(shows).map(function (imdb) {
+        return { ids: { imdb: imdb }, seasons: Object.keys(shows[imdb]).map(function (n) { return { number: +n, episodes: shows[imdb][n] }; }) };
+      }) };
+      Trakt.upNextCache = null; Trakt.watchedCache = null;
+      return Trakt.call('POST', '/sync/history' + (on ? '' : '/remove'), body);
+    },
+
     toggleWatchlist: function (type, imdb) {
       var inList = !!Trakt.watchlist[imdb];
       var b = {};
@@ -955,7 +1020,7 @@
 
   // ---------------------------------------------------------------- copia de seguridad en un Gist secreto de GitHub
 
-  var BACKUP_KEYS = ['settings', 'trakt', 'progress', 'suboffsets', 'srcprefs', 'addons', 'explore'];
+  var BACKUP_KEYS = ['settings', 'trakt', 'progress', 'suboffsets', 'srcprefs', 'addons', 'explore', 'mylist'];
   var BACKUP_DESC = 'StremTV · copia de seguridad';
   var BACKUP_FILE = 'stremtv.json';
   var backup = load('backup', {}); // token, gistId, at (última copia), err
@@ -1076,15 +1141,40 @@
     return n === c ? { left: l, top: t } : null;
   }
 
-  // desplazamiento animado (~0,18 s); Nav.move lo termina de golpe antes de medir posiciones
+  // desplazamiento animado (~0,18 s); Nav.move lo termina de golpe antes de medir posiciones.
+  // El vertical no usa scrollTop: mueve los hijos con translate3d, que en la tele lo hace la GPU sin repintar
+  // las carátulas (medido: 17-20 ms por fotograma frente a 60-85 ms con scrollTop). Los hijos que se añaden
+  // después (filas que llegan tarde) reciben el mismo desplazamiento con un MutationObserver.
+  // El horizontal sigue con scrollLeft: ya iba a 17 ms y con transform cada carátula sería una capa.
+  function getPos(c, prop) { return prop === 'scrollTop' ? c._y || 0 : c[prop]; }
+  function setPos(c, prop, v) {
+    if (prop !== 'scrollTop') { c[prop] = v; return; }
+    v = Math.round(v);
+    if (v === c._y) return;
+    c._y = v;
+    if (!c._yObs && window.MutationObserver) {
+      c._yObs = new MutationObserver(function () { shiftChildren(c); });
+      c._yObs.observe(c, { childList: true });
+    }
+    shiftChildren(c);
+  }
+  function shiftChildren(c) {
+    var t = c._y ? 'translate3d(0,' + -c._y + 'px,0)' : '';
+    for (var n = c.firstElementChild; n; n = n.nextElementSibling) {
+      if (n._ty === t) continue;
+      n._ty = t;
+      n.style.webkitTransform = t;
+      n.style.transform = t;
+    }
+  }
   var scrolling = [];
-  function scrollTarget(c, prop) { var a = c['_anim' + prop]; return a ? a.to : c[prop]; }
+  function scrollTarget(c, prop) { var a = c['_anim' + prop]; return a ? a.to : getPos(c, prop); }
   function animScroll(c, prop, to) {
     to = Math.round(to);
     var a = c['_anim' + prop];
-    if (a) { a.from = c[prop]; a.to = to; a.t0 = Date.now(); return; }
-    if (c[prop] === to) return;
-    a = c['_anim' + prop] = { c: c, prop: prop, from: c[prop], to: to, t0: Date.now() };
+    if (a) { a.from = getPos(c, prop); a.to = to; a.t0 = Date.now(); return; }
+    if (getPos(c, prop) === to) return;
+    a = c['_anim' + prop] = { c: c, prop: prop, from: getPos(c, prop), to: to, t0: Date.now() };
     scrolling.push(a);
     if (scrolling.length === 1) requestAnimationFrame(stepScrolls);
   }
@@ -1092,7 +1182,7 @@
     var now = Date.now();
     scrolling = scrolling.filter(function (a) {
       var k = Math.min(1, (now - a.t0) / 180);
-      a.c[a.prop] = a.from + (a.to - a.from) * (1 - (1 - k) * (1 - k));
+      setPos(a.c, a.prop, a.from + (a.to - a.from) * (1 - (1 - k) * (1 - k)));
       if (k < 1) return true;
       a.c['_anim' + a.prop] = null;
       return false;
@@ -1100,8 +1190,13 @@
     if (scrolling.length) requestAnimationFrame(stepScrolls);
   }
   function finishScrolls() {
-    scrolling.forEach(function (a) { a.c[a.prop] = a.to; a.c['_anim' + a.prop] = null; });
+    scrolling.forEach(function (a) { setPos(a.c, a.prop, a.to); a.c['_anim' + a.prop] = null; });
     scrolling = [];
+  }
+  // vuelve arriba del todo sin animación
+  function scrollTop0(c) {
+    if (c._animscrollTop) finishScrolls();
+    setPos(c, 'scrollTop', 0);
   }
 
   function scrollInto(c, e, axis) {
@@ -1294,8 +1389,26 @@
       case K.BACK: case K.ESC: case K.BKSP:
         goBack();
         break;
+      case K.RED: case K.GREEN: case K.YELLOW:
+        if (Nav.cur && Nav.cur._meta) cardColorKey(code, Nav.cur);
+        break;
     }
   });
+
+  // botones de colores sobre una carátula: rojo Mi lista, verde visto (películas), amarillo Más como esto
+  function cardColorKey(code, c) {
+    var m = c._meta, imdb = imdbOfMeta(m);
+    if (code === K.RED) toggleMyList(m);
+    else if (code === K.YELLOW) { if (canSimilar(imdb)) push(similarScreen(m.type, imdb, m.name)); }
+    else if (m.type === 'movie') {
+      var on = !isSeenMeta(m);
+      setSeen([{ videoId: String(m.id), metaId: String(m.id), type: 'movie', name: m.name, poster: m.poster, imdb: imdb }], on);
+      var p = c.firstChild, mk = p.querySelector('.mark');
+      if (on && !mk) p.appendChild(el('div', 'mark', '✓'));
+      if (!on && mk) p.removeChild(mk);
+      toast(on ? tr('Marcada como vista') : tr('Marcada como no vista'));
+    } else toast(tr('Las series se marcan por episodio o temporada, desde su ficha'));
+  }
 
   function registerKeys() {
     try {
@@ -1372,10 +1485,18 @@
       var c = cards[i];
       if (c._img && !c._loaded) {
         c._loaded = true;
-        c.firstChild.style.backgroundImage = 'url("' + c._img + '")';
+        posterImg(c);
       }
       if (c._loaded || !c._img) nameCard(c);
     }
+  }
+
+  // la carátula se pone cuando ha cargado; si no existe (404 en metahub), el nombre en su lugar
+  function posterImg(c) {
+    var img = new Image(), p = c.firstChild;
+    img.onload = function () { p.style.backgroundImage = 'url("' + c._img + '")'; };
+    img.onerror = function () { if (!p.querySelector('.noimg')) p.appendChild(el('div', 'noimg', esc(c._meta.name))); };
+    img.src = c._img;
   }
 
   // título en español de la tarjeta (solo las que ya se ven)
@@ -1702,6 +1823,8 @@
           else push(detailScreen(p.type, p.metaId));
         }, cont.map(function (p) { return { pct: p.t / p.d, label: p.label || p.name }; })));
       }
+      var mine = Trakt.linked() ? [] : myListMetas(); // con Trakt, su lista sale más abajo
+      if (mine.length) contWrap.appendChild(posterRow(tr('Mi lista'), mine, openMeta));
     }
     renderTop();
 
@@ -2091,24 +2214,22 @@
     var d = el('div', 'detail');
     d.appendChild(el('div', 'loading', tr('Cargando…')));
     root.appendChild(d);
+    root.appendChild(el('div', 'keys-legend', '<i class="k-red"></i>' + tr('Mi lista') + '<i class="k-green"></i>' + tr('Visto') +
+      '<i class="k-yellow"></i>' + tr('Más como esto')));
     var screen = { el: root };
     var meta = null, curSeason = null, episodesBox = null, actions = null;
     var traktSeen = {}, traktNext = null, showSeen = false, progressRequested = false, traktResume = {};
 
+    function listMeta() { return { id: meta.id, type: type, name: meta.name, poster: meta.poster, imdb: imdbOf() }; }
+    var listBtn = null;
+    function paintListBtn() { if (listBtn) listBtn.textContent = inMyList(listMeta()) ? tr('✓ En mi lista') : tr('＋ Mi lista'); }
+    function toggleList() { toggleMyList(listMeta()).then(paintListBtn); }
     function watchlistButton(container) {
-      if (!Trakt.linked()) return;
-      var b = el('div', 'btn');
-      var imdb = imdbOf();
-      if (!imdb) return; // anime sin correspondencia en IMDb: Trakt no lo puede identificar
-      var paint = function () { b.textContent = Trakt.watchlist[imdb] ? tr('✓ En mi lista') : tr('＋ Mi lista'); };
-      paint();
-      focusable(b, function () {
-        Trakt.toggleWatchlist(type, imdb).then(function (added) {
-          paint();
-          toast(added ? tr('Añadido a tu lista de Trakt') : tr('Quitado de tu lista de Trakt'));
-        }).catch(function (e) { toast('Trakt: ' + e.message); });
-      });
-      container.appendChild(b);
+      if (Trakt.linked() && !imdbOf()) return; // anime sin correspondencia en IMDb: Trakt no lo puede identificar
+      listBtn = el('div', 'btn small');
+      paintListBtn();
+      focusable(listBtn, toggleList);
+      container.appendChild(listBtn);
     }
 
     // reparto: con TMDB, cada actor abre su filmografía; sin clave, solo los nombres de Cinemeta
@@ -2139,7 +2260,7 @@
     }
 
     function similarButton(container) {
-      if (!imdbOf() || !(tmdbOn() || trakt.clientId)) return; // hace falta TMDB o una app de Trakt
+      if (!canSimilar(imdbOf())) return; // hace falta TMDB o una app de Trakt
       var b = el('div', 'btn small', tr('Más como esto'));
       focusable(b, function () { push(similarScreen(type, imdbOf(), meta.name)); });
       container.appendChild(b);
@@ -2175,11 +2296,11 @@
       var parts = [];
       if (meta.releaseInfo || meta.year) parts.push(meta.releaseInfo || meta.year);
       if (meta.runtime) parts.push(meta.runtime);
-      if (meta.imdbRating) parts.push('★ ' + meta.imdbRating);
+      if (meta.imdbRating && parseFloat(meta.imdbRating)) parts.push('★ ' + num(meta.imdbRating));
       if (meta.genres && meta.genres.length) parts.push(meta.genres.slice(0, 3).join(', '));
       return parts;
     }
-    function info() { return infoParts().map(function (p) { return '<span>' + esc(p) + '</span>'; }).join(''); }
+    function info() { return infoParts().map(function (p) { return '<span' + (p.charAt(0) === '★' ? ' class="star"' : '') + '>' + esc(p) + '</span>'; }).join(''); }
 
     function render() {
       if (screen.closed) return; // cerrada mientras cargaba
@@ -2246,6 +2367,7 @@
         push(streamsScreen(extend(base(), { videoId: meta.id, label: meta.name, startAt: p && !p.done ? p.t : 0, startPct: pct, autoPlay: settings.quickPlay })));
       });
       actions.appendChild(play);
+      if (!screen.closed) prefetchStreams(type, meta.id); // cerrada antes de cargar: nada que adelantar
       if (local || pct) {
         var fromStart = el('div', 'btn', tr('Desde el principio'));
         focusable(fromStart, function () {
@@ -2253,10 +2375,58 @@
         });
         actions.appendChild(fromStart);
       }
+      var seenB = el('div', 'btn small', movieSeen() ? tr('✓ Vista') : tr('Marcar como vista'));
+      focusable(seenB, toggleMovieSeen);
+      actions.appendChild(seenB);
       watchlistButton(actions);
       similarButton(actions);
       castButton(actions);
     }
+
+    function movieCtx() { return extend(base(), { videoId: meta.id, label: meta.name }); }
+    function movieSeen() { return isSeenMeta({ id: meta.id, type: 'movie', imdb: imdbOf() }); }
+    function toggleMovieSeen() {
+      var on = !movieSeen();
+      setSeen([movieCtx()], on);
+      toast(on ? tr('Marcada como vista') : tr('Marcada como no vista'));
+      var wasBtn = Nav.cur && Nav.cur.parentNode === actions ? Array.prototype.indexOf.call(actions.children, Nav.cur) : -1;
+      renderMovieActions();
+      if (wasBtn >= 0 && Nav.root === root) Nav.setRoot(root, actions.children[Math.min(wasBtn, actions.children.length - 1)]);
+    }
+
+    // verde en un episodio: visto/no visto; en una temporada: toda la temporada emitida
+    function toggleSeenAtFocus() {
+      if (type === 'movie') { toggleMovieSeen(); return; }
+      var cur = Nav.cur, s = seasonsOf(), eps, idx = -1, seasonTab = null;
+      if (cur && cur._ep) { eps = [cur._ep]; idx = Array.prototype.indexOf.call(episodesBox.children, cur); }
+      else if (cur && cur._season !== undefined) {
+        seasonTab = cur._season;
+        eps = (s.map[seasonTab] || []).filter(function (v) { return !(v.released && new Date(v.released) > new Date()); });
+      } else { toast(tr('Ponte sobre un episodio o una temporada y pulsa el botón verde')); return; }
+      if (!eps.length) return;
+      var on = !eps.every(isSeenEp);
+      setSeen(eps.map(epCtx), on);
+      eps.forEach(function (v) { if (on) traktSeen[traktKey(v)] = true; else delete traktSeen[traktKey(v)]; });
+      toast(seasonTab !== null ? tr(on ? 'Temporada {0} marcada como vista' : 'Temporada {0} marcada como no vista', seasonTab)
+        : on ? tr('Marcado como visto') : tr('Marcado como no visto'));
+      renderSeries();
+      if (Nav.root !== root) return;
+      if (seasonTab !== null) {
+        var tabs = actions.querySelectorAll('.seasons .btn');
+        for (var i = 0; i < tabs.length; i++) if (tabs[i]._season === seasonTab) { Nav.setRoot(root, tabs[i]); return; }
+        Nav.setRoot(root);
+      } else if (episodesBox && episodesBox.children.length) Nav.setRoot(root, episodesBox.children[Math.min(idx, episodesBox.children.length - 1)]);
+      else Nav.setRoot(root);
+    }
+
+    // botones de colores del mando (la leyenda sale abajo a la derecha)
+    screen.onKey = function (code) {
+      if (!meta || !actions) return false;
+      if (code === K.RED) { toggleList(); return true; }
+      if (code === K.GREEN) { toggleSeenAtFocus(); return true; }
+      if (code === K.YELLOW) { if (canSimilar(imdbOf())) push(similarScreen(type, imdbOf(), meta.name)); return true; }
+      return false;
+    };
 
     function seasonsOf() {
       var map = {};
@@ -2361,6 +2531,7 @@
         var play = el('div', 'btn primary', nx.resume ? tr('▶ Continuar {0}', code) : tr('▶ Ver {0}', code));
         focusable(play, function () { push(streamsScreen(extend(epCtx(nx.v), { autoPlay: settings.quickPlay }))); });
         top.appendChild(play);
+        if (!screen.closed) prefetchStreams(type, nx.v.id);
       }
       watchlistButton(top);
       similarButton(top);
@@ -2457,11 +2628,11 @@
       });
     }
 
+    var epPrefetch = null;
     function renderEpisodes(eps) {
       translateEpisodes(eps);
       episodesBox.innerHTML = '';
-      if (episodesBox._animscrollTop) finishScrolls();
-      episodesBox.scrollTop = 0;
+      scrollTop0(episodesBox);
       var focusTarget = null;
       if (hidingSeen()) eps = eps.filter(function (v) { return !isSeenEp(v); });
       eps.forEach(function (v) {
@@ -2492,6 +2663,12 @@
         if (ov) txt.appendChild(el('div', 'ep-ov', esc(ov)));
         row.appendChild(txt);
         focusable(row, function () { push(streamsScreen(extend(epCtx(v), { autoPlay: settings.quickPlay }))); });
+        row._ep = v;
+        // quieto 1 s sobre un episodio: sus fuentes se piden ya, por si lo abre
+        row._onfocus = function () {
+          clearTimeout(epPrefetch);
+          epPrefetch = setTimeout(function () { if (Nav.cur === row) prefetchStreams(type, v.id); }, 1000);
+        };
         episodesBox.appendChild(row);
         if (!focusTarget && ((p && !p.done) || tp || traktNext === traktKey(v))) focusTarget = row;
       });
@@ -2621,6 +2798,31 @@
     return '';
   }
 
+  // respuestas de los addons de fuentes, 5 min: la ficha las pide en segundo plano (prefetchStreams) para que
+  // «▶ Ver» no tenga que esperar; si la pantalla de fuentes llega antes de que respondan, comparte la petición
+  var streamCache = {};
+  function streamJSON(url) {
+    var now = Date.now();
+    for (var k in streamCache) if (now - streamCache[k].ts > 300000) delete streamCache[k];
+    if (streamCache[url]) return streamCache[url].p;
+    var p = getJSON(url);
+    streamCache[url] = { p: p, ts: now };
+    p.catch(function () { if (streamCache[url] && streamCache[url].p === p) delete streamCache[url]; });
+    return p;
+  }
+  function streamURLs(type, videoId) {
+    var dAddon = debridAddon();
+    var urls = addonsFor('stream', type, videoId).filter(function (a) { return a !== dAddon; }).map(function (a) {
+      return a.url + '/stream/' + type + '/' + videoId + '.json';
+    });
+    if (dAddon) urls.unshift(sourcesBase(dAddon) + '/stream/' + type + '/' + videoId + '.json');
+    return urls;
+  }
+  function prefetchStreams(type, videoId) {
+    if (!videoId) return;
+    streamURLs(type, videoId).forEach(function (u) { streamJSON(u).catch(function () { /* ya se verá al abrir las fuentes */ }); });
+  }
+
   function streamsScreen(ctx) {
     var root = el('div', 'screen');
     root.appendChild(el('div', 'screen-title', esc(ctx.label)));
@@ -2653,12 +2855,12 @@
         return;
       }
       var fromAddons = Promise.all(others.map(function (a) {
-        return getJSON(a.url + '/stream/' + ctx.type + '/' + ctx.videoId + '.json').then(function (d) {
+        return streamJSON(a.url + '/stream/' + ctx.type + '/' + ctx.videoId + '.json').then(function (d) {
           return (d.streams || []).map(function (x) { var st = parseStream(x); st.addon = a.manifest.name; return st; })
             .filter(function (st) { return st.url && !st.error; });
         }).catch(function () { return []; }); // un addon caído no estropea el resto
       }));
-      var fromDebrid = dAddon ? getJSON(sourcesBase(dAddon) + '/stream/' + ctx.type + '/' + ctx.videoId + '.json').catch(function (e) { return { failed: e }; })
+      var fromDebrid = dAddon ? streamJSON(sourcesBase(dAddon) + '/stream/' + ctx.type + '/' + ctx.videoId + '.json').catch(function (e) { return { failed: e }; })
         : Promise.resolve({ streams: [] });
       Promise.all([fromDebrid, fromAddons]).then(function (r) {
         if (screen.closed) return; // Atrás antes de que respondan los addons: ni pintar ni reproducir
@@ -2710,22 +2912,26 @@
           if (!byQ[g]) { byQ[g] = []; groups.push(g); }
           byQ[g].push(s);
         });
-        var ordered = [];
+        var ordered = [], grouped = groups.length > 1;
+        var allCached = streams.every(function (x) { return x.cached; });
+        if (allCached) sub.textContent += tr(' · todas instantáneas');
         groups.forEach(function (g) {
-          if (groups.length > 1) ordered.push({ head: g || tr('Otras'), n: byQ[g].length });
+          if (grouped) ordered.push({ head: g || tr('Otras'), n: byQ[g].length });
           ordered = ordered.concat(byQ[g]);
         });
         ordered.forEach(function (s) {
           if (s.head) { list.appendChild(el('div', 'sgroup', esc(s.head) + ' · ' + (s.n === 1 ? tr('1 fuente') : tr('{0} fuentes', s.n)))); return; }
           var row = el('div', 'stream' + (s === rec ? ' rec' : ''));
-          var g = qualityGroup(s.quality);
-          row.appendChild(el('div', 'q', '<span class="' + (g === '4K' ? 'q4k' : g === '1080p' ? 'q1080' : g === '720p' ? 'q720' : '') + '">' + esc(s.quality) + '</span>'));
+          var g = qualityGroup(s.quality), q = s.quality.replace(/4k/i, '4K');
+          // agrupadas, la calidad ya está en el título del grupo: solo se repite si dice algo más («4K DV»)
+          if (!grouped) row.appendChild(el('div', 'q', '<span class="' + (g === '4K' ? 'q4k' : g === '1080p' ? 'q1080' : g === '720p' ? 'q720' : '') + '">' + esc(q) + '</span>'));
           var info = el('div', 'info');
-          var badges = '';
+          var badges = grouped && q !== g && q ? '<span class="badge">' + esc(q) + '</span>' : '';
           if (s === rec) badges += '<span class="badge rec">' + tr('★ Recomendada') + '</span>';
           if (s.pref >= 2) badges += '<span class="badge ok">' + tr('↺ Como el anterior') + '</span>';
           if (s.addon) badges += '<span class="badge addon">' + esc(s.addon) + '</span>';
-          if (s.cached) badges += '<span class="badge ok">' + tr('⚡ Instantáneo') + '</span>';
+          // si todas son instantáneas lo dice el subtítulo y la marca sobra
+          if (s.cached && !allCached) badges += '<span class="badge ok">' + tr('⚡ Instantáneo') + '</span>';
           else if (s.download) badges += '<span class="badge">' + tr('Descargar en debrid') + '</span>';
           if (s.es) badges += '<span class="badge es">ES</span>';
           var m = s.media;
@@ -3224,6 +3430,7 @@
       if (this.nextCtx === undefined) this.nextCtx = this.ctx.next ? this.ctx.next() : null;
       if (!this.nextCtx) { this.upNextOff = true; return; }
       this.upNext = { left: 10 };
+      prefetchStreams(this.nextCtx.type, this.nextCtx.videoId); // que el siguiente empiece sin esperar a los addons
       this.paintUpNext();
     },
 
@@ -3537,6 +3744,7 @@
     onKey: function (code) {
       if (this.infoOpen) { this.closeInfo(); return true; }
       if (code === K.INFO || code === K.I) { this.toggleInfo(); return true; }
+      if (code === K.BLUE) { this.sourceMenu(); return true; }
       if (this.syncMode) {
         switch (code) {
           case K.LEFT: this.adjustSync(-0.25); return true;
@@ -3889,7 +4097,7 @@
     }
     if (id === 'subs') return langName(SUB_NAMES, settings.subLang) + ' · ' + (settings.subColor === 'yellow' ? tr('Amarillo') : tr('Blanco'));
     if (id === 'accounts') {
-      var mark = function (on) { return on ? ' ✓' : ' ✗'; };
+      var mark = function (on) { return on ? ' ✓' : ' —'; }; // sin configurar no es un error: son opcionales
       return 'Trakt' + mark(Trakt.linked()) + ' · TMDB' + mark(settings.tmdbKey) + ' · GitHub' + mark(backup.token);
     }
     if (id === 'general') return LANGS[settings.lang] + ' · ' + tr('ocultar lo visto: {0}', yesNo(settings.hideWatched));
@@ -3918,7 +4126,7 @@
       SETTINGS_SECTIONS.forEach(function (id) {
         var o = el('div', 'opt');
         o.appendChild(el('span', null, '<span class="ico"><svg viewBox="0 0 24 24">' + SECTION_ICONS[id] + '</svg></span><span class="lbl"></span>'));
-        o.appendChild(el('span', 'val'));
+        o.appendChild(el('span', 'val sum'));
         focusable(o, function () { push(settingsScreen(id)); });
         box.appendChild(o);
         items.push({ o: o, id: id });
@@ -4278,7 +4486,7 @@
 
   // ---------------------------------------------------------------- arranque
 
-  var VERSION = '0.17.1';
+  var VERSION = '0.18.0';
 
   function fitScreen() {
     var z = window.innerWidth / 1920;

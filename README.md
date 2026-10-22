@@ -33,6 +33,10 @@ Escrito en ES5 y CSS sin funciones modernas para que funcione en el motor web de
 - **Reproductor**: reloj, episodio bajo el título, burbuja con el tiempo de destino al avanzar y **INFO** con la ficha y los datos técnicos (resolución, archivo, audio, subtítulos) sin salir del vídeo.
 - **Atrás en el vídeo vuelve a la ficha** (la lista de fuentes solo si el vídeo no llegó a empezar o falló); para **cambiar de fuente** sin salir, ▼ → «Cambiar fuente…», que sigue en el mismo punto.
 - **Pausa automática** al salir de la app (Home, cambio de fuente) y **protector de pantalla** con fondos que se funden si el vídeo lleva unos minutos en pausa (Ajustes → Reproducción: 3 min, 10 min o no).
+- **Navegación más fluida en la tele**: las filas se desplazan con la GPU (sin repintar las carátulas) y las fuentes se piden en segundo plano al abrir la ficha, al quedarse 1 s sobre un episodio y durante el aviso del siguiente episodio, así que «▶ Ver» no espera a los addons.
+- **Mi lista sin Trakt**: «＋ Mi lista» guarda en la tele (y en la copia de seguridad) y sale como fila en Inicio; con Trakt vinculado, sigue siendo tu lista de Trakt.
+- **Marcar como visto a mano**: películas (botón en la ficha), episodios y temporadas enteras (botón verde); con Trakt también se añade o quita de su historial.
+- **Botones de colores del mando**: rojo Mi lista, verde visto, amarillo Más como esto (en la ficha y sobre cualquier carátula); azul en el vídeo, cambiar fuente.
 - **Trakt**: vinculación con código, scrobble automático (visto al pasar del 80 %), «Continuar», tu lista, recomendaciones y episodios vistos. El anime se registra usando su equivalencia en IMDb.
 
 ## Instalar en TizenBrew
@@ -57,12 +61,16 @@ La clave solo se guarda en la tele.
 | Flechas | Moverse | ◀ ▶ retroceder/avanzar (pulsaciones seguidas aceleran), ▲ subtítulos, ▼ audio, fuente y temporizador |
 | OK | Abrir | Pausa/continuar |
 | INFO | — | Ficha y datos técnicos (cualquier tecla lo cierra) |
+| 🔴 Rojo | Añadir/quitar de Mi lista | — |
+| 🟢 Verde | Marcar visto (película, episodio o temporada) | — |
+| 🟡 Amarillo | Más como esto | — |
+| 🔵 Azul | — | Cambiar fuente |
 | Atrás | Volver | Salir a la ficha (guarda la posición) |
 
 ## Desarrollo
 ```
 cd app && python3 -m http.server 8090   # abrir http://127.0.0.1:8090 (flechas, Intro, Esc)
-cd test && npm i && node ui.js && node player.js && node trakt.js   # pruebas headless con capturas en test/shots
+cd test && npm i && node ui.js && node player.js && node trakt.js && node v18.js   # pruebas headless con capturas en test/shots
 ```
 
 ## Aviso

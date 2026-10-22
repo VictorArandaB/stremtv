@@ -19,7 +19,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   await p.evaluate(() => StremTV.open('movie', 'tt0111161')); await sleep(2500);
   await p.keyboard.press('Enter'); await sleep(2500);
   console.log(await p.evaluate(() => document.querySelector('.screen-sub').textContent));
-  console.log(await p.evaluate(() => Array.from(document.querySelectorAll('.stream')).map((r) => r.querySelector('.q').textContent + ' | ' + r.querySelector('.t1').textContent).join('\n')));
+  console.log(await p.evaluate(() => Array.from(document.querySelectorAll('.stream')).map((r) => (r.querySelector('.q') ? r.querySelector('.q').textContent + ' | ' : '') + r.querySelector('.t1').textContent).join('\n')));
   await p.screenshot({ path: __dirname + '/shots/60-rate.png' });
   // medir conexión desde ajustes
   await p.keyboard.press('Escape'); await p.keyboard.press('Escape'); await sleep(500);

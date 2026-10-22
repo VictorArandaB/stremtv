@@ -15,7 +15,7 @@ html, body { width: 1920px; height: 1080px; overflow: hidden; background: #0d0f1
 .tab { font-size: 30px; padding: 12px 30px; margin-right: 16px; border-radius: 40px; color: #aab; border: 3px solid transparent; }
 .tab.focused { background: #e8eaf0; color: #0d0f14; }
 .tab.active { color: #fff; border-bottom-color: #8a7dff; border-radius: 0; }
-.tab.active.focused { border-radius: 40px; border-color: transparent; }
+.tab.active.focused { border-radius: 40px; border-color: transparent; background: #6d5df5; color: #fff; }
 .clock { margin-left: auto; font-size: 30px; color: #ccd; }
 
 /* Filas de pósters */
@@ -73,6 +73,7 @@ html, body { width: 1920px; height: 1080px; overflow: hidden; background: #0d0f1
 .d-logo span, .hero-logo span { display: none; }
 .meta-line { color: #aab; font-size: 26px; margin-bottom: 24px; }
 .meta-line span { margin-right: 26px; }
+.meta-line .star { color: #ffd84a; font-weight: bold; }
 .desc { width: 1000px; font-size: 26px; line-height: 38px; color: #ccd; max-height: 190px; overflow: hidden; margin-bottom: 34px; }
 .btn { display: inline-block; font-size: 30px; padding: 16px 40px; border-radius: 12px; background: #262b3d; color: #e8eaf0;
   margin: 0 18px 18px 0; border: 4px solid transparent;
@@ -127,6 +128,8 @@ html, body { width: 1920px; height: 1080px; overflow: hidden; background: #0d0f1
 .opt { display: flex; justify-content: space-between; align-items: center; padding: 20px 28px; border-radius: 12px; background: #1a1e2c; border: 4px solid transparent; margin-bottom: 16px; font-size: 28px; }
 .opt.focused { border-color: #fff; background: #262b3d; }
 .opt .val { color: #8a7dff; font-weight: bold; }
+/* resúmenes del menú de Ajustes: discretos, para que no compitan con el nombre de cada categoría */
+.opt .val.sum { color: #99a; font-weight: normal; }
 .opt .ico { display: inline-block; width: 40px; height: 40px; margin-right: 22px; vertical-align: middle; }
 .opt .ico svg { width: 40px; height: 40px; fill: none; stroke: #8a7dff; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .opt.focused .ico svg { stroke: #fff; }
@@ -282,3 +285,8 @@ html, body { width: 1920px; height: 1080px; overflow: hidden; background: #0d0f1
 #saver .sv-clock { font-size: 72px; font-weight: bold; color: #fff; }
 #saver .sv-title { font-size: 34px; color: #eee; margin-top: 6px; }
 #saver .sv-sub { font-size: 24px; color: #bbc; margin-top: 8px; }
+
+/* leyenda de los botones de colores del mando en la ficha */
+.keys-legend { position: absolute; right: 80px; bottom: 30px; font-size: 22px; color: #99a; }
+.keys-legend i { display: inline-block; width: 18px; height: 18px; border-radius: 4px; margin: 0 10px 0 28px; vertical-align: -2px; }
+.keys-legend .k-red { background: #e5484d; } .keys-legend .k-green { background: #30a46c; } .keys-legend .k-yellow { background: #f5d90a; }
