@@ -4,6 +4,8 @@
 set -e
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 OUT="$ROOT/wgt-build"
+# app.js se genera desde app/src: no empaquetar uno desfasado
+node "$ROOT/tools/build-app.js" --check
 rm -rf "$OUT" "$ROOT/StremTV.wgt" && mkdir -p "$OUT"
 cp "$ROOT"/app/index.html "$ROOT"/app/boot.js "$ROOT"/app/app.js "$ROOT"/app/style.css "$OUT"/
 cp "$ROOT"/wgt/config.xml "$ROOT"/wgt/icon.png "$OUT"/

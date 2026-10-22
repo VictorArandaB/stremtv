@@ -37,6 +37,7 @@ Escrito en ES5 y CSS sin funciones modernas para que funcione en el motor web de
 - **Mi lista sin Trakt**: «＋ Mi lista» guarda en la tele (y en la copia de seguridad) y sale como fila en Inicio; con Trakt vinculado, sigue siendo tu lista de Trakt.
 - **Marcar como visto a mano**: películas (botón en la ficha), episodios y temporadas enteras (botón verde); con Trakt también se añade o quita de su historial.
 - **Botones de colores del mando**: rojo Mi lista, verde visto, amarillo Más como esto (en la ficha y sobre cualquier carátula); azul en el vídeo, cambiar fuente.
+- **Protector de pantalla** (Ajustes → Protector de pantalla): sin tocar el mando unos minutos, fondos a pantalla completa con logo, nota y sinopsis de lo que elijas (pendientes de ver, Mi lista, novedades o un poco de todo); OK abre la ficha del título que se ve. Con el vídeo en pausa sigue el de siempre.
 - **Trakt**: vinculación con código, scrobble automático (visto al pasar del 80 %), «Continuar», tu lista, recomendaciones y episodios vistos. El anime se registra usando su equivalencia en IMDb.
 
 ## Instalar en TizenBrew
@@ -68,9 +69,11 @@ La clave solo se guarda en la tele.
 | Atrás | Volver | Salir a la ficha (guarda la posición) |
 
 ## Desarrollo
+El código está partido en módulos en `app/src/` (por orden: base, idioma, ajustes, Trakt, navegación, pantallas, reproductor…). La tele carga un solo `app/app.js`, que se genera uniéndolos: **se edita en `app/src/` y después se ejecuta `node tools/build-app.js`** (`--check` dice si está al día; `build-wgt.sh` no empaqueta uno desfasado). Los módulos comparten una sola función (`00-base.js` la abre y `16-start.js` la cierra), así que por separado no son JavaScript válido.
 ```
+node tools/build-app.js                 # genera app/app.js desde app/src
 cd app && python3 -m http.server 8090   # abrir http://127.0.0.1:8090 (flechas, Intro, Esc)
-cd test && npm i && node ui.js && node player.js && node trakt.js && node v18.js   # pruebas headless con capturas en test/shots
+cd test && npm i && node ui.js && node player.js && node trakt.js && node v18.js && node saver.js   # pruebas headless con capturas en test/shots
 ```
 
 ## Aviso

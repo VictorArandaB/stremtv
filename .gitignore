@@ -2,6 +2,7 @@ test/node_modules/
 test/shots/
 test/package-lock.json
 .DS_Store
-tools/
+tools/*
+!tools/build-app.js
 *.wgt
 wgt-build/

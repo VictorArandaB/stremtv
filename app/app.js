@@ -1,3 +1,4 @@
+// Archivo generado por tools/build-app.js a partir de app/src/*.js: no editar a mano.
 /* StremTV — cliente ligero tipo Stremio para Samsung Tizen 3+.
    Escrito en ES5 (sin let/const, flechas, plantillas, find, assign...) porque
    el motor web de Tizen 3.0 es Chromium ~47. */
@@ -61,6 +62,12 @@
   function getJSON(url) { return xhr('GET', url).then(strictJSON); }
   function getText(url) { return xhr('GET', url); }
 
+  // baraja la lista en su sitio (Fisher-Yates) y la devuelve
+  function shuffle(list) {
+    for (var i = list.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)), t = list[i]; list[i] = list[j]; list[j] = t; }
+    return list;
+  }
+
   // deja en obj solo las n entradas más recientes (por .ts)
   function capByTs(obj, n) {
     var ids = Object.keys(obj);
@@ -105,6 +112,13 @@
     'Título de película o serie…': 'Movie or show title…',
     'Pulsa OK para escribir y confirma con «Hecho».': 'Press OK to type and confirm with “Done”.',
     // detalle
+    // protector de pantalla
+    'Protector de pantalla': 'Screensaver', 'Sin tocar el mando': 'When the remote is idle', 'Mostrar': 'Show', 'Cambiar de título cada': 'Next title every',
+    '{0} s': '{0} s', 'Con el vídeo en pausa': 'With the video paused', 'Probar ahora': 'Try it now',
+    'Un poco de todo': 'A bit of everything', 'Pendientes de ver': 'Up next for me', 'Novedades': 'New releases',
+    'En tu lista': 'In your list', 'Estreno de {0}': 'New in {0}', 'OK: abrir la ficha · cualquier otra tecla: volver': 'OK: open its page · any other key: go back',
+    'Pendientes de ver: lo que dejaste a medias, los siguientes episodios de tus series (Trakt) y tu lista. Novedades: estrenos de este año y series populares (y con Trakt, los episodios de esta semana). Con el protector puesto, OK abre la ficha del título que se ve.':
+      'Up next for me: what you left halfway, the next episodes of your shows (Trakt) and your list. New releases: this year’s premieres and popular shows (and, with Trakt, this week’s episodes). While the screensaver is on, OK opens the page of the title on screen.',
     '✓ En mi lista': '✓ In my list', '＋ Mi lista': '＋ My list', 'Mi lista': 'My list',
     'Añadido a Mi lista': 'Added to My list', 'Quitado de Mi lista': 'Removed from My list',
     'Trakt no puede identificar este título (no tiene ID de IMDb)': 'Trakt cannot identify this title (no IMDb ID)',
@@ -343,7 +357,8 @@
   var DEFAULTS = {
     debrid: 'realdebrid', key: '', onlyCached: true, maxQ: 'all',
     preferEs: true, compatFirst: true, hideWatched: true, maxRate: 'auto', measuredMbps: 0, measuredAt: 0,
-    subLang: 'spa', subSize: 'normal', autoNext: true, audioLang: 'spa', lang: 'es', quickPlay: true, subBg: true, tmdbKey: '', autoSkip: false, lastAudio: '', subColor: 'white', subPos: 'low', saver: 3
+    subLang: 'spa', subSize: 'normal', autoNext: true, audioLang: 'spa', lang: 'es', quickPlay: true, subBg: true, tmdbKey: '', autoSkip: false, lastAudio: '', subColor: 'white', subPos: 'low', saver: 3,
+    idleSaver: 10, saverShow: 'mix', saverEvery: 20
   };
   var settings = extend(extend({}, DEFAULTS), load('settings', {}));
   function saveSettings() { save('settings', settings); }
@@ -1364,7 +1379,7 @@
     var code = ev.keyCode;
     Saver.poke();
     // con el protector de pantalla, la tecla solo lo quita
-    if (Saver.on) { ev.preventDefault(); Saver.stop(); return; }
+    if (Saver.on) { ev.preventDefault(); Saver.key(code); return; }
     var ae = document.activeElement;
     if (ae && ae.tagName === 'INPUT') {
       if (code === K.ENTER || code === K.DONE || code === K.CANCEL || code === K.BACK || code === K.ESC) {
@@ -3926,16 +3941,72 @@
     if (Player.stream) toast(tr('Vídeo en pausa al salir de la app: pulsa OK para seguir'), 6000);
   });
 
-  // con el vídeo en pausa unos minutos (Ajustes → Reproducción), fondos de lo que hay en Inicio que se funden despacio;
-  // el reproductor apaga el salvapantallas de la tele, así que sin esto la imagen se quedaría fija
+  // Protector de pantalla, en dos casos:
+  // - «pausa»: con el vídeo en pausa unos minutos (Ajustes → Protector), fondos de lo que hay en Inicio que se funden despacio;
+  //   el reproductor apaga el salvapantallas de la tele, así que sin esto la imagen se quedaría fija
+  // - «inactividad»: sin tocar el mando fuera del vídeo, fondos con logo y sinopsis de lo que elijas en Ajustes
+  //   (pendientes de ver, Mi lista, novedades o un poco de todo); OK abre la ficha del que se ve
+  var SAVER_SHOW = ['mix', 'pending', 'list', 'new'];
+  var SAVER_SHOW_NAMES = { mix: 'Un poco de todo', pending: 'Pendientes de ver', list: 'Mi lista', 'new': 'Novedades' };
+
+  // títulos para el protector por inactividad: [{ meta, tag }] sin repetir, de las fuentes elegidas
+  function saverItems(kind) {
+    var lists = [];
+    var safe = function (pr, tag) { lists.push(pr.then(function (ms) { return (ms || []).map(function (m) { return { meta: m, tag: tag(m) }; }); }, function () { return []; })); };
+    var linked = Trakt.linked();
+    if (kind === 'pending' || kind === 'mix') {
+      safe(Promise.resolve(continueList().map(function (p) { return { id: p.metaId, type: p.type, name: p.name, poster: p.poster, label: p.label }; })),
+        function (m) { return tr('Continuar viendo') + (m.label && m.label !== m.name ? ' · ' + m.label.replace(m.name + ' · ', '') : ''); });
+      if (linked) {
+        safe(Trakt.upNext(), function (m) { return tr('Siguiente episodio') + ' · ' + String(m.label || '').replace(m.name + ' · ', ''); });
+        safe(Trakt.playback(), function () { return tr('Continuar (Trakt)'); });
+      }
+    }
+    if (kind === 'list' || kind === 'mix' || kind === 'pending') {
+      safe(linked ? Trakt.loadWatchlist() : Promise.resolve(myListMetas()), function () { return tr('En tu lista'); });
+    }
+    if (kind === 'new' || kind === 'mix') {
+      var year = new Date().getFullYear();
+      if (linked) safe(Trakt.calendar(), function (m) { return tr('Esta semana en tus series') + ' · ' + String(m.label || '').split(' · ')[0]; });
+      safe(getJSON(CINEMETA + '/catalog/movie/year/genre=' + year + '.json').then(function (r) { return (r.metas || []).slice(0, 20); }), function () { return tr('Estreno de {0}', year); });
+      safe(getJSON(CINEMETA + '/catalog/series/top.json').then(function (r) { return (r.metas || []).slice(0, 15); }), function () { return tr('Series populares'); });
+    }
+    return Promise.all(lists).then(function (all) {
+      // intercaladas: una de cada fuente por turno, para que «un poco de todo» lo sea de verdad
+      var out = [], seen = {}, more = true;
+      for (var i = 0; more; i++) {
+        more = false;
+        all.forEach(function (l) {
+          if (i >= l.length) return;
+          more = true;
+          var k = listKey(l[i].meta);
+          if (!k || seen[k]) return;
+          seen[k] = true;
+          out.push(l[i]);
+        });
+      }
+      return out.slice(0, 60);
+    });
+  }
+
   var Saver = {
-    on: false, lastKey: Date.now(), slide: 0, timer: null, pool: [],
+    on: false, mode: '', lastKey: Date.now(), slide: 0, timer: null, pool: [], shown: null, gen: 0,
 
     poke: function () { this.lastKey = Date.now(); },
 
     check: function () {
-      if (Saver.on || !settings.saver || !Player.stream || !Player.started || !Player.paused) return;
-      if (Date.now() - Saver.lastKey >= settings.saver * 60000) Saver.start();
+      if (Saver.on || document.hidden) return;
+      var idle = Date.now() - Saver.lastKey;
+      if (Player.stream) {
+        if (settings.saver && Player.started && Player.paused && idle >= settings.saver * 60000) Saver.start('pause');
+      } else if (settings.idleSaver && idle >= settings.idleSaver * 60000 && stack.length) Saver.start('idle');
+    },
+
+    // una tecla con el protector puesto: lo quita; en el de inactividad, OK además abre la ficha del título que se ve
+    key: function (code) {
+      var m = this.mode === 'idle' && code === K.ENTER && this.shown ? this.shown.meta : null;
+      this.stop();
+      if (m) openMeta(m); // solo sale fuera del vídeo: no hay reproductor que cerrar
     },
 
     // primero lo que está en pausa; después, carátulas de las pantallas abiertas (sin repetir, mezcladas)
@@ -3950,27 +4021,54 @@
       };
       add(out, c);
       Array.prototype.forEach.call(document.querySelectorAll('.card'), function (x) { if (x._meta) add(rest, x._meta); });
-      for (var i = rest.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)), t = rest[i]; rest[i] = rest[j]; rest[j] = t; }
+      shuffle(rest);
       return out.concat(rest.slice(0, 30));
     },
 
-    start: function () {
+    box: function () {
       var box = $('#saver');
       if (!box) {
-        box = el('div', 'hidden', '<div class="sv-bg"></div><div class="sv-bg"></div><div class="sv-info"></div>');
+        box = el('div', 'hidden', '<div class="sv-bg"></div><div class="sv-bg"></div><div class="sv-shade"></div><div class="sv-info"></div><div class="sv-corner-clock clock"></div>');
         box.id = 'saver';
         document.body.appendChild(box);
       }
-      this.pool = this.collect();
+      return box;
+    },
+
+    start: function (mode) {
+      var box = this.box(), gen = ++this.gen;
+      this.mode = mode || 'pause';
       this.on = true;
       this.slide = 0;
-      box.classList.remove('hidden');
-      logEv('protector', 'activado', { fondos: this.pool.length });
-      this.next();
+      this.shown = null;
+      box.className = 'sv-' + this.mode;
+      if (this.mode === 'pause') {
+        this.pool = this.collect();
+        logEv('protector', 'activado', { fondos: this.pool.length });
+        this.next();
+        return;
+      }
+      // inactividad: mientras llegan los títulos, el reloj sobre negro
+      this.pool = [];
+      box.querySelector('.sv-info').className = 'sv-info';
+      box.querySelector('.sv-info').innerHTML = '<div class="sv-clock clock">' + clockText(new Date()) + '</div>';
+      saverItems(settings.saverShow).then(function (items) {
+        if (!Saver.on || Saver.gen !== gen) return;
+        // si lo elegido está vacío (sin pendientes, lista vacía), novedades
+        return items.length || settings.saverShow === 'new' ? items : saverItems('new');
+      }).then(function (items) {
+        if (!Saver.on || Saver.gen !== gen || !items) return;
+        Saver.pool = settings.saverShow === 'pending' ? items : shuffle(items);
+        logEv('protector', 'inactividad', { mostrar: settings.saverShow, titulos: items.length });
+        Saver.next();
+      });
     },
 
     next: function () {
       if (!this.on) return;
+      clearTimeout(this.timer);
+      this.timer = setTimeout(function () { Saver.next(); }, (this.mode === 'idle' ? settings.saverEvery || 20 : 15) * 1000);
+      if (this.mode === 'idle') { this.nextIdle(this.gen, 0); return; }
       var box = $('#saver'), layers = box.querySelectorAll('.sv-bg'), infoBox = box.querySelector('.sv-info');
       var item = this.pool.length ? this.pool[this.slide % this.pool.length] : null, n = this.slide++;
       var cur = layers[n % 2], prev = layers[(n + 1) % 2];
@@ -3991,22 +4089,70 @@
         img.onerror = paint;
         img.src = item.bg;
       } else paint();
-      clearTimeout(this.timer);
-      this.timer = setTimeout(function () { Saver.next(); }, 15000);
+    },
+
+    // inactividad: ficha del siguiente título (fondo, logo, nota, sinopsis); si no tiene fondo se salta, como mucho 5 seguidos
+    nextIdle: function (gen, tries) {
+      if (!this.pool.length || tries > 5) { this.paintIdle(null); return; }
+      var item = this.pool[this.slide % this.pool.length], n = this.slide++;
+      heroInfo(item.meta).then(function (d) {
+        if (!Saver.on || Saver.gen !== gen) return;
+        var imdb = imdbOfMeta(d);
+        var bg = d.background || (imdb ? metahubImg('background', imdb) : '');
+        if (!bg) { Saver.nextIdle(gen, tries + 1); return; }
+        var img = new Image();
+        img.onload = function () { if (Saver.on && Saver.gen === gen) Saver.paintIdle(item, d, bg, n); };
+        img.onerror = function () { if (Saver.on && Saver.gen === gen) Saver.nextIdle(gen, tries + 1); };
+        img.src = bg;
+      });
+    },
+
+    paintIdle: function (item, d, bg, n) {
+      var box = $('#saver'), layers = box.querySelectorAll('.sv-bg'), infoBox = box.querySelector('.sv-info');
+      if (!item) {
+        infoBox.className = 'sv-info';
+        infoBox.innerHTML = '<div class="sv-clock clock">' + clockText(new Date()) + '</div>';
+        return;
+      }
+      this.shown = item;
+      var cur = layers[n % 2], prev = layers[(n + 1) % 2];
+      cur.style.backgroundImage = 'url("' + bg + '")';
+      cur.classList.add('on');
+      prev.classList.remove('on');
+      var meta = [];
+      if (d.imdbRating && parseFloat(d.imdbRating)) meta.push('<span class="star">★ ' + esc(num(d.imdbRating)) + '</span>');
+      if (d.releaseInfo || d.year) meta.push('<span>' + esc(d.releaseInfo || d.year) + '</span>');
+      var g = d.genres || d.genre;
+      if (g && g.length) meta.push('<span>' + esc(g.slice(0, 3).join(', ')) + '</span>');
+      // izquierda y derecha alternas para no marcar la pantalla
+      infoBox.className = 'sv-info sv-card ' + (n % 2 ? 'right' : 'left');
+      infoBox.innerHTML = '<div class="sv-tag">' + esc(item.tag) + '</div>' +
+        '<div class="sv-name">' + (d.logo ? '<img src="' + esc(d.logo) + '"><span>' + esc(d.name) + '</span>' : '<b>' + esc(d.name) + '</b>') + '</div>' +
+        '<div class="sv-meta">' + meta.join('') + '</div>' +
+        '<div class="sv-desc">' + esc(d.description || '') + '</div>' +
+        '<div class="sv-help">' + esc(tr('OK: abrir la ficha · cualquier otra tecla: volver')) + '</div>';
+      // logo que no carga: el nombre en texto
+      var logo = infoBox.querySelector('img');
+      if (logo) logo.onerror = function () { logo.parentNode.innerHTML = '<b>' + esc(d.name) + '</b>'; };
+      box.querySelector('.sv-corner-clock').textContent = clockText(new Date());
     },
 
     stop: function () {
       if (!this.on) return;
       this.on = false;
+      this.gen++;
+      this.shown = null;
       clearTimeout(this.timer);
       var box = $('#saver');
       if (box) {
-        box.classList.add('hidden');
+        box.className = 'hidden';
         Array.prototype.forEach.call(box.querySelectorAll('.sv-bg'), function (l) { l.classList.remove('on'); });
       }
       this.poke();
     }
   };
+  // al salir de la app, fuera el protector (y nada de descargar fondos en segundo plano)
+  document.addEventListener('visibilitychange', function () { if (document.hidden) Saver.stop(); });
   setInterval(Saver.check, 5000);
 
   // ---------------------------------------------------------------- vinculación con Trakt (código de dispositivo)
@@ -4068,9 +4214,9 @@
   // ---------------------------------------------------------------- pantalla: ajustes
 
   // Ajustes: menú de categorías (con un resumen de cada una); settingsScreen(id) abre una categoría
-  var SETTINGS_SECTIONS = ['sources', 'playback', 'subs', 'accounts', 'general', 'data'];
+  var SETTINGS_SECTIONS = ['sources', 'playback', 'subs', 'accounts', 'saver', 'general', 'data'];
   var SECTION_NAMES = { sources: 'Fuentes y debrid', playback: 'Reproducción', subs: 'Subtítulos', accounts: 'Cuentas',
-    general: 'General', data: 'Datos y diagnóstico' };
+    saver: 'Protector de pantalla', general: 'General', data: 'Datos y diagnóstico' };
 
   // iconos de las categorías de Ajustes (trazos de 24×24)
   var SECTION_ICONS = {
@@ -4078,6 +4224,7 @@
     playback: '<circle cx="12" cy="12" r="10"/><path d="M10 8l6 4-6 4z"/>',
     subs: '<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M6 13h4M12 13h6M6 16h8"/>',
     accounts: '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/>',
+    saver: '<rect x="2" y="4" width="20" height="14" rx="2"/><path d="M5 15l4-4 3 3 3-4 4 5M8 21h8"/>',
     general: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/>',
     data: '<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/>'
   };
@@ -4099,6 +4246,9 @@
     if (id === 'accounts') {
       var mark = function (on) { return on ? ' ✓' : ' —'; }; // sin configurar no es un error: son opcionales
       return 'Trakt' + mark(Trakt.linked()) + ' · TMDB' + mark(settings.tmdbKey) + ' · GitHub' + mark(backup.token);
+    }
+    if (id === 'saver') {
+      return settings.idleSaver ? tr('A los {0} min', settings.idleSaver) + ' · ' + tr(SAVER_SHOW_NAMES[settings.saverShow] || SAVER_SHOW_NAMES.mix) : tr('No');
     }
     if (id === 'general') return LANGS[settings.lang] + ' · ' + tr('ocultar lo visto: {0}', yesNo(settings.hideWatched));
     return 'StremTV ' + VERSION;
@@ -4290,9 +4440,6 @@
       opt('Al pulsar Ver, reproducir directamente la mejor fuente', function () { return yesNo(settings.quickPlay); }, function () { settings.quickPlay = !settings.quickPlay; });
       opt('Saltar solo las intros de anime', function () { return yesNo(settings.autoSkip); }, function () { settings.autoSkip = !settings.autoSkip; });
       opt('Pasar solo al siguiente episodio', function () { return yesNo(settings.autoNext); }, function () { settings.autoNext = !settings.autoNext; });
-      opt('Protector de pantalla con el vídeo en pausa', function () {
-        return settings.saver ? tr('A los {0} min', settings.saver) : tr('No');
-      }, cycle('saver', [3, 10, 0]));
       opt('Idioma del audio', function () {
         return settings.audioLang === 'orig' ? tr('El que traiga el archivo') : tr('{0} si lo hay', langName(LANG_NAMES, settings.audioLang));
       }, cycle('audioLang', AUDIO_LANGS));
@@ -4406,6 +4553,21 @@
 
     };
 
+    build.saver = function () {
+      opt('Sin tocar el mando', function () {
+        return settings.idleSaver ? tr('A los {0} min', settings.idleSaver) : tr('No');
+      }, cycle('idleSaver', [5, 10, 20, 30, 0]));
+      opt('Mostrar', function () { return tr(SAVER_SHOW_NAMES[settings.saverShow] || SAVER_SHOW_NAMES.mix); }, cycle('saverShow', SAVER_SHOW));
+      opt('Cambiar de título cada', function () { return tr('{0} s', settings.saverEvery); }, cycle('saverEvery', [10, 20, 40]));
+      opt('Con el vídeo en pausa', function () {
+        return settings.saver ? tr('A los {0} min', settings.saver) : tr('No');
+      }, cycle('saver', [3, 10, 0]));
+      var test = el('div', 'btn', tr('Probar ahora'));
+      focusable(test, function () { Saver.start('idle'); });
+      box.appendChild(test);
+      box.appendChild(el('div', 'note', tr('Pendientes de ver: lo que dejaste a medias, los siguientes episodios de tus series (Trakt) y tu lista. Novedades: estrenos de este año y series populares (y con Trakt, los episodios de esta semana). Con el protector puesto, OK abre la ficha del título que se ve.')));
+    };
+
     build.general = function () {
       opt('Idioma de la app', function () { return LANGS[settings.lang]; }, function () {
         settings.lang = settings.lang === 'en' ? 'es' : 'en';
@@ -4486,7 +4648,7 @@
 
   // ---------------------------------------------------------------- arranque
 
-  var VERSION = '0.18.0';
+  var VERSION = '0.19.0';
 
   function fitScreen() {
     var z = window.innerWidth / 1920;

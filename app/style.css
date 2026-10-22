@@ -290,3 +290,26 @@ html, body { width: 1920px; height: 1080px; overflow: hidden; background: #0d0f1
 .keys-legend { position: absolute; right: 80px; bottom: 30px; font-size: 22px; color: #99a; }
 .keys-legend i { display: inline-block; width: 18px; height: 18px; border-radius: 4px; margin: 0 10px 0 28px; vertical-align: -2px; }
 .keys-legend .k-red { background: #e5484d; } .keys-legend .k-green { background: #30a46c; } .keys-legend .k-yellow { background: #f5d90a; }
+
+/* protector por inactividad: fondo a pantalla completa, ficha abajo a un lado (alterna) y reloj en la esquina */
+#saver .sv-shade, #saver .sv-corner-clock, #saver .sv-help { display: none; }
+#saver.sv-idle .sv-bg.on { opacity: 1; }
+#saver.sv-idle .sv-shade { display: block; position: absolute; left: 0; top: 0; width: 1920px; height: 1080px;
+  background: -webkit-linear-gradient(top, rgba(0,0,0,0) 35%, rgba(0,0,0,0.85) 100%); background: linear-gradient(to bottom, rgba(0,0,0,0) 35%, rgba(0,0,0,0.85) 100%); }
+#saver.sv-idle .sv-corner-clock { display: block; position: absolute; right: 90px; top: 70px; font-size: 64px; font-weight: bold; color: #fff;
+  text-shadow: 0 2px 12px rgba(0,0,0,0.8); }
+#saver .sv-card { width: 960px; bottom: 90px; background: none; padding: 0; }
+#saver .sv-card.left { left: 90px; }
+#saver .sv-card.right { right: 90px; text-align: right; }
+#saver .sv-tag { display: inline-block; font-size: 24px; font-weight: bold; color: #fff; background: #6d5df5; padding: 6px 16px; border-radius: 8px; margin-bottom: 18px; }
+#saver .sv-name { height: 150px; display: -webkit-flex; display: flex; -webkit-align-items: flex-end; align-items: flex-end; }
+#saver .sv-card.right .sv-name { -webkit-justify-content: flex-end; justify-content: flex-end; }
+#saver .sv-name img { max-width: 600px; max-height: 150px; }
+#saver .sv-name span { display: none; }
+#saver .sv-name b { font-size: 64px; line-height: 72px; color: #fff; text-shadow: 0 2px 12px rgba(0,0,0,0.8); }
+#saver .sv-meta { font-size: 26px; color: #ddd; margin: 18px 0 10px 0; }
+#saver .sv-meta span { margin-right: 22px; }
+#saver .sv-card.right .sv-meta span { margin: 0 0 0 22px; }
+#saver .sv-meta .star { color: #ffd84a; font-weight: bold; }
+#saver .sv-desc { font-size: 26px; line-height: 38px; color: #ccd; max-height: 114px; overflow: hidden; text-shadow: 0 1px 6px rgba(0,0,0,0.8); }
+#saver.sv-idle .sv-help { display: block; font-size: 22px; color: #99a; margin-top: 18px; }

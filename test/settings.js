@@ -28,7 +28,7 @@ const check = (ok, what, got) => { console.log((ok ? '✓ ' : '✗ ') + what + (
   await key('Escape'); await sleep(400);
   check(await shown() === 'MENÚ', 'Atrás vuelve al menú', await shown());
   check((await summary(0)) === '✗ Falta un addon de fuentes', 'resumen sin addon', await summary(0));
-  for (const [i, name] of [[1, 'Reproducción'], [2, 'Subtítulos'], [3, 'Cuentas'], [4, 'General'], [5, 'Datos y diagnóstico']]) {
+  for (const [i, name] of [[1, 'Reproducción'], [2, 'Subtítulos'], [3, 'Cuentas'], [4, 'Protector de pantalla'], [5, 'General'], [6, 'Datos y diagnóstico']]) {
     await p.evaluate((top, i) => StremTV.Nav.focus(eval(top).querySelectorAll('.opt')[i]), top, i); await key('Enter'); await sleep(400);
     check(await shown() === 'Ajustes › ' + name, 'abre ' + name);
     await key('Escape'); await sleep(300);
@@ -38,9 +38,9 @@ const check = (ok, what, got) => { console.log((ok ? '✓ ' : '✗ ') + what + (
   await p.evaluate((top) => StremTV.Nav.focus(Array.from(eval(top).querySelectorAll('.opt')).filter((x) => /Color/.test(x.textContent))[0]), top); await key('Enter'); await key('Escape'); await sleep(300);
   check(/Amarillo/.test(await summary(2)), 'resumen de Subtítulos tras cambiar el color', await summary(2));
   // General: ocultar lo visto también sale en el resumen
-  await p.evaluate((top) => StremTV.Nav.focus(eval(top).querySelectorAll('.opt')[4]), top); await key('Enter'); await sleep(300);
+  await p.evaluate((top) => StremTV.Nav.focus(eval(top).querySelectorAll('.opt')[5]), top); await key('Enter'); await sleep(300);
   await p.evaluate((top) => StremTV.Nav.focus(Array.from(eval(top).querySelectorAll('.opt')).filter((x) => /Ocultar/.test(x.textContent))[0]), top); await key('Enter'); await key('Escape'); await sleep(300);
-  check(/ocultar lo visto: No/.test(await summary(4)), 'resumen de General con ocultar lo visto', await summary(4));
+  check(/ocultar lo visto: No/.test(await summary(5)), 'resumen de General con ocultar lo visto', await summary(5));
 
   // aviso de Inicio: abre Fuentes con el menú debajo; Atrás → menú, otra vez → Inicio
   await reset({ quickPlay: false });
