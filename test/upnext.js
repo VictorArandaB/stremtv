@@ -71,7 +71,8 @@ let rickWhen = '2026-10-15T00:00:00Z', progressCalls = [];
   const bd = await badges();
   check(bd['Siguientes episodios / Game of Thrones · T1:E21'] === '7', 'Siguientes: pendientes según el progreso (10 − 3)', bd['Siguientes episodios / Game of Thrones · T1:E21']);
   check(bd['Siguientes episodios / Larga · T1:E2'] === '99+', 'más de 99 pendientes: 99+', bd['Siguientes episodios / Larga · T1:E2']);
-  check(bd['Continuar (Trakt) / Sherlock · T1:E6'] === '8', 'Continuar (Trakt): pendientes de la serie (13 − 5)', bd['Continuar (Trakt) / Sherlock · T1:E6']);
+  // la lista de vistas dice 13 emitidos y 5 vistos (con especiales), pero el progreso dice 10 − 3: manda el progreso
+  check(bd['Continuar (Trakt) / Sherlock · T1:E6'] === '7', 'Continuar (Trakt): pendientes según el progreso, no según aired_episodes', bd['Continuar (Trakt) / Sherlock · T1:E6']);
   check(bd['Continuar viendo / Antigua 0 · T1:E4'] === '7', 'Continuar viendo (local): pendientes de la serie con Trakt (10 − 3)', bd['Continuar viendo / Antigua 0 · T1:E4']);
   check(!Object.keys(bd).some((k) => /Mi lista: películas/.test(k)), 'sin insignia en las películas');
   await p.screenshot({ path: __dirname + '/shots/upnext-badges.png' });

@@ -209,17 +209,12 @@
       return promise;
     },
 
-    // episodios emitidos sin ver de cada serie empezada (imdb -> n), con la misma descarga que Seen
+    // episodios emitidos sin ver de cada serie empezada (imdb -> n), del mismo progreso que «Siguientes episodios».
+    // No se calcula con aired_episodes de la lista de vistas: puede contar especiales y episodios que el progreso no cuenta
     pendingMap: function () {
-      return Trakt.watchedShows().then(function (items) {
+      return Trakt.upNext().then(function (list) {
         var map = {};
-        (items || []).forEach(function (it) {
-          var sh = it.show;
-          if (!sh || !sh.ids || !sh.ids.imdb || !sh.aired_episodes) return;
-          var n = 0;
-          (it.seasons || []).forEach(function (se) { if (se.number > 0) n += (se.episodes || []).length; });
-          if (sh.aired_episodes > n) map[sh.ids.imdb] = sh.aired_episodes - n;
-        });
+        list.forEach(function (m) { if (m.left > 0) map[m.id] = m.left; });
         return map;
       });
     },
