@@ -238,13 +238,19 @@
       }
       var cont = continueList();
       if (cont.length) {
-        contWrap.appendChild(posterRow(tr('Continuar viendo'), cont.map(function (p) {
+        var contRow;
+        contWrap.appendChild(contRow = posterRow(tr('Continuar viendo'), cont.map(function (p) {
           return { id: p.metaId, type: p.type, name: p.name, poster: p.poster };
         }), function (m, i) {
           var p = cont[i];
           if (p.type === 'movie') resumeMovie(p);
           else push(detailScreen(p.type, p.metaId));
         }, cont.map(function (p) { return { pct: p.t / p.d, label: p.label || p.name }; })));
+        // la fila sale ya (es local); el número de pendientes de cada serie llega después con Trakt
+        if (Trakt.linked()) Trakt.withPending(cont.map(function (p) { return { id: p.metaId, type: p.type }; })).then(function (ms) {
+          var cards = contRow.querySelectorAll('.card');
+          ms.forEach(function (m, i) { if (m.left && cards[i]) cards[i].firstChild.appendChild(leftBadge(m.left)); });
+        });
       }
       var mine = Trakt.linked() ? [] : myListMetas(); // con Trakt, su lista sale más abajo
       if (mine.length) contWrap.appendChild(posterRow(tr('Mi lista'), mine, openMeta));
@@ -265,11 +271,11 @@
       var paused = shared(function () {
         return Trakt.playback().then(function (items) {
           var seen = {};
-          return items.filter(function (m) {
+          return Trakt.withPending(items.filter(function (m) {
             if (local[m.id] || seen[m.id]) return false; // ya está en «Continuar viendo»
             seen[m.id] = true;
             return true;
-          });
+          }));
         });
       });
       promiseRow(traktWrap, tr('Continuar (Trakt)'), paused, openMeta, true);
@@ -285,7 +291,7 @@
       var wl = shared(function () { return Trakt.loadWatchlist(); });
       var wlOf = function (type) { return function () { return wl().then(function (m) { return m.filter(function (x) { return x.type === type; }); }); }; };
       promiseRow(traktWrap, tr('Mi lista: películas'), wlOf('movie'), openMeta, true, 100);
-      promiseRow(traktWrap, tr('Mi lista: series'), wlOf('series'), openMeta, true, 100);
+      promiseRow(traktWrap, tr('Mi lista: series'), function () { return wlOf('series')().then(Trakt.withPending); }, openMeta, true, 100);
       var recs = function (kind) {
         return function () { return Promise.all([Trakt.recommendations(kind), seenReady()]).then(function (r) { return filterSeen(r[0]); }); };
       };
@@ -313,7 +319,7 @@
       if (Trakt.linked() && Date.now() - histLoaded < 120000) return;
       histLoaded = Date.now();
       histWrap.innerHTML = '';
-      promiseRow(histWrap, tr('Visto recientemente'), function () { return Trakt.linked() ? Trakt.history() : Promise.resolve(localHistory()); }, openMeta, true, 30);
+      promiseRow(histWrap, tr('Visto recientemente'), function () { return Trakt.linked() ? Trakt.history().then(Trakt.withPending) : Promise.resolve(localHistory()); }, openMeta, true, 30);
     }
     function localHistory() {
       var seen = {};

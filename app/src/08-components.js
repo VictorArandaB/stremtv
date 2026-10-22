@@ -11,7 +11,7 @@
       p.appendChild(bar);
     }
     if (extra && extra.isNew) p.appendChild(el('div', 'new', esc(tr('Nuevo'))));
-    if (extra && extra.left > 0) p.appendChild(el('div', 'left', String(extra.left)));
+    if (extra && extra.left > 0) p.appendChild(leftBadge(extra.left));
     // ✓ en lo ya visto (en las filas de progreso o historial no hace falta) y la nota al enfocarla
     // (en las pantallas con cabecera grande la nota sale en la cabecera y la de la carátula no se ve)
     if (!extra && isSeenMeta(meta)) p.appendChild(el('div', 'mark', '✓'));
@@ -22,6 +22,9 @@
     c._meta = meta;
     return focusable(c, onclick);
   }
+
+  // episodios pendientes de la serie (99+ para no tapar la carátula)
+  function leftBadge(n) { return el('div', 'left', n > 99 ? '99+' : String(n)); }
 
   // fila de carátulas vacías mientras llega la de verdad
   function skeleton() {

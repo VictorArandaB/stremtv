@@ -107,6 +107,7 @@
       Trakt.refreshing = null;
       Trakt.watchlist = {};
       Trakt.watchedCache = null; Trakt.upNextCache = null; Trakt.resumeCache = null;
+      Trakt.progressCache = {}; save('upnext', {});
       Seen.movies = {}; Seen.shows = {}; Seen.at = 0; Seen.loading = null;
     },
 
@@ -142,6 +143,9 @@
     // series empezadas con episodios ya emitidos pendientes, de la vista más recientemente a la más antigua (el «Up Next» de Trakt).
     // Se guarda 10 minutos (o hasta terminar de ver algo): son muchas consultas
     upNextCache: null,
+    // el progreso de cada serie (id de Trakt -> lw, ae, at, d), guardado en la tele: solo se vuelve a pedir si se ha visto algo
+    // de ella (last_watched_at), si se ha emitido otro episodio (aired_episodes), si el pendiente que faltaba ya ha salido o tras un día
+    progressCache: load('upnext', {}),
     // la lista completa de series vistas es la respuesta más pesada de Trakt: Seen y Siguientes episodios comparten la descarga
     watchedShows: function () {
       var c = Trakt.watchedCache;
@@ -168,10 +172,19 @@
           (it.seasons || []).forEach(function (se) { if (se.number > 0) n += (se.episodes || []).length; });
           return !sh.aired_episodes || n < sh.aired_episodes;
         }).sort(function (a, b) { return new Date(b.last_watched_at) - new Date(a.last_watched_at); }).slice(0, 150);
+        var cache = Trakt.progressCache, now = Date.now(), keep = {};
         // todas las series (no solo las recientes), como mucho 6 consultas a la vez para no saturar la tele ni Trakt
         return mapLimit(shows, 6, function (it) {
-          var sh = it.show;
-          return Trakt.call('GET', '/shows/' + sh.ids.trakt + '/progress/watched?hidden=false&specials=false&count_specials=false&extended=full').then(function (d) {
+          var sh = it.show, c = cache[sh.ids.trakt];
+          keep[sh.ids.trakt] = true;
+          var pending = c && c.d && c.d.next_episode && c.d.next_episode.first_aired, fresh = c && c.lw === it.last_watched_at &&
+            c.ae === sh.aired_episodes && now - c.at < 86400000 && !(pending && c.d.aired <= c.d.completed && new Date(pending) <= new Date());
+          return (fresh ? Promise.resolve(c.d) : Trakt.call('GET', '/shows/' + sh.ids.trakt + '/progress/watched?hidden=false&specials=false&count_specials=false&extended=full').then(function (d) {
+            d = d ? { aired: d.aired, completed: d.completed, next_episode: d.next_episode &&
+              { season: d.next_episode.season, number: d.next_episode.number, first_aired: d.next_episode.first_aired } } : null;
+            cache[sh.ids.trakt] = { lw: it.last_watched_at, ae: sh.aired_episodes, at: now, d: d };
+            return d;
+          })).then(function (d) {
             var e = d && d.next_episode;
             if (!e || (d.aired && d.completed >= d.aired)) return null; // al día: lo «siguiente» aún no se ha emitido
             if (e.first_aired && new Date(e.first_aired) > new Date()) return null;
@@ -180,6 +193,11 @@
               label: sh.title + ' · ' + tr('T{0}:E{1}', e.season, e.number), left: d.aired ? d.aired - d.completed : 0,
               isNew: !!(e.first_aired && Date.now() - new Date(e.first_aired) < 48 * 3600000) };
           }).catch(function () { return null; });
+        }).then(function (list) {
+          // las que ya no salen (terminadas, ocultas…) no se guardan
+          Object.keys(cache).forEach(function (id) { if (!keep[id]) delete cache[id]; });
+          save('upnext', cache);
+          return list;
         });
       }).then(function (list) {
         // los recién emitidos primero, el resto en su orden (de la serie vista más recientemente a la más antigua)
@@ -189,6 +207,28 @@
       Trakt.upNextCache = { at: Date.now(), promise: promise };
       promise.catch(function () { Trakt.upNextCache = null; });
       return promise;
+    },
+
+    // episodios emitidos sin ver de cada serie empezada (imdb -> n), con la misma descarga que Seen
+    pendingMap: function () {
+      return Trakt.watchedShows().then(function (items) {
+        var map = {};
+        (items || []).forEach(function (it) {
+          var sh = it.show;
+          if (!sh || !sh.ids || !sh.ids.imdb || !sh.aired_episodes) return;
+          var n = 0;
+          (it.seasons || []).forEach(function (se) { if (se.number > 0) n += (se.episodes || []).length; });
+          if (sh.aired_episodes > n) map[sh.ids.imdb] = sh.aired_episodes - n;
+        });
+        return map;
+      });
+    },
+    // pone .left en las series de la lista (si Trakt falla, la fila sale igual sin el número)
+    withPending: function (metas) {
+      return Trakt.pendingMap().catch(function () { return {}; }).then(function (map) {
+        metas.forEach(function (m) { if (m.type === 'series' && !m.left && map[imdbOfMeta(m)]) m.left = map[imdbOfMeta(m)]; });
+        return metas;
+      });
     },
 
     // añade o quita del historial películas y episodios marcados a mano
@@ -203,7 +243,8 @@
       var body = { movies: movies, shows: Object.keys(shows).map(function (imdb) {
         return { ids: { imdb: imdb }, seasons: Object.keys(shows[imdb]).map(function (n) { return { number: +n, episodes: shows[imdb][n] }; }) };
       }) };
-      Trakt.upNextCache = null; Trakt.watchedCache = null;
+      // al quitar algo del historial last_watched_at no cambia: se vuelve a pedir el progreso de todas
+      Trakt.upNextCache = null; Trakt.watchedCache = null; Trakt.progressCache = {};
       return Trakt.call('POST', '/sync/history' + (on ? '' : '/remove'), body);
     },
 

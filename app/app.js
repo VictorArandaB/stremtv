@@ -890,6 +890,7 @@
       Trakt.refreshing = null;
       Trakt.watchlist = {};
       Trakt.watchedCache = null; Trakt.upNextCache = null; Trakt.resumeCache = null;
+      Trakt.progressCache = {}; save('upnext', {});
       Seen.movies = {}; Seen.shows = {}; Seen.at = 0; Seen.loading = null;
     },
 
@@ -925,6 +926,9 @@
     // series empezadas con episodios ya emitidos pendientes, de la vista más recientemente a la más antigua (el «Up Next» de Trakt).
     // Se guarda 10 minutos (o hasta terminar de ver algo): son muchas consultas
     upNextCache: null,
+    // el progreso de cada serie (id de Trakt -> lw, ae, at, d), guardado en la tele: solo se vuelve a pedir si se ha visto algo
+    // de ella (last_watched_at), si se ha emitido otro episodio (aired_episodes), si el pendiente que faltaba ya ha salido o tras un día
+    progressCache: load('upnext', {}),
     // la lista completa de series vistas es la respuesta más pesada de Trakt: Seen y Siguientes episodios comparten la descarga
     watchedShows: function () {
       var c = Trakt.watchedCache;
@@ -951,10 +955,19 @@
           (it.seasons || []).forEach(function (se) { if (se.number > 0) n += (se.episodes || []).length; });
           return !sh.aired_episodes || n < sh.aired_episodes;
         }).sort(function (a, b) { return new Date(b.last_watched_at) - new Date(a.last_watched_at); }).slice(0, 150);
+        var cache = Trakt.progressCache, now = Date.now(), keep = {};
         // todas las series (no solo las recientes), como mucho 6 consultas a la vez para no saturar la tele ni Trakt
         return mapLimit(shows, 6, function (it) {
-          var sh = it.show;
-          return Trakt.call('GET', '/shows/' + sh.ids.trakt + '/progress/watched?hidden=false&specials=false&count_specials=false&extended=full').then(function (d) {
+          var sh = it.show, c = cache[sh.ids.trakt];
+          keep[sh.ids.trakt] = true;
+          var pending = c && c.d && c.d.next_episode && c.d.next_episode.first_aired, fresh = c && c.lw === it.last_watched_at &&
+            c.ae === sh.aired_episodes && now - c.at < 86400000 && !(pending && c.d.aired <= c.d.completed && new Date(pending) <= new Date());
+          return (fresh ? Promise.resolve(c.d) : Trakt.call('GET', '/shows/' + sh.ids.trakt + '/progress/watched?hidden=false&specials=false&count_specials=false&extended=full').then(function (d) {
+            d = d ? { aired: d.aired, completed: d.completed, next_episode: d.next_episode &&
+              { season: d.next_episode.season, number: d.next_episode.number, first_aired: d.next_episode.first_aired } } : null;
+            cache[sh.ids.trakt] = { lw: it.last_watched_at, ae: sh.aired_episodes, at: now, d: d };
+            return d;
+          })).then(function (d) {
             var e = d && d.next_episode;
             if (!e || (d.aired && d.completed >= d.aired)) return null; // al día: lo «siguiente» aún no se ha emitido
             if (e.first_aired && new Date(e.first_aired) > new Date()) return null;
@@ -963,6 +976,11 @@
               label: sh.title + ' · ' + tr('T{0}:E{1}', e.season, e.number), left: d.aired ? d.aired - d.completed : 0,
               isNew: !!(e.first_aired && Date.now() - new Date(e.first_aired) < 48 * 3600000) };
           }).catch(function () { return null; });
+        }).then(function (list) {
+          // las que ya no salen (terminadas, ocultas…) no se guardan
+          Object.keys(cache).forEach(function (id) { if (!keep[id]) delete cache[id]; });
+          save('upnext', cache);
+          return list;
         });
       }).then(function (list) {
         // los recién emitidos primero, el resto en su orden (de la serie vista más recientemente a la más antigua)
@@ -972,6 +990,28 @@
       Trakt.upNextCache = { at: Date.now(), promise: promise };
       promise.catch(function () { Trakt.upNextCache = null; });
       return promise;
+    },
+
+    // episodios emitidos sin ver de cada serie empezada (imdb -> n), con la misma descarga que Seen
+    pendingMap: function () {
+      return Trakt.watchedShows().then(function (items) {
+        var map = {};
+        (items || []).forEach(function (it) {
+          var sh = it.show;
+          if (!sh || !sh.ids || !sh.ids.imdb || !sh.aired_episodes) return;
+          var n = 0;
+          (it.seasons || []).forEach(function (se) { if (se.number > 0) n += (se.episodes || []).length; });
+          if (sh.aired_episodes > n) map[sh.ids.imdb] = sh.aired_episodes - n;
+        });
+        return map;
+      });
+    },
+    // pone .left en las series de la lista (si Trakt falla, la fila sale igual sin el número)
+    withPending: function (metas) {
+      return Trakt.pendingMap().catch(function () { return {}; }).then(function (map) {
+        metas.forEach(function (m) { if (m.type === 'series' && !m.left && map[imdbOfMeta(m)]) m.left = map[imdbOfMeta(m)]; });
+        return metas;
+      });
     },
 
     // añade o quita del historial películas y episodios marcados a mano
@@ -986,7 +1026,8 @@
       var body = { movies: movies, shows: Object.keys(shows).map(function (imdb) {
         return { ids: { imdb: imdb }, seasons: Object.keys(shows[imdb]).map(function (n) { return { number: +n, episodes: shows[imdb][n] }; }) };
       }) };
-      Trakt.upNextCache = null; Trakt.watchedCache = null;
+      // al quitar algo del historial last_watched_at no cambia: se vuelve a pedir el progreso de todas
+      Trakt.upNextCache = null; Trakt.watchedCache = null; Trakt.progressCache = {};
       return Trakt.call('POST', '/sync/history' + (on ? '' : '/remove'), body);
     },
 
@@ -1700,7 +1741,7 @@
       p.appendChild(bar);
     }
     if (extra && extra.isNew) p.appendChild(el('div', 'new', esc(tr('Nuevo'))));
-    if (extra && extra.left > 0) p.appendChild(el('div', 'left', String(extra.left)));
+    if (extra && extra.left > 0) p.appendChild(leftBadge(extra.left));
     // ✓ en lo ya visto (en las filas de progreso o historial no hace falta) y la nota al enfocarla
     // (en las pantallas con cabecera grande la nota sale en la cabecera y la de la carátula no se ve)
     if (!extra && isSeenMeta(meta)) p.appendChild(el('div', 'mark', '✓'));
@@ -1711,6 +1752,9 @@
     c._meta = meta;
     return focusable(c, onclick);
   }
+
+  // episodios pendientes de la serie (99+ para no tapar la carátula)
+  function leftBadge(n) { return el('div', 'left', n > 99 ? '99+' : String(n)); }
 
   // fila de carátulas vacías mientras llega la de verdad
   function skeleton() {
@@ -2074,13 +2118,19 @@
       }
       var cont = continueList();
       if (cont.length) {
-        contWrap.appendChild(posterRow(tr('Continuar viendo'), cont.map(function (p) {
+        var contRow;
+        contWrap.appendChild(contRow = posterRow(tr('Continuar viendo'), cont.map(function (p) {
           return { id: p.metaId, type: p.type, name: p.name, poster: p.poster };
         }), function (m, i) {
           var p = cont[i];
           if (p.type === 'movie') resumeMovie(p);
           else push(detailScreen(p.type, p.metaId));
         }, cont.map(function (p) { return { pct: p.t / p.d, label: p.label || p.name }; })));
+        // la fila sale ya (es local); el número de pendientes de cada serie llega después con Trakt
+        if (Trakt.linked()) Trakt.withPending(cont.map(function (p) { return { id: p.metaId, type: p.type }; })).then(function (ms) {
+          var cards = contRow.querySelectorAll('.card');
+          ms.forEach(function (m, i) { if (m.left && cards[i]) cards[i].firstChild.appendChild(leftBadge(m.left)); });
+        });
       }
       var mine = Trakt.linked() ? [] : myListMetas(); // con Trakt, su lista sale más abajo
       if (mine.length) contWrap.appendChild(posterRow(tr('Mi lista'), mine, openMeta));
@@ -2101,11 +2151,11 @@
       var paused = shared(function () {
         return Trakt.playback().then(function (items) {
           var seen = {};
-          return items.filter(function (m) {
+          return Trakt.withPending(items.filter(function (m) {
             if (local[m.id] || seen[m.id]) return false; // ya está en «Continuar viendo»
             seen[m.id] = true;
             return true;
-          });
+          }));
         });
       });
       promiseRow(traktWrap, tr('Continuar (Trakt)'), paused, openMeta, true);
@@ -2121,7 +2171,7 @@
       var wl = shared(function () { return Trakt.loadWatchlist(); });
       var wlOf = function (type) { return function () { return wl().then(function (m) { return m.filter(function (x) { return x.type === type; }); }); }; };
       promiseRow(traktWrap, tr('Mi lista: películas'), wlOf('movie'), openMeta, true, 100);
-      promiseRow(traktWrap, tr('Mi lista: series'), wlOf('series'), openMeta, true, 100);
+      promiseRow(traktWrap, tr('Mi lista: series'), function () { return wlOf('series')().then(Trakt.withPending); }, openMeta, true, 100);
       var recs = function (kind) {
         return function () { return Promise.all([Trakt.recommendations(kind), seenReady()]).then(function (r) { return filterSeen(r[0]); }); };
       };
@@ -2149,7 +2199,7 @@
       if (Trakt.linked() && Date.now() - histLoaded < 120000) return;
       histLoaded = Date.now();
       histWrap.innerHTML = '';
-      promiseRow(histWrap, tr('Visto recientemente'), function () { return Trakt.linked() ? Trakt.history() : Promise.resolve(localHistory()); }, openMeta, true, 30);
+      promiseRow(histWrap, tr('Visto recientemente'), function () { return Trakt.linked() ? Trakt.history().then(Trakt.withPending) : Promise.resolve(localHistory()); }, openMeta, true, 30);
     }
     function localHistory() {
       var seen = {};
@@ -5121,7 +5171,7 @@
 
   // ---------------------------------------------------------------- arranque
 
-  var VERSION = '0.21.1';
+  var VERSION = '0.22.0';
 
   function fitScreen() {
     var z = window.innerWidth / 1920;

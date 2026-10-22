@@ -43,7 +43,7 @@ Escrito en ES5 y CSS sin funciones modernas para que funcione en el motor web de
 - **Saltar intro en cualquier serie**: si saltas la intro en un episodio (de 30 s a 3 min hacia delante en los 10 primeros minutos), los siguientes ofrecen «⏭ OK: saltar intro» en el mismo tramo. En el anime manda AniSkip.
 - **Teclas 0-9 en el vídeo**: 1-9 van al 10 %-90 % y 0 al principio; la burbuja al avanzar dice también cuánto se salta.
 - **Cola desde el móvil**: escribe títulos o enlaces de IMDb en `cola.txt` del Gist de la copia y llegan a Mi lista en unos minutos («ver …» abre además su ficha).
-- **Siguientes episodios** con «Nuevo» (emitidos en las últimas 48 h, primero) y barra con lo visto de la serie.
+- **Siguientes episodios** con «Nuevo» (emitidos en las últimas 48 h, primero) y una insignia con los episodios que faltan por ver (también en Continuar, Mi lista y Visto recientemente). El progreso de cada serie se guarda en la tele y solo se vuelve a pedir a Trakt si ha cambiado.
 - **Trakt**: vinculación con código, scrobble automático (visto al pasar del 80 %), «Continuar», tu lista, recomendaciones y episodios vistos. El anime se registra usando su equivalencia en IMDb.
 
 ## Instalar en TizenBrew
@@ -77,6 +77,8 @@ La clave solo se guarda en la tele.
 
 ## Desarrollo
 El código está partido en módulos en `app/src/` (por orden: base, idioma, ajustes, Trakt, navegación, pantallas, reproductor…). La tele carga un solo `app/app.js`, que se genera uniéndolos: **se edita en `app/src/` y después se ejecuta `node tools/build-app.js`** (`--check` dice si está al día; `build-wgt.sh` no empaqueta uno desfasado). Los módulos comparten una sola función (`00-base.js` la abre y `16-start.js` la cierra), así que por separado no son JavaScript válido.
+
+Tests (Chrome + puppeteer-core): `cd test && npm install && npm test` los pasa todos de uno en uno y dice cuáles fallan (sirve `app/` en los puertos 8090 y 8091 si no hay nada en ellos); `node test/run-all.js upnext v20` pasa solo esos. `update.js` y `loader2.js` se saltan: necesitan un paquete firmado o la red y se pasan a mano.
 ```
 node tools/build-app.js                 # genera app/app.js desde app/src
 cd app && python3 -m http.server 8090   # abrir http://127.0.0.1:8090 (flechas, Intro, Esc)
