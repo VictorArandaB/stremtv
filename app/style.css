@@ -211,6 +211,14 @@ html, body { width: 1920px; height: 1080px; overflow: hidden; background: #0d0f1
 #stallbox .un-label { font-size: 24px; color: #f0c850; }
 #stallbox .un-title { font-size: 34px; font-weight: bold; color: #fff; margin: 8px 0 12px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #stallbox .un-help { font-size: 24px; color: #ccd; }
+/* Sin conexión: fijo arriba, encima de todo salvo los avisos */
+#netbox { position: absolute; left: 50%; top: 30px; width: 900px; margin-left: -450px; text-align: center; padding: 18px 30px;
+  background: rgba(13,15,20,0.94); border: 2px solid #f0b400; border-radius: 16px; z-index: 99; }
+#netbox .nb-title { font-size: 32px; font-weight: bold; color: #f0c850; }
+#netbox .nb-help { font-size: 24px; color: #ccd; margin-top: 6px; }
+/* Fuentes que esta tele no reproduce bien: plegadas al final */
+.sgroup.bad { color: #f0c850; padding: 18px 20px; margin-top: 10px; border: 2px solid transparent; border-radius: 12px; }
+.sgroup.bad.focused { border-color: #fff; background: #262b3d; }
 
 /* Subtítulos con fondo (ajuste) y aviso del certificado */
 #subs.bg { text-shadow: none; }

@@ -23,9 +23,13 @@
     };
   })();
 
-  // Formato a partir del nombre del archivo; risk alto = probable error de descodificación
+  // Formato a partir del nombre del archivo; risk alto = probable error de descodificación.
+  // bad: lo que esta tele no reproduce o no se ve bien (AV1; Dolby Vision sin capa HDR10, que sale con colores
+  // morados y verdes; H.264 en 4K, que es nivel 5.1); la razón, para enseñarla
   function mediaInfo(name) {
     var hevc = /x\.?265|h\.?265|hevc/i.test(name);
+    var avc = !hevc && /x\.?264|h\.?264|(^|[^a-z0-9])avc([^a-z0-9]|$)/i.test(name);
+    var uhd = /2160|4k|uhd/i.test(name);
     var av1 = /(^|[^a-z0-9])av1([^a-z0-9]|$)/i.test(name);
     var dv = /(^|[^a-z0-9])(dv|dovi)([^a-z0-9]|$)|dolby.?vision/i.test(name);
     var tenbit = dv || /10.?bit|hdr/i.test(name);
@@ -40,7 +44,8 @@
     if (dts) risk += Codecs.dts ? 1 : 4;
     if (eac3 && !Codecs.eac3) risk += 2;
     if (remux) risk += 2;
-    return { hevc: hevc, av1: av1, dv: dv, tenbit: tenbit, dts: dts, h264: !hevc && !av1, risk: risk };
+    var bad = av1 && !Codecs.av1 ? 'AV1' : dv && !/hdr/i.test(name) ? tr('Dolby Vision sin HDR10') : avc && uhd ? tr('H.264 en 4K') : '';
+    return { hevc: hevc, av1: av1, dv: dv, tenbit: tenbit, dts: dts, h264: !hevc && !av1, risk: risk, bad: bad };
   }
 
   function parseStream(s) {
@@ -193,7 +198,7 @@
           x.heavy = !!(limit && x.mbps && x.mbps > limit);
         });
         // orden: primero lo que la tele puede reproducir y cabe en la conexión, después español, después el del addon
-        var tier = function (x) { return (x.heavy ? 3 : 0) + (!settings.compatFirst ? 0 : x.media.risk <= 1 ? 0 : x.media.risk <= 3 ? 1 : 2); };
+        var tier = function (x) { return (x.media.bad ? 10 : 0) + (x.heavy ? 3 : 0) + (!settings.compatFirst ? 0 : x.media.risk <= 1 ? 0 : x.media.risk <= 3 ? 1 : 2); };
         // en series, antes que nada la misma release que se vio en el episodio anterior
         var pref = ctx.type === 'series' ? srcPrefs[ctx.metaId] : null;
         streams.forEach(function (x) { x.pref = prefScore(x, pref); });
@@ -209,6 +214,12 @@
         sub.textContent = tr(streams.length === 1 ? '1 fuente · {0}' : '{1} fuentes · {0}', DEBRID_NAMES[settings.debrid], streams.length) +
           (limit ? tr(' · tu conexión: hasta ~{0} Mb/s', limit) : '');
         list.innerHTML = '';
+        // las que esta tele no reproduce bien van aparte al final, plegadas, y nunca se eligen solas; si solo hay de esas, se ven todas
+        var bad = [];
+        if (streams.some(function (x) { return !x.media.bad; })) {
+          bad = streams.filter(function (x) { return x.media.bad; });
+          streams = streams.filter(function (x) { return !x.media.bad; });
+        }
         // la recomendada (la que elige «▶ Ver»): la misma release que antes en esta serie o, si no, la primera instantánea que quepa
         var rec = null;
         for (var i = 0; i < streams.length && !rec; i++) if (streams[i].pref >= 2 || (streams[i].cached && !streams[i].heavy)) rec = streams[i];
@@ -227,14 +238,13 @@
           if (grouped) ordered.push({ head: g || tr('Otras'), n: byQ[g].length });
           ordered = ordered.concat(byQ[g]);
         });
-        ordered.forEach(function (s) {
-          if (s.head) { list.appendChild(el('div', 'sgroup', esc(s.head) + ' · ' + (s.n === 1 ? tr('1 fuente') : tr('{0} fuentes', s.n)))); return; }
+        function makeRow(s) {
           var row = el('div', 'stream' + (s === rec ? ' rec' : ''));
           var g = qualityGroup(s.quality), q = s.quality.replace(/4k/i, '4K');
           // agrupadas, la calidad ya está en el título del grupo: solo se repite si dice algo más («4K DV»)
           if (!grouped) row.appendChild(el('div', 'q', '<span class="' + (g === '4K' ? 'q4k' : g === '1080p' ? 'q1080' : g === '720p' ? 'q720' : '') + '">' + esc(q) + '</span>'));
           var info = el('div', 'info');
-          var badges = grouped && q !== g && q ? '<span class="badge">' + esc(q) + '</span>' : '';
+          var badges = grouped && (q !== g || s.media.bad) && q ? '<span class="badge">' + esc(q) + '</span>' : '';
           if (s === rec) badges += '<span class="badge rec">' + tr('★ Recomendada') + '</span>';
           if (s.pref >= 2) badges += '<span class="badge ok">' + tr('↺ Como el anterior') + '</span>';
           if (s.addon) badges += '<span class="badge addon">' + esc(s.addon) + '</span>';
@@ -243,21 +253,40 @@
           else if (s.download) badges += '<span class="badge">' + tr('Descargar en debrid') + '</span>';
           if (s.es) badges += '<span class="badge es">ES</span>';
           var m = s.media;
-          if (m.av1) badges += '<span class="badge warn">AV1</span>';
-          else if (m.hevc) badges += '<span class="badge' + (Codecs.hevc ? '' : ' warn') + '">HEVC</span>';
-          else badges += '<span class="badge ok">H.264</span>';
-          if (m.dv) badges += '<span class="badge warn">Dolby Vision</span>';
-          else if (m.tenbit) badges += '<span class="badge' + (Codecs.hevc10 ? '' : ' warn') + '">10-bit/HDR</span>';
+          // en las que no se ven bien, en vez del formato, por qué
+          if (m.bad) badges += '<span class="badge warn">' + esc(tr('✕ {0}', m.bad)) + '</span>';
+          else {
+            if (m.av1) badges += '<span class="badge warn">AV1</span>';
+            else if (m.hevc) badges += '<span class="badge' + (Codecs.hevc ? '' : ' warn') + '">HEVC</span>';
+            else badges += '<span class="badge ok">H.264</span>';
+            if (m.dv) badges += '<span class="badge warn">Dolby Vision</span>';
+            else if (m.tenbit) badges += '<span class="badge' + (Codecs.hevc10 ? '' : ' warn') + '">10-bit/HDR</span>';
+          }
           if (m.dts) badges += '<span class="badge' + (Codecs.dts ? '' : ' warn') + '">DTS/TrueHD</span>';
           if (s.mbps) badges += '<span class="badge' + (s.heavy ? ' warn' : '') + '">~' + num(s.mbps) + ' Mb/s' + (s.heavy ? tr(' · pesada') : '') + '</span>';
           info.appendChild(el('div', 't1', badges + '<span class="fname">' + esc(s.file) + '</span>'));
           info.appendChild(el('div', 't2', esc(s.stats + '   ' + s.langs)));
           row.appendChild(info);
           focusable(row, function () { Player.open(s, ctx, row); });
-          list.appendChild(row);
           s._row = row;
           row._stream = s;
+          return row;
+        }
+        ordered.forEach(function (s) {
+          if (s.head) { list.appendChild(el('div', 'sgroup', esc(s.head) + ' · ' + (s.n === 1 ? tr('1 fuente') : tr('{0} fuentes', s.n)))); return; }
+          list.appendChild(makeRow(s));
         });
+        if (bad.length) {
+          var fold = el('div', 'sgroup bad', esc(tr(bad.length === 1 ? '⚠ 1 fuente que esta tele no puede reproducir bien · OK para verla'
+            : '⚠ {0} fuentes que esta tele no puede reproducir bien · OK para verlas', bad.length)));
+          focusable(fold, function () {
+            fold.classList.remove('f', 'focused');
+            fold.textContent = tr('⚠ No se ven bien en esta tele') + ' · ' + (bad.length === 1 ? tr('1 fuente') : tr('{0} fuentes', bad.length));
+            bad.forEach(function (s) { list.appendChild(makeRow(s)); });
+            Nav.setRoot(root, bad[0]._row);
+          });
+          list.appendChild(fold);
+        }
         // reproducción directa: la recomendada
         var auto = ctx.autoPlay ? { s: rec, row: rec._row } : null;
         if (auto && isTop(screen)) {
@@ -272,6 +301,11 @@
         logEv('fuentes', e.message, { id: ctx.videoId });
         sub.textContent = '';
         message(tr('No se pudieron obtener las fuentes ({0}). Pulsa Atrás e inténtalo de nuevo.', e.message));
+        // sin red: se vuelven a buscar solas cuando vuelva
+        if (e.status === 0) Net.whenBack(alive(screen, function () {
+          message(tr('Cargando…'));
+          fetchStreams();
+        }));
       });
     }
     fetchStreams();

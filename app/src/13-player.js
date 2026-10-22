@@ -707,7 +707,7 @@
       if (!list) return null;
       var RANK = { '4K': 4, '1080p': 3, '720p': 2, SD: 1 }, cur = row._stream || this.stream || {};
       var mine = RANK[qualityGroup(cur.quality || '')] || 0;
-      var rows = Array.prototype.filter.call(list.querySelectorAll('.stream'), function (r) { return r._stream && r !== row && !r._failed; });
+      var rows = Array.prototype.filter.call(list.querySelectorAll('.stream'), function (r) { return r._stream && r !== row && !r._failed && !r._stream.media.bad; });
       var rank = function (r) { return RANK[qualityGroup(r._stream.quality || '')] || 0; };
       var same = rows.filter(function (r) { return rank(r) === mine; })[0];
       if (lighter) return rows.filter(function (r) { return rank(r) < mine && rank(r) >= 2; })[0] || same || null;

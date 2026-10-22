@@ -20,7 +20,7 @@ const check = (ok, what) => { console.log((ok ? 'OK  ' : 'MAL ') + what); if (!o
     if (u.indexOf('/stream/') >= 0) {
       streamReqs.push(u);
       return req.respond({ status: 200, headers: cors, contentType: 'application/json', body: JSON.stringify({ streams: [
-        st('1080p', 'Movie.1080p.WEB-DL-AAA.mkv'), st('4k DV', 'Movie.2160p.DV.x265-BBB.mkv'), st('720p', 'Movie.720p-CCC.mkv')] }) });
+        st('1080p', 'Movie.1080p.WEB-DL-AAA.mkv'), st('4k DV', 'Movie.2160p.DV.HDR10.x265-BBB.mkv'), st('720p', 'Movie.720p-CCC.mkv')] }) });
     }
     if (u.indexOf('opensubtitles-v3') >= 0) return req.respond({ status: 200, headers: cors, contentType: 'application/json', body: '{"subtitles":[]}' });
     if (u.indexOf('/poster/small/tt0000404/') >= 0) return req.respond({ status: 404, headers: cors, body: '' });

@@ -6,6 +6,8 @@
     // general
     'respuesta no válida': 'invalid response', 'sin conexión': 'no connection', 'tiempo de espera agotado': 'timed out',
     'medida no válida': 'invalid measurement', 'sin datos': 'no data',
+    'Sin conexión a internet': 'No internet connection', 'Lo que no ha cargado se cargará solo cuando vuelva': 'Anything that didn’t load will load by itself once it’s back',
+    'Conexión recuperada': 'Connection restored',
     'Sí': 'Yes', 'No': 'No', 'sí ({0})': 'yes ({0})', 'no': 'no',
     '¿Salir de StremTV?': 'Exit StremTV?', 'Salir': 'Exit', 'Cancelar': 'Cancel', 'Cargando…': 'Loading…',
     'Sin resultados': 'No results', 'No se pudo cargar ({0})': 'Could not load ({0})',
@@ -225,6 +227,10 @@
       ' · Catalog: Cinemeta · Sources: your add-ons · Subtitles: OpenSubtitles · Player: {0}',
     // aspecto: ficha, fuentes, reproductor, protector de pantalla
     '▶ Continuar {0}': '▶ Resume {0}', '▶ Ver {0}': '▶ Watch {0}', 'Otras': 'Other', '1 fuente': '1 source', '{0} fuentes': '{0} sources',
+    '⚠ 1 fuente que esta tele no puede reproducir bien · OK para verla': '⚠ 1 source this TV can’t play properly · OK to show it',
+    '⚠ {0} fuentes que esta tele no puede reproducir bien · OK para verlas': '⚠ {0} sources this TV can’t play properly · OK to show them',
+    '⚠ No se ven bien en esta tele': '⚠ Won’t play properly on this TV', '✕ {0}': '✕ {0}',
+    'Dolby Vision sin HDR10': 'Dolby Vision without HDR10', 'H.264 en 4K': 'H.264 in 4K',
     '★ Recomendada': '★ Recommended', 'pausa': 'pause', 'avanzar/retroceder': 'seek', 'audio, fuente y temporizador': 'audio, source & sleep timer', 'Audio, fuente y temporizador': 'Audio, source and sleep timer',
     '⇄ Cambiar fuente…': '⇄ Change source…', 'Cambiar fuente': 'Change source', 'No hay otras fuentes para este vídeo': 'There are no other sources for this video',
     'información': 'info', 'salir': 'exit', 'Fuente': 'Source', 'Archivo': 'File', 'incrustados': 'embedded', 'Reproductor': 'Player',

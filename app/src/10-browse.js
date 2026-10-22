@@ -105,6 +105,12 @@
         if (g !== gen) return;
         loading = false;
         status.textContent = tr('No se pudo cargar ({0})', e.message);
+        // sin red: la misma página otra vez al volver, si no se han cambiado los filtros ni se ha cerrado
+        if (e.status === 0) Net.whenBack(function () {
+          if (g !== gen || loading || !document.body.contains(status)) return;
+          results.removeChild(status);
+          loadPage(hadFocus);
+        });
       });
     }
     loadPage();

@@ -47,13 +47,83 @@
       for (var h in o.headers || {}) x.setRequestHeader(h, o.headers[h]);
       var fail = function (status, msg) { reject(extend(new Error(msg), { status: status })); };
       x.onload = function () {
+        if (!o.probe) Net.alive();
         if (x.status >= 200 && x.status < 300) return resolve(x.responseText);
         fail(x.status, (o.fail && o.fail(x.status)) || 'HTTP ' + x.status);
       };
-      x.onerror = function () { fail(0, tr('sin conexión')); };
+      x.onerror = function () { if (!o.probe) Net.check(); fail(0, tr('sin conexión')); };
       x.ontimeout = function () { fail(0, tr('tiempo de espera agotado')); };
       x.send(o.body === undefined ? null : o.body);
     });
+  }
+
+  // ---------------------------------------------------------------- conexión
+  // Una petición sin respuesta (o el evento offline de la tele) hace comprobar si hay internet pidiendo dos servicios
+  // distintos: si no responde ninguno, la red está caída (aviso fijo arriba) y se vuelve a probar cada 10 s.
+  // Si responde alguno, solo fallaba aquel servicio. Al volver la red se ejecuta lo que esperaba con Net.whenBack;
+  // si resulta que no estaba caída, lo de «otherwise»
+  var Net = {
+    down: false, since: 0, checking: false, waiting: [], timer: null,
+    // espera la conclusión de la comprobación en curso (o la empieza)
+    whenBack: function (back, otherwise) {
+      Net.waiting.push({ back: back, otherwise: otherwise });
+      if (!Net.down) Net.check();
+    },
+    check: function () {
+      if (Net.checking) return;
+      Net.checking = true;
+      var probe = function (url) { return xhr('GET', url + '?t=' + Date.now(), { timeout: 8000, probe: true }); };
+      var any = new Promise(function (resolve) {
+        var left = 2, no = function () { if (--left === 0) resolve(false); };
+        probe(CINEMETA + '/manifest.json').then(function () { resolve(true); }, no);
+        probe('https://cdn.jsdelivr.net/gh/VictorArandaB/stremtv@main/package.json').then(function () { resolve(true); }, no);
+      });
+      any.then(function (ok) {
+        Net.checking = false;
+        if (ok) Net.alive(); else Net.lost();
+      });
+    },
+    lost: function () {
+      clearTimeout(Net.timer);
+      Net.timer = setTimeout(Net.check, 10000);
+      if (Net.down) return;
+      Net.down = true;
+      Net.since = Date.now();
+      logEv('red', 'sin conexión');
+      var box = $('#netbox');
+      if (!box) {
+        box = el('div', '', '<div class="nb-title"></div><div class="nb-help"></div>');
+        box.id = 'netbox';
+        document.body.appendChild(box);
+      }
+      box.firstChild.textContent = '⚠ ' + tr('Sin conexión a internet');
+      box.lastChild.textContent = tr('Lo que no ha cargado se cargará solo cuando vuelva');
+      box.classList.remove('hidden');
+    },
+    alive: function () {
+      clearTimeout(Net.timer);
+      var was = Net.down, list = Net.waiting;
+      Net.down = false;
+      Net.waiting = [];
+      if (was) {
+        logEv('red', 'conexión recuperada', { s: Math.round((Date.now() - Net.since) / 1000) });
+        var box = $('#netbox');
+        if (box) box.classList.add('hidden');
+        toast(tr('Conexión recuperada'), 2500);
+      }
+      list.forEach(function (w) {
+        var fn = was ? w.back : w.otherwise;
+        if (fn) try { fn(); } catch (e) { /* lo de una pantalla no frena al resto */ }
+      });
+    }
+  };
+  window.addEventListener('offline', function () { Net.lost(); });
+  window.addEventListener('online', function () { if (Net.down) Net.check(); });
+  // una función que da la misma promesa a quien la pida, salvo si falló: entonces la vuelve a pedir
+  // (para filas que comparten datos y se reintentan al volver la red)
+  function shared(fn) {
+    var p = null;
+    return function () { return p || (p = fn().catch(function (e) { p = null; throw e; })); };
   }
   // JSON estricto (respuesta rota = error) o tolerante (vacía o rota = null: las APIs que responden 204)
   function strictJSON(txt) { try { return JSON.parse(txt); } catch (e) { throw new Error(tr('respuesta no válida')); } }

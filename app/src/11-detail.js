@@ -68,23 +68,33 @@
       var own = addonsFor('meta', type, id)[0];
       metaFrom = own ? own.url + '/meta/' + type + '/' + id + '.json' : null;
     }
-    (metaFrom ? getJSON(metaFrom) : Promise.reject(new Error(tr('sin datos')))).then(function (res) {
-      meta = res.meta;
-      if (!meta) throw new Error(tr('sin datos'));
-      if (isAnime) type = meta.type === 'movie' ? 'movie' : 'series';
-      if (!tmdbOn() || !imdbOf()) return render();
-      return withTimeout(tmdbDetail(imdbOf()), 2500).then(function (es) {
-        if (es) {
-          if (es.name) meta.name = es.name;
-          if (es.overview) meta.description = es.overview;
-          if (es.genres.length) meta.genres = es.genres;
-          meta._tmdb = es;
-        }
-      }, function () { /* sin traducción: en inglés */ }).then(render);
-    }).catch(function (e) {
-      d.innerHTML = '';
-      d.appendChild(el('div', 'loading', esc(tr('No se pudo cargar ({0})', e.message))));
-    });
+    function loadMeta() {
+      (metaFrom ? getJSON(metaFrom) : Promise.reject(new Error(tr('sin datos')))).then(function (res) {
+        meta = res.meta;
+        if (!meta) throw new Error(tr('sin datos'));
+        if (isAnime) type = meta.type === 'movie' ? 'movie' : 'series';
+        if (!tmdbOn() || !imdbOf()) return render();
+        return withTimeout(tmdbDetail(imdbOf()), 2500).then(function (es) {
+          if (es) {
+            if (es.name) meta.name = es.name;
+            if (es.overview) meta.description = es.overview;
+            if (es.genres.length) meta.genres = es.genres;
+            meta._tmdb = es;
+          }
+        }, function () { /* sin traducción: en inglés */ }).then(render);
+      }).catch(function (e) {
+        if (screen.closed) return;
+        d.innerHTML = '';
+        d.appendChild(el('div', 'loading', esc(tr('No se pudo cargar ({0})', e.message))));
+        // sin red: se vuelve a intentar sola cuando vuelva
+        if (e.status === 0) Net.whenBack(alive(screen, function () {
+          d.innerHTML = '';
+          d.appendChild(el('div', 'loading', tr('Cargando…')));
+          loadMeta();
+        }));
+      });
+    }
+    loadMeta();
 
     function infoParts() {
       var parts = [];

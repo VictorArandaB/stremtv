@@ -48,13 +48,83 @@
       for (var h in o.headers || {}) x.setRequestHeader(h, o.headers[h]);
       var fail = function (status, msg) { reject(extend(new Error(msg), { status: status })); };
       x.onload = function () {
+        if (!o.probe) Net.alive();
         if (x.status >= 200 && x.status < 300) return resolve(x.responseText);
         fail(x.status, (o.fail && o.fail(x.status)) || 'HTTP ' + x.status);
       };
-      x.onerror = function () { fail(0, tr('sin conexión')); };
+      x.onerror = function () { if (!o.probe) Net.check(); fail(0, tr('sin conexión')); };
       x.ontimeout = function () { fail(0, tr('tiempo de espera agotado')); };
       x.send(o.body === undefined ? null : o.body);
     });
+  }
+
+  // ---------------------------------------------------------------- conexión
+  // Una petición sin respuesta (o el evento offline de la tele) hace comprobar si hay internet pidiendo dos servicios
+  // distintos: si no responde ninguno, la red está caída (aviso fijo arriba) y se vuelve a probar cada 10 s.
+  // Si responde alguno, solo fallaba aquel servicio. Al volver la red se ejecuta lo que esperaba con Net.whenBack;
+  // si resulta que no estaba caída, lo de «otherwise»
+  var Net = {
+    down: false, since: 0, checking: false, waiting: [], timer: null,
+    // espera la conclusión de la comprobación en curso (o la empieza)
+    whenBack: function (back, otherwise) {
+      Net.waiting.push({ back: back, otherwise: otherwise });
+      if (!Net.down) Net.check();
+    },
+    check: function () {
+      if (Net.checking) return;
+      Net.checking = true;
+      var probe = function (url) { return xhr('GET', url + '?t=' + Date.now(), { timeout: 8000, probe: true }); };
+      var any = new Promise(function (resolve) {
+        var left = 2, no = function () { if (--left === 0) resolve(false); };
+        probe(CINEMETA + '/manifest.json').then(function () { resolve(true); }, no);
+        probe('https://cdn.jsdelivr.net/gh/VictorArandaB/stremtv@main/package.json').then(function () { resolve(true); }, no);
+      });
+      any.then(function (ok) {
+        Net.checking = false;
+        if (ok) Net.alive(); else Net.lost();
+      });
+    },
+    lost: function () {
+      clearTimeout(Net.timer);
+      Net.timer = setTimeout(Net.check, 10000);
+      if (Net.down) return;
+      Net.down = true;
+      Net.since = Date.now();
+      logEv('red', 'sin conexión');
+      var box = $('#netbox');
+      if (!box) {
+        box = el('div', '', '<div class="nb-title"></div><div class="nb-help"></div>');
+        box.id = 'netbox';
+        document.body.appendChild(box);
+      }
+      box.firstChild.textContent = '⚠ ' + tr('Sin conexión a internet');
+      box.lastChild.textContent = tr('Lo que no ha cargado se cargará solo cuando vuelva');
+      box.classList.remove('hidden');
+    },
+    alive: function () {
+      clearTimeout(Net.timer);
+      var was = Net.down, list = Net.waiting;
+      Net.down = false;
+      Net.waiting = [];
+      if (was) {
+        logEv('red', 'conexión recuperada', { s: Math.round((Date.now() - Net.since) / 1000) });
+        var box = $('#netbox');
+        if (box) box.classList.add('hidden');
+        toast(tr('Conexión recuperada'), 2500);
+      }
+      list.forEach(function (w) {
+        var fn = was ? w.back : w.otherwise;
+        if (fn) try { fn(); } catch (e) { /* lo de una pantalla no frena al resto */ }
+      });
+    }
+  };
+  window.addEventListener('offline', function () { Net.lost(); });
+  window.addEventListener('online', function () { if (Net.down) Net.check(); });
+  // una función que da la misma promesa a quien la pida, salvo si falló: entonces la vuelve a pedir
+  // (para filas que comparten datos y se reintentan al volver la red)
+  function shared(fn) {
+    var p = null;
+    return function () { return p || (p = fn().catch(function (e) { p = null; throw e; })); };
   }
   // JSON estricto (respuesta rota = error) o tolerante (vacía o rota = null: las APIs que responden 204)
   function strictJSON(txt) { try { return JSON.parse(txt); } catch (e) { throw new Error(tr('respuesta no válida')); } }
@@ -96,6 +166,8 @@
     // general
     'respuesta no válida': 'invalid response', 'sin conexión': 'no connection', 'tiempo de espera agotado': 'timed out',
     'medida no válida': 'invalid measurement', 'sin datos': 'no data',
+    'Sin conexión a internet': 'No internet connection', 'Lo que no ha cargado se cargará solo cuando vuelva': 'Anything that didn’t load will load by itself once it’s back',
+    'Conexión recuperada': 'Connection restored',
     'Sí': 'Yes', 'No': 'No', 'sí ({0})': 'yes ({0})', 'no': 'no',
     '¿Salir de StremTV?': 'Exit StremTV?', 'Salir': 'Exit', 'Cancelar': 'Cancel', 'Cargando…': 'Loading…',
     'Sin resultados': 'No results', 'No se pudo cargar ({0})': 'Could not load ({0})',
@@ -315,6 +387,10 @@
       ' · Catalog: Cinemeta · Sources: your add-ons · Subtitles: OpenSubtitles · Player: {0}',
     // aspecto: ficha, fuentes, reproductor, protector de pantalla
     '▶ Continuar {0}': '▶ Resume {0}', '▶ Ver {0}': '▶ Watch {0}', 'Otras': 'Other', '1 fuente': '1 source', '{0} fuentes': '{0} sources',
+    '⚠ 1 fuente que esta tele no puede reproducir bien · OK para verla': '⚠ 1 source this TV can’t play properly · OK to show it',
+    '⚠ {0} fuentes que esta tele no puede reproducir bien · OK para verlas': '⚠ {0} sources this TV can’t play properly · OK to show them',
+    '⚠ No se ven bien en esta tele': '⚠ Won’t play properly on this TV', '✕ {0}': '✕ {0}',
+    'Dolby Vision sin HDR10': 'Dolby Vision without HDR10', 'H.264 en 4K': 'H.264 in 4K',
     '★ Recomendada': '★ Recommended', 'pausa': 'pause', 'avanzar/retroceder': 'seek', 'audio, fuente y temporizador': 'audio, source & sleep timer', 'Audio, fuente y temporizador': 'Audio, source and sleep timer',
     '⇄ Cambiar fuente…': '⇄ Change source…', 'Cambiar fuente': 'Change source', 'No hay otras fuentes para este vídeo': 'There are no other sources for this video',
     'información': 'info', 'salir': 'exit', 'Fuente': 'Source', 'Archivo': 'File', 'incrustados': 'embedded', 'Reproductor': 'Player',
@@ -1653,11 +1729,19 @@
     }
   }
 
-  // la carátula se pone cuando ha cargado; si no existe (404 en metahub), el nombre en su lugar
+  // la carátula se pone cuando ha cargado; si no existe (404 en metahub), el nombre en su lugar.
+  // Si falló con la red caída (o comprobándose), se vuelve a pedir cuando vuelva
   function posterImg(c) {
     var img = new Image(), p = c.firstChild;
-    img.onload = function () { p.style.backgroundImage = 'url("' + c._img + '")'; };
-    img.onerror = function () { if (!p.querySelector('.noimg')) p.appendChild(el('div', 'noimg', esc(c._meta.name))); };
+    img.onload = function () {
+      p.style.backgroundImage = 'url("' + c._img + '")';
+      var n = p.querySelector('.noimg');
+      if (n) p.removeChild(n);
+    };
+    img.onerror = function () {
+      if (!p.querySelector('.noimg')) p.appendChild(el('div', 'noimg', esc(c._meta.name)));
+      if (Net.down || Net.checking) Net.whenBack(function () { if (document.body.contains(c)) posterImg(c); });
+    };
     img.src = c._img;
   }
 
@@ -1685,34 +1769,46 @@
     return row;
   }
 
-  // fila que se rellena cuando llega la promesa (metas con .pct/.label opcionales)
+  // fila que se rellena cuando llega la promesa (metas con .pct/.label opcionales). Si en vez de la promesa se da
+  // una función que la crea, la fila que falla por la red se vuelve a pedir sola cuando vuelve la conexión
   function promiseRow(container, title, promise, onPick, hideIfEmpty, max) {
     var row = el('div', 'row');
     row.appendChild(el('div', 'row-title', esc(title)));
     row.appendChild(skeleton());
     container.appendChild(row);
-    promise.then(function (metas) {
-      bootMark('firstRow');
-      if (!row.parentNode) return;
-      metas = (metas || []).slice(0, max || 40);
-      if (!metas.length && hideIfEmpty) { container.removeChild(row); return; }
-      var hadFocus = Nav.cur && row.contains(Nav.cur);
-      var fresh = metas.length
-        ? posterRow(title, metas, onPick, metas.map(function (m) { return m.pct || m.label || m.isNew ? { pct: m.pct, label: m.label, isNew: m.isNew } : null; }))
-        : el('div', 'row', '<div class="row-title">' + esc(title) + '</div><div class="empty">' + tr('Sin resultados') + '</div>');
-      container.replaceChild(fresh, row);
-      if (hadFocus) Nav.setRoot(Nav.root);
-      primeHero(container);
-    }).catch(function (e) {
-      if (hideIfEmpty && row.parentNode) { container.removeChild(row); return; }
-      row.replaceChild(el('div', 'empty', esc(tr('No se pudo cargar ({0})', e.message))), row.lastChild);
-    });
+    var make = typeof promise === 'function' ? promise : null;
+    (function run(p) {
+      p.then(function (metas) {
+        bootMark('firstRow');
+        if (!row.parentNode) return;
+        metas = (metas || []).slice(0, max || 40);
+        if (!metas.length && hideIfEmpty) { container.removeChild(row); return; }
+        var hadFocus = Nav.cur && row.contains(Nav.cur);
+        var fresh = metas.length
+          ? posterRow(title, metas, onPick, metas.map(function (m) { return m.pct || m.label || m.isNew ? { pct: m.pct, label: m.label, isNew: m.isNew } : null; }))
+          : el('div', 'row', '<div class="row-title">' + esc(title) + '</div><div class="empty">' + tr('Sin resultados') + '</div>');
+        container.replaceChild(fresh, row);
+        if (hadFocus) Nav.setRoot(Nav.root);
+        primeHero(container);
+      }).catch(function (e) {
+        if (!row.parentNode) return;
+        var gone = function () { if (hideIfEmpty && row.parentNode) container.removeChild(row); };
+        row.replaceChild(el('div', 'empty', esc(tr('No se pudo cargar ({0})', e.message))), row.lastChild);
+        if (!make || e.status !== 0) { gone(); return; }
+        // mientras se comprueba la red, la fila se queda con el aviso; si la red estaba bien, como siempre
+        Net.whenBack(function () {
+          if (!row.parentNode) return;
+          row.replaceChild(skeleton(), row.lastChild);
+          run(make());
+        }, gone);
+      });
+    })(make ? make() : promise);
   }
 
   function asyncRow(container, title, url, onPick) {
-    promiseRow(container, title, Promise.all([getJSON(url), seenReady()]).then(function (r) {
-      return filterSeen(r[0].metas || []);
-    }), onPick);
+    promiseRow(container, title, function () {
+      return Promise.all([getJSON(url), seenReady()]).then(function (r) { return filterSeen(r[0].metas || []); });
+    }, onPick);
   }
 
   var metaOpening = {}; // tmdb:… -> consulta de su id de IMDb en curso
@@ -2000,28 +2096,36 @@
       traktWrap.innerHTML = '';
       var local = {};
       continueList().forEach(function (p) { local[p.metaId] = true; });
-      var paused = Trakt.playback().then(function (items) {
-        var seen = {};
-        return items.filter(function (m) {
-          if (local[m.id] || seen[m.id]) return false; // ya está en «Continuar viendo»
-          seen[m.id] = true;
-          return true;
+      // cada fila se da como función: si falla por la red, se vuelve a pedir sola al volver (las que comparten datos, con shared)
+      var paused = shared(function () {
+        return Trakt.playback().then(function (items) {
+          var seen = {};
+          return items.filter(function (m) {
+            if (local[m.id] || seen[m.id]) return false; // ya está en «Continuar viendo»
+            seen[m.id] = true;
+            return true;
+          });
         });
       });
       promiseRow(traktWrap, tr('Continuar (Trakt)'), paused, openMeta, true);
       // series con el siguiente episodio pendiente (sin repetir las que ya salen arriba)
-      promiseRow(traktWrap, tr('Siguientes episodios'), Promise.all([Trakt.upNext(), paused.catch(function () { return []; })]).then(function (r) {
-        var above = {};
-        r[1].forEach(function (m) { above[m.id] = true; });
-        return r[0].filter(function (m) { return !local[m.id] && !above[m.id]; });
-      }), openMeta, true, 100);
-      promiseRow(traktWrap, tr('Esta semana en tus series'), Trakt.calendar(), openMeta, true);
-      var wl = Trakt.loadWatchlist();
-      promiseRow(traktWrap, tr('Mi lista: películas'), wl.then(function (m) { return m.filter(function (x) { return x.type === 'movie'; }); }), openMeta, true, 100);
-      promiseRow(traktWrap, tr('Mi lista: series'), wl.then(function (m) { return m.filter(function (x) { return x.type === 'series'; }); }), openMeta, true, 100);
-      var seenThen = function (pr) { return Promise.all([pr, seenReady()]).then(function (r) { return filterSeen(r[0]); }); };
-      promiseRow(traktWrap, tr('Recomendadas para ti: películas'), seenThen(Trakt.recommendations('movies')), openMeta, true);
-      promiseRow(traktWrap, tr('Recomendadas para ti: series'), seenThen(Trakt.recommendations('shows')), openMeta, true);
+      promiseRow(traktWrap, tr('Siguientes episodios'), function () {
+        return Promise.all([Trakt.upNext(), paused().catch(function () { return []; })]).then(function (r) {
+          var above = {};
+          r[1].forEach(function (m) { above[m.id] = true; });
+          return r[0].filter(function (m) { return !local[m.id] && !above[m.id]; });
+        });
+      }, openMeta, true, 100);
+      promiseRow(traktWrap, tr('Esta semana en tus series'), function () { return Trakt.calendar(); }, openMeta, true);
+      var wl = shared(function () { return Trakt.loadWatchlist(); });
+      var wlOf = function (type) { return function () { return wl().then(function (m) { return m.filter(function (x) { return x.type === type; }); }); }; };
+      promiseRow(traktWrap, tr('Mi lista: películas'), wlOf('movie'), openMeta, true, 100);
+      promiseRow(traktWrap, tr('Mi lista: series'), wlOf('series'), openMeta, true, 100);
+      var recs = function (kind) {
+        return function () { return Promise.all([Trakt.recommendations(kind), seenReady()]).then(function (r) { return filterSeen(r[0]); }); };
+      };
+      promiseRow(traktWrap, tr('Recomendadas para ti: películas'), recs('movies'), openMeta, true);
+      promiseRow(traktWrap, tr('Recomendadas para ti: series'), recs('shows'), openMeta, true);
     }
     renderTrakt();
 
@@ -2044,7 +2148,7 @@
       if (Trakt.linked() && Date.now() - histLoaded < 120000) return;
       histLoaded = Date.now();
       histWrap.innerHTML = '';
-      promiseRow(histWrap, tr('Visto recientemente'), Trakt.linked() ? Trakt.history() : Promise.resolve(localHistory()), openMeta, true, 30);
+      promiseRow(histWrap, tr('Visto recientemente'), function () { return Trakt.linked() ? Trakt.history() : Promise.resolve(localHistory()); }, openMeta, true, 30);
     }
     function localHistory() {
       var seen = {};
@@ -2063,9 +2167,11 @@
       var n = perAddon[c.addon.url] = (perAddon[c.addon.url] || 0) + 1;
       if (n > 4) return;
       // si el catálogo viene vacío o el addon falla, la fila desaparece
-      promiseRow(vs, c.title, Promise.all([getJSON(c.addon.url + '/catalog/' + c.catalog.type + '/' + c.catalog.id + '.json'), seenReady()]).then(function (r) {
-        return filterSeen(r[0].metas || []);
-      }), openMeta, true);
+      promiseRow(vs, c.title, function () {
+        return Promise.all([getJSON(c.addon.url + '/catalog/' + c.catalog.type + '/' + c.catalog.id + '.json'), seenReady()]).then(function (r) {
+          return filterSeen(r[0].metas || []);
+        });
+      }, openMeta, true);
     });
 
     return { el: root, onShow: function () { primeHero(vs); }, onResume: function () {
@@ -2198,6 +2304,12 @@
         if (g !== gen) return;
         loading = false;
         status.textContent = tr('No se pudo cargar ({0})', e.message);
+        // sin red: la misma página otra vez al volver, si no se han cambiado los filtros ni se ha cerrado
+        if (e.status === 0) Net.whenBack(function () {
+          if (g !== gen || loading || !document.body.contains(status)) return;
+          results.removeChild(status);
+          loadPage(hadFocus);
+        });
       });
     }
     loadPage();
@@ -2436,23 +2548,33 @@
       var own = addonsFor('meta', type, id)[0];
       metaFrom = own ? own.url + '/meta/' + type + '/' + id + '.json' : null;
     }
-    (metaFrom ? getJSON(metaFrom) : Promise.reject(new Error(tr('sin datos')))).then(function (res) {
-      meta = res.meta;
-      if (!meta) throw new Error(tr('sin datos'));
-      if (isAnime) type = meta.type === 'movie' ? 'movie' : 'series';
-      if (!tmdbOn() || !imdbOf()) return render();
-      return withTimeout(tmdbDetail(imdbOf()), 2500).then(function (es) {
-        if (es) {
-          if (es.name) meta.name = es.name;
-          if (es.overview) meta.description = es.overview;
-          if (es.genres.length) meta.genres = es.genres;
-          meta._tmdb = es;
-        }
-      }, function () { /* sin traducción: en inglés */ }).then(render);
-    }).catch(function (e) {
-      d.innerHTML = '';
-      d.appendChild(el('div', 'loading', esc(tr('No se pudo cargar ({0})', e.message))));
-    });
+    function loadMeta() {
+      (metaFrom ? getJSON(metaFrom) : Promise.reject(new Error(tr('sin datos')))).then(function (res) {
+        meta = res.meta;
+        if (!meta) throw new Error(tr('sin datos'));
+        if (isAnime) type = meta.type === 'movie' ? 'movie' : 'series';
+        if (!tmdbOn() || !imdbOf()) return render();
+        return withTimeout(tmdbDetail(imdbOf()), 2500).then(function (es) {
+          if (es) {
+            if (es.name) meta.name = es.name;
+            if (es.overview) meta.description = es.overview;
+            if (es.genres.length) meta.genres = es.genres;
+            meta._tmdb = es;
+          }
+        }, function () { /* sin traducción: en inglés */ }).then(render);
+      }).catch(function (e) {
+        if (screen.closed) return;
+        d.innerHTML = '';
+        d.appendChild(el('div', 'loading', esc(tr('No se pudo cargar ({0})', e.message))));
+        // sin red: se vuelve a intentar sola cuando vuelva
+        if (e.status === 0) Net.whenBack(alive(screen, function () {
+          d.innerHTML = '';
+          d.appendChild(el('div', 'loading', tr('Cargando…')));
+          loadMeta();
+        }));
+      });
+    }
+    loadMeta();
 
     function infoParts() {
       var parts = [];
@@ -2877,9 +2999,13 @@
     };
   })();
 
-  // Formato a partir del nombre del archivo; risk alto = probable error de descodificación
+  // Formato a partir del nombre del archivo; risk alto = probable error de descodificación.
+  // bad: lo que esta tele no reproduce o no se ve bien (AV1; Dolby Vision sin capa HDR10, que sale con colores
+  // morados y verdes; H.264 en 4K, que es nivel 5.1); la razón, para enseñarla
   function mediaInfo(name) {
     var hevc = /x\.?265|h\.?265|hevc/i.test(name);
+    var avc = !hevc && /x\.?264|h\.?264|(^|[^a-z0-9])avc([^a-z0-9]|$)/i.test(name);
+    var uhd = /2160|4k|uhd/i.test(name);
     var av1 = /(^|[^a-z0-9])av1([^a-z0-9]|$)/i.test(name);
     var dv = /(^|[^a-z0-9])(dv|dovi)([^a-z0-9]|$)|dolby.?vision/i.test(name);
     var tenbit = dv || /10.?bit|hdr/i.test(name);
@@ -2894,7 +3020,8 @@
     if (dts) risk += Codecs.dts ? 1 : 4;
     if (eac3 && !Codecs.eac3) risk += 2;
     if (remux) risk += 2;
-    return { hevc: hevc, av1: av1, dv: dv, tenbit: tenbit, dts: dts, h264: !hevc && !av1, risk: risk };
+    var bad = av1 && !Codecs.av1 ? 'AV1' : dv && !/hdr/i.test(name) ? tr('Dolby Vision sin HDR10') : avc && uhd ? tr('H.264 en 4K') : '';
+    return { hevc: hevc, av1: av1, dv: dv, tenbit: tenbit, dts: dts, h264: !hevc && !av1, risk: risk, bad: bad };
   }
 
   function parseStream(s) {
@@ -3047,7 +3174,7 @@
           x.heavy = !!(limit && x.mbps && x.mbps > limit);
         });
         // orden: primero lo que la tele puede reproducir y cabe en la conexión, después español, después el del addon
-        var tier = function (x) { return (x.heavy ? 3 : 0) + (!settings.compatFirst ? 0 : x.media.risk <= 1 ? 0 : x.media.risk <= 3 ? 1 : 2); };
+        var tier = function (x) { return (x.media.bad ? 10 : 0) + (x.heavy ? 3 : 0) + (!settings.compatFirst ? 0 : x.media.risk <= 1 ? 0 : x.media.risk <= 3 ? 1 : 2); };
         // en series, antes que nada la misma release que se vio en el episodio anterior
         var pref = ctx.type === 'series' ? srcPrefs[ctx.metaId] : null;
         streams.forEach(function (x) { x.pref = prefScore(x, pref); });
@@ -3063,6 +3190,12 @@
         sub.textContent = tr(streams.length === 1 ? '1 fuente · {0}' : '{1} fuentes · {0}', DEBRID_NAMES[settings.debrid], streams.length) +
           (limit ? tr(' · tu conexión: hasta ~{0} Mb/s', limit) : '');
         list.innerHTML = '';
+        // las que esta tele no reproduce bien van aparte al final, plegadas, y nunca se eligen solas; si solo hay de esas, se ven todas
+        var bad = [];
+        if (streams.some(function (x) { return !x.media.bad; })) {
+          bad = streams.filter(function (x) { return x.media.bad; });
+          streams = streams.filter(function (x) { return !x.media.bad; });
+        }
         // la recomendada (la que elige «▶ Ver»): la misma release que antes en esta serie o, si no, la primera instantánea que quepa
         var rec = null;
         for (var i = 0; i < streams.length && !rec; i++) if (streams[i].pref >= 2 || (streams[i].cached && !streams[i].heavy)) rec = streams[i];
@@ -3081,14 +3214,13 @@
           if (grouped) ordered.push({ head: g || tr('Otras'), n: byQ[g].length });
           ordered = ordered.concat(byQ[g]);
         });
-        ordered.forEach(function (s) {
-          if (s.head) { list.appendChild(el('div', 'sgroup', esc(s.head) + ' · ' + (s.n === 1 ? tr('1 fuente') : tr('{0} fuentes', s.n)))); return; }
+        function makeRow(s) {
           var row = el('div', 'stream' + (s === rec ? ' rec' : ''));
           var g = qualityGroup(s.quality), q = s.quality.replace(/4k/i, '4K');
           // agrupadas, la calidad ya está en el título del grupo: solo se repite si dice algo más («4K DV»)
           if (!grouped) row.appendChild(el('div', 'q', '<span class="' + (g === '4K' ? 'q4k' : g === '1080p' ? 'q1080' : g === '720p' ? 'q720' : '') + '">' + esc(q) + '</span>'));
           var info = el('div', 'info');
-          var badges = grouped && q !== g && q ? '<span class="badge">' + esc(q) + '</span>' : '';
+          var badges = grouped && (q !== g || s.media.bad) && q ? '<span class="badge">' + esc(q) + '</span>' : '';
           if (s === rec) badges += '<span class="badge rec">' + tr('★ Recomendada') + '</span>';
           if (s.pref >= 2) badges += '<span class="badge ok">' + tr('↺ Como el anterior') + '</span>';
           if (s.addon) badges += '<span class="badge addon">' + esc(s.addon) + '</span>';
@@ -3097,21 +3229,40 @@
           else if (s.download) badges += '<span class="badge">' + tr('Descargar en debrid') + '</span>';
           if (s.es) badges += '<span class="badge es">ES</span>';
           var m = s.media;
-          if (m.av1) badges += '<span class="badge warn">AV1</span>';
-          else if (m.hevc) badges += '<span class="badge' + (Codecs.hevc ? '' : ' warn') + '">HEVC</span>';
-          else badges += '<span class="badge ok">H.264</span>';
-          if (m.dv) badges += '<span class="badge warn">Dolby Vision</span>';
-          else if (m.tenbit) badges += '<span class="badge' + (Codecs.hevc10 ? '' : ' warn') + '">10-bit/HDR</span>';
+          // en las que no se ven bien, en vez del formato, por qué
+          if (m.bad) badges += '<span class="badge warn">' + esc(tr('✕ {0}', m.bad)) + '</span>';
+          else {
+            if (m.av1) badges += '<span class="badge warn">AV1</span>';
+            else if (m.hevc) badges += '<span class="badge' + (Codecs.hevc ? '' : ' warn') + '">HEVC</span>';
+            else badges += '<span class="badge ok">H.264</span>';
+            if (m.dv) badges += '<span class="badge warn">Dolby Vision</span>';
+            else if (m.tenbit) badges += '<span class="badge' + (Codecs.hevc10 ? '' : ' warn') + '">10-bit/HDR</span>';
+          }
           if (m.dts) badges += '<span class="badge' + (Codecs.dts ? '' : ' warn') + '">DTS/TrueHD</span>';
           if (s.mbps) badges += '<span class="badge' + (s.heavy ? ' warn' : '') + '">~' + num(s.mbps) + ' Mb/s' + (s.heavy ? tr(' · pesada') : '') + '</span>';
           info.appendChild(el('div', 't1', badges + '<span class="fname">' + esc(s.file) + '</span>'));
           info.appendChild(el('div', 't2', esc(s.stats + '   ' + s.langs)));
           row.appendChild(info);
           focusable(row, function () { Player.open(s, ctx, row); });
-          list.appendChild(row);
           s._row = row;
           row._stream = s;
+          return row;
+        }
+        ordered.forEach(function (s) {
+          if (s.head) { list.appendChild(el('div', 'sgroup', esc(s.head) + ' · ' + (s.n === 1 ? tr('1 fuente') : tr('{0} fuentes', s.n)))); return; }
+          list.appendChild(makeRow(s));
         });
+        if (bad.length) {
+          var fold = el('div', 'sgroup bad', esc(tr(bad.length === 1 ? '⚠ 1 fuente que esta tele no puede reproducir bien · OK para verla'
+            : '⚠ {0} fuentes que esta tele no puede reproducir bien · OK para verlas', bad.length)));
+          focusable(fold, function () {
+            fold.classList.remove('f', 'focused');
+            fold.textContent = tr('⚠ No se ven bien en esta tele') + ' · ' + (bad.length === 1 ? tr('1 fuente') : tr('{0} fuentes', bad.length));
+            bad.forEach(function (s) { list.appendChild(makeRow(s)); });
+            Nav.setRoot(root, bad[0]._row);
+          });
+          list.appendChild(fold);
+        }
         // reproducción directa: la recomendada
         var auto = ctx.autoPlay ? { s: rec, row: rec._row } : null;
         if (auto && isTop(screen)) {
@@ -3126,6 +3277,11 @@
         logEv('fuentes', e.message, { id: ctx.videoId });
         sub.textContent = '';
         message(tr('No se pudieron obtener las fuentes ({0}). Pulsa Atrás e inténtalo de nuevo.', e.message));
+        // sin red: se vuelven a buscar solas cuando vuelva
+        if (e.status === 0) Net.whenBack(alive(screen, function () {
+          message(tr('Cargando…'));
+          fetchStreams();
+        }));
       });
     }
     fetchStreams();
@@ -3841,7 +3997,7 @@
       if (!list) return null;
       var RANK = { '4K': 4, '1080p': 3, '720p': 2, SD: 1 }, cur = row._stream || this.stream || {};
       var mine = RANK[qualityGroup(cur.quality || '')] || 0;
-      var rows = Array.prototype.filter.call(list.querySelectorAll('.stream'), function (r) { return r._stream && r !== row && !r._failed; });
+      var rows = Array.prototype.filter.call(list.querySelectorAll('.stream'), function (r) { return r._stream && r !== row && !r._failed && !r._stream.media.bad; });
       var rank = function (r) { return RANK[qualityGroup(r._stream.quality || '')] || 0; };
       var same = rows.filter(function (r) { return rank(r) === mine; })[0];
       if (lighter) return rows.filter(function (r) { return rank(r) < mine && rank(r) >= 2; })[0] || same || null;
@@ -4964,7 +5120,7 @@
 
   // ---------------------------------------------------------------- arranque
 
-  var VERSION = '0.20.1';
+  var VERSION = '0.21.0';
 
   function fitScreen() {
     var z = window.innerWidth / 1920;

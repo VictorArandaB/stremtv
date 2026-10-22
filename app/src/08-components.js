@@ -40,11 +40,19 @@
     }
   }
 
-  // la carátula se pone cuando ha cargado; si no existe (404 en metahub), el nombre en su lugar
+  // la carátula se pone cuando ha cargado; si no existe (404 en metahub), el nombre en su lugar.
+  // Si falló con la red caída (o comprobándose), se vuelve a pedir cuando vuelva
   function posterImg(c) {
     var img = new Image(), p = c.firstChild;
-    img.onload = function () { p.style.backgroundImage = 'url("' + c._img + '")'; };
-    img.onerror = function () { if (!p.querySelector('.noimg')) p.appendChild(el('div', 'noimg', esc(c._meta.name))); };
+    img.onload = function () {
+      p.style.backgroundImage = 'url("' + c._img + '")';
+      var n = p.querySelector('.noimg');
+      if (n) p.removeChild(n);
+    };
+    img.onerror = function () {
+      if (!p.querySelector('.noimg')) p.appendChild(el('div', 'noimg', esc(c._meta.name)));
+      if (Net.down || Net.checking) Net.whenBack(function () { if (document.body.contains(c)) posterImg(c); });
+    };
     img.src = c._img;
   }
 
@@ -72,34 +80,46 @@
     return row;
   }
 
-  // fila que se rellena cuando llega la promesa (metas con .pct/.label opcionales)
+  // fila que se rellena cuando llega la promesa (metas con .pct/.label opcionales). Si en vez de la promesa se da
+  // una función que la crea, la fila que falla por la red se vuelve a pedir sola cuando vuelve la conexión
   function promiseRow(container, title, promise, onPick, hideIfEmpty, max) {
     var row = el('div', 'row');
     row.appendChild(el('div', 'row-title', esc(title)));
     row.appendChild(skeleton());
     container.appendChild(row);
-    promise.then(function (metas) {
-      bootMark('firstRow');
-      if (!row.parentNode) return;
-      metas = (metas || []).slice(0, max || 40);
-      if (!metas.length && hideIfEmpty) { container.removeChild(row); return; }
-      var hadFocus = Nav.cur && row.contains(Nav.cur);
-      var fresh = metas.length
-        ? posterRow(title, metas, onPick, metas.map(function (m) { return m.pct || m.label || m.isNew ? { pct: m.pct, label: m.label, isNew: m.isNew } : null; }))
-        : el('div', 'row', '<div class="row-title">' + esc(title) + '</div><div class="empty">' + tr('Sin resultados') + '</div>');
-      container.replaceChild(fresh, row);
-      if (hadFocus) Nav.setRoot(Nav.root);
-      primeHero(container);
-    }).catch(function (e) {
-      if (hideIfEmpty && row.parentNode) { container.removeChild(row); return; }
-      row.replaceChild(el('div', 'empty', esc(tr('No se pudo cargar ({0})', e.message))), row.lastChild);
-    });
+    var make = typeof promise === 'function' ? promise : null;
+    (function run(p) {
+      p.then(function (metas) {
+        bootMark('firstRow');
+        if (!row.parentNode) return;
+        metas = (metas || []).slice(0, max || 40);
+        if (!metas.length && hideIfEmpty) { container.removeChild(row); return; }
+        var hadFocus = Nav.cur && row.contains(Nav.cur);
+        var fresh = metas.length
+          ? posterRow(title, metas, onPick, metas.map(function (m) { return m.pct || m.label || m.isNew ? { pct: m.pct, label: m.label, isNew: m.isNew } : null; }))
+          : el('div', 'row', '<div class="row-title">' + esc(title) + '</div><div class="empty">' + tr('Sin resultados') + '</div>');
+        container.replaceChild(fresh, row);
+        if (hadFocus) Nav.setRoot(Nav.root);
+        primeHero(container);
+      }).catch(function (e) {
+        if (!row.parentNode) return;
+        var gone = function () { if (hideIfEmpty && row.parentNode) container.removeChild(row); };
+        row.replaceChild(el('div', 'empty', esc(tr('No se pudo cargar ({0})', e.message))), row.lastChild);
+        if (!make || e.status !== 0) { gone(); return; }
+        // mientras se comprueba la red, la fila se queda con el aviso; si la red estaba bien, como siempre
+        Net.whenBack(function () {
+          if (!row.parentNode) return;
+          row.replaceChild(skeleton(), row.lastChild);
+          run(make());
+        }, gone);
+      });
+    })(make ? make() : promise);
   }
 
   function asyncRow(container, title, url, onPick) {
-    promiseRow(container, title, Promise.all([getJSON(url), seenReady()]).then(function (r) {
-      return filterSeen(r[0].metas || []);
-    }), onPick);
+    promiseRow(container, title, function () {
+      return Promise.all([getJSON(url), seenReady()]).then(function (r) { return filterSeen(r[0].metas || []); });
+    }, onPick);
   }
 
   var metaOpening = {}; // tmdb:… -> consulta de su id de IMDb en curso
