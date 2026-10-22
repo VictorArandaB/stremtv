@@ -1047,9 +1047,15 @@
     return Seen.loading;
   }
 
+  // id de IMDb de una carátula: el que trae o, si su id ya es de IMDb, ese
+  function imdbOfMeta(m) {
+    var id = String(m.id || m.metaId || '');
+    return m.imdb || m.imdb_id || (id.indexOf('tt') === 0 ? id : null);
+  }
+
   function isSeenMeta(m) {
     var id = String(m.id || '');
-    var imdb = m.imdb_id || (id.indexOf('tt') === 0 ? id : null);
+    var imdb = imdbOfMeta(m);
     if (m.type === 'movie') return !!((imdb && Seen.movies[imdb]) || (progress[id] && progress[id].done));
     return !!(imdb && Seen.shows[imdb]);
   }
@@ -1150,8 +1156,10 @@
         return e.offsetWidth > 0 || e.offsetHeight > 0;
       });
     },
+    lastAt: 0, // última vez que se movió el foco (la cabecera no pinta su fondo mientras sigues pulsando)
     focus: function (e) {
       if (!e) return;
+      this.lastAt = Date.now();
       if (this.cur) this.cur.classList.remove('focused');
       this.cur = e;
       e.classList.add('focused');
@@ -1342,12 +1350,12 @@
       p.appendChild(bar);
     }
     // ✓ en lo ya visto (en las filas de progreso o historial no hace falta) y la nota al enfocarla
+    // (en las pantallas con cabecera grande la nota sale en la cabecera y la de la carátula no se ve)
     if (!extra && isSeenMeta(meta)) p.appendChild(el('div', 'mark', '✓'));
     if (meta.imdbRating && parseFloat(meta.imdbRating)) p.appendChild(el('div', 'rate', '★ ' + esc(num(meta.imdbRating))));
     c.appendChild(p);
     c.appendChild(el('div', 'name', esc(extra && extra.label ? extra.label : meta.name)));
-    var id = String(meta.id || '');
-    c._imdb = extra && extra.label ? null : meta.imdb_id || (id.indexOf('tt') === 0 ? id : null);
+    c._imdb = extra && extra.label ? null : imdbOfMeta(meta);
     c._meta = meta;
     return focusable(c, onclick);
   }
@@ -1477,13 +1485,47 @@
   // ---------------------------------------------------------------- cabecera grande (inicio y anime)
 
   function metahubImg(kind, imdb) { return 'https://images.metahub.space/' + kind + '/medium/' + imdb + '/img'; }
+  // fondo reducido a 960 px: en la tele, pintar uno de 1920×1080 cuesta el doble (medido: ~200 ms frente a ~100 ms por cambio)
+  function smallBg(url) { return 'https://wsrv.nl/?url=' + encodeURIComponent(url.replace(/^https?:\/\//, '')) + '&w=960&output=jpg&q=80'; }
 
   // datos completos de una carátula para la cabecera: los del catálogo o, si faltan (filas de Trakt), los de Cinemeta/Kitsu;
   // con TMDB, título y sinopsis en español. Se guardan en memoria mientras dure la sesión
   var heroCache = {}, heroCount = 0;
+  // fondo y logo deducidos del id de IMDb si el catálogo no los trae
+  function withImages(d, imdb) {
+    if (!d.background && imdb) d.background = metahubImg('background', imdb);
+    if (!d.logo && imdb) d.logo = metahubImg('logo', imdb);
+    return d;
+  }
+  // lo que ya se sabe de la carátula sin pedir nada (los catálogos de Cinemeta traen casi todo)
+  function heroQuick(m) {
+    return withImages(extend({}, m), imdbOfMeta(m));
+  }
+  var logoState = {}; // url → 'ok' | 'no'
+  // pone el logo en «box» (que ya lleva el nombre en un <span> oculto); sin logo, o si a los 1,2 s de la primera
+  // llamada aún no ha cargado, el nombre en texto. Una vez decidido, esa caja ya no cambia: volver a llamar con ella
+  // (al llegar la ficha completa) solo sirve mientras no se ha decidido. Con «later», no tener logo aún no decide nada:
+  // puede llegar en la siguiente llamada. Un logo que carga tarde sí se queda guardado, y la próxima vez sale el logo
+  function titleLogo(box, url, logoCls, textCls, later) {
+    if (box._done) return;
+    var settle = function (img) {
+      if (box._done) return;
+      box._done = true;
+      box.className = img ? logoCls : textCls;
+      if (img) box.insertBefore(img, box.firstChild);
+    };
+    if (!box._timer) { box.className = logoCls; box._timer = setTimeout(function () { settle(null); }, 1200); }
+    if (!url || logoState[url] === 'no') { if (!later) settle(null); return; }
+    var img = new Image();
+    if (logoState[url] === 'ok') { img.src = url; settle(img); return; }
+    img.onload = function () { logoState[url] = 'ok'; settle(img); };
+    img.onerror = function () { logoState[url] = 'no'; if (!later) settle(null); };
+    img.src = url;
+  }
+
   function heroInfo(m) {
     var id = String(m.id || ''), kitsu = id.indexOf('kitsu:') === 0;
-    var imdb = m.imdb_id || (id.indexOf('tt') === 0 ? id : null);
+    var imdb = imdbOfMeta(m);
     var key = (m.type || '') + ':' + id;
     if (heroCache[key]) return heroCache[key];
     if (++heroCount > 300) { heroCache = {}; heroCount = 1; }
@@ -1492,8 +1534,7 @@
         .then(function (r) { var d = extend(extend({}, m), r.meta || {}); d.name = m.name || d.name; return d; }, function () { return extend({}, m); });
     return (heroCache[key] = full.then(function (d) {
       imdb = imdb || d.imdb_id || null;
-      if (!d.background && imdb) d.background = metahubImg('background', imdb);
-      if (!d.logo && imdb) d.logo = metahubImg('logo', imdb);
+      withImages(d, imdb);
       if (!tmdbOn() || !imdb) return d;
       return withTimeout(tmdbDetail(imdb), 3000).then(function (es) {
         if (es && es.overview) d.description = es.overview;
@@ -1513,30 +1554,60 @@
     hero.appendChild(info);
     root.insertBefore(hero, root.firstChild);
     root.classList.add('with-hero');
-    var front = 0, shownBg = '', timer = null;
+    var front = 0, shownBg = '', bg = null, timer = null, title = null;
 
-    // el fondo nuevo se funde sobre el anterior cuando ya se ha descargado
+    function bgOff() { layers[0].classList.remove('on'); layers[1].classList.remove('on'); }
+    // el fondo nuevo sustituye al anterior en cuanto se ha descargado, salvo si se sigue pulsando: entonces espera
+    // a que el foco lleve 0,3 s quieto (sin fundido: en la tele, repintar esa zona durante el fundido atasca la navegación);
+    // si la versión reducida falla o tarda más de 2,5 s, la original; si también falla, las de altBg
     function setBg(url) {
       if (url === shownBg) return;
       shownBg = url;
-      if (!url) { layers[0].classList.remove('on'); layers[1].classList.remove('on'); return; }
-      var img = new Image();
-      img.onload = function () {
-        if (shownBg !== url) return;
+      bg = null;
+      if (!url) { bgOff(); return; }
+      bgNext(bg = { tries: [smallBg(url), url] });
+    }
+    // otro fondo para la misma carátula (el de la ficha completa), por si el que se está probando no existe
+    function altBg(url) {
+      var cur = bg;
+      if (!cur || !url || url === shownBg || cur.done) return;
+      cur.tries.push(smallBg(url), url);
+      if (!cur.busy) bgNext(cur);
+    }
+    function bgNext(cur) {
+      var src = cur.tries.shift();
+      if (!src) { cur.busy = false; bgOff(); return; }
+      cur.busy = true;
+      var img = new Image(), loaded = false, over = false;
+      var fail = function () { if (over || loaded || bg !== cur) return; over = true; bgNext(cur); };
+      var slow = src.indexOf('https://wsrv.nl/') === 0 ? setTimeout(fail, 2500) : null;
+      var apply = function () {
+        if (over || bg !== cur) return;
+        var wait = Nav.lastAt + 300 - Date.now();
+        if (wait > 0) { setTimeout(apply, wait); return; }
+        over = cur.done = true;
         front = 1 - front;
-        layers[front].style.backgroundImage = 'url("' + url + '")';
+        layers[front].style.backgroundImage = 'url("' + src + '")';
         layers[front].classList.add('on');
         layers[1 - front].classList.remove('on');
       };
-      img.onerror = function () { if (shownBg === url) { layers[0].classList.remove('on'); layers[1].classList.remove('on'); } };
-      img.src = url;
+      img.onload = function () { clearTimeout(slow); loaded = true; apply(); };
+      img.onerror = function () { clearTimeout(slow); fail(); };
+      img.src = src;
     }
 
-    function paint(d, logo) {
-      var box = el('div', 'hero-fade');
-      var title = el('div', logo ? 'hero-logo' : 'hero-title');
-      if (logo) title.appendChild(logo);
-      title.appendChild(el('span', null, esc(d.name)));
+    // título: el logo si lo hay; mientras se sabe, el hueco queda vacío (sin saltar de texto a logo).
+    // Sin logo, o si tarda más de 1,2 s, el nombre en texto. Se decide una vez por carátula: al repintar con la ficha
+    // completa se reutiliza la misma caja, y el logo de la ficha solo cuenta si aún no se había decidido.
+    // «fresh»: carátula nueva; «later»: aún puede llegar un logo con la ficha completa
+    function paint(d, fresh, later) {
+      var box = el('div');
+      if (fresh) {
+        title = el('div', 'hero-logo');
+        title.appendChild(el('span'));
+      }
+      title.lastChild.innerHTML = esc(d.name);
+      titleLogo(title, d.logo, 'hero-logo', 'hero-title', later);
       box.appendChild(title);
       var parts = [];
       if (d.imdbRating && parseFloat(d.imdbRating)) parts.push('<span class="star">★ ' + esc(num(d.imdbRating)) + '</span>');
@@ -1553,23 +1624,27 @@
     var api = {
       cur: null,
       // espera un momento por si el foco sigue moviéndose; el logo (si lo hay) sustituye al título cuando ya ha cargado
+      // tras un instante quieto: lo que trae el catálogo y la descarga del fondo a la vez; la sinopsis completa
+      // (o en español) sustituye al texto cuando llega, sin esperar por ella para lo demás
       show: function (m) {
         if (m === api.cur) return;
         api.cur = m;
         clearTimeout(timer);
         timer = setTimeout(function () {
+          var q = heroQuick(m), sig = function (d) {
+            return [d.name, d.description, d.releaseInfo, d.year, d.runtime, d.imdbRating, String(d.genres || d.genre || ''), d.logo].join('|');
+          };
+          paint(q, true, true);
+          // sin fondo en el catálogo se deja el anterior hasta saber si la ficha completa trae uno
+          if (q.background) setBg(q.background);
           heroInfo(m).then(function (d) {
             if (api.cur !== m) return;
-            setBg(d.background || '');
-            if (!d.logo) { paint(d); return; }
-            var img = new Image(), done = false;
-            var finish = function (ok) { if (done || api.cur !== m) return; done = true; paint(d, ok ? img : null); };
-            img.onload = function () { finish(true); };
-            img.onerror = function () { finish(false); };
-            setTimeout(function () { finish(false); }, 1500);
-            img.src = d.logo;
+            if (sig(d) !== sig(q)) paint(d);
+            else titleLogo(title, d.logo, 'hero-logo', 'hero-title');
+            if (!q.background) setBg(d.background || '');
+            else if (d.background !== q.background) altBg(d.background);
           });
-        }, 250);
+        }, 200);
       }
     };
     root._hero = api;
@@ -2071,7 +2146,7 @@
     }
 
     var isAnime = String(id).indexOf('kitsu:') === 0;
-    function imdbOf() { return meta.imdb_id || (String(meta.id).indexOf('tt') === 0 ? meta.id : null); }
+    function imdbOf() { return imdbOfMeta(meta); }
 
     var metaFrom = isAnime ? ANIME + '/meta/anime/' + id + '.json' : CINEMETA + '/meta/' + type + '/' + id + '.json';
     if (!isAnime && String(id).indexOf('tt') !== 0) {
@@ -2111,20 +2186,10 @@
       var focusEl = null;
       if (meta.background) bd.style.backgroundImage = 'url("' + meta.background + '")';
       d.innerHTML = '';
-      var h1 = el('h1', null, esc(meta.name));
+      // el logo del título en vez del texto (el nombre se queda dentro, oculto); el texto solo si no hay logo o tarda
+      var h1 = el('h1', null, '<span>' + esc(meta.name) + '</span>');
       d.appendChild(h1);
-      // el logo del título sustituye al texto cuando ha cargado (el nombre se queda dentro, oculto)
-      var logoUrl = meta.logo || (imdbOf() ? metahubImg('logo', imdbOf()) : '');
-      if (logoUrl) {
-        var logo = new Image();
-        logo.onload = function () {
-          if (!h1.parentNode) return;
-          h1.className = 'd-logo';
-          h1.innerHTML = '<span>' + esc(meta.name) + '</span>';
-          h1.insertBefore(logo, h1.firstChild);
-        };
-        logo.src = logoUrl;
-      }
+      titleLogo(h1, meta.logo || (imdbOf() ? metahubImg('logo', imdbOf()) : ''), 'd-logo', '');
       d.appendChild(el('div', 'meta-line', info()));
       var desc = el('div', 'desc', esc(meta.description || ''));
       d.appendChild(desc);
@@ -3669,7 +3734,7 @@
     collect: function () {
       var c = Player.ctx || {}, seen = {}, out = [], rest = [];
       var add = function (list, m) {
-        var id = String(m.id || m.metaId || ''), imdb = m.imdb || m.imdb_id || (id.indexOf('tt') === 0 ? id : null);
+        var imdb = imdbOfMeta(m);
         var bg = m.background || (imdb ? metahubImg('background', imdb) : '');
         if (!bg || seen[bg]) return;
         seen[bg] = true;
@@ -4213,7 +4278,7 @@
 
   // ---------------------------------------------------------------- arranque
 
-  var VERSION = '0.17.0';
+  var VERSION = '0.17.1';
 
   function fitScreen() {
     var z = window.innerWidth / 1920;

@@ -27,7 +27,7 @@ const check = (ok, what) => { console.log((ok ? 'OK  ' : 'MAL ') + what); if (!o
   await p.reload({ waitUntil: 'networkidle2' }); await sleep(3000);
 
   // inicio: la cabecera muestra la primera carátula sin tocar nada
-  check(await ev(() => !!document.querySelector('.hero-info .hero-fade')), 'cabecera grande pintada al arrancar');
+  check(await ev(() => !!document.querySelector('.hero-info .hero-meta')), 'cabecera grande pintada al arrancar');
   check(await ev(() => document.querySelector('.tab.active').textContent === 'Inicio'), 'pestaña activa marcada');
   check(await ev(() => /^\d{1,2}:\d\d$/.test(document.querySelector('.header .clock').textContent)), 'reloj en la cabecera');
   await p.screenshot({ path: OUT + '/100-home-hero.png' });

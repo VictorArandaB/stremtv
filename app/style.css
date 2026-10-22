@@ -24,19 +24,19 @@ html, body { width: 1920px; height: 1080px; overflow: hidden; background: #0d0f1
 .hscroll { white-space: nowrap; overflow: hidden; padding: 14px 80px; }
 .card { display: inline-block; vertical-align: top; width: 220px; margin-right: 28px; white-space: normal; }
 .card .poster { width: 220px; height: 330px; border-radius: 12px; background: #1c2030 center/cover no-repeat;
-  border: 5px solid transparent; position: relative; overflow: hidden;
-  -webkit-transition: -webkit-transform .16s ease-out; transition: transform .16s ease-out; }
+  border: 5px solid transparent; position: relative; overflow: hidden; }
 .card.focused .poster { border-color: #fff; -webkit-transform: scale(1.08); transform: scale(1.08);
   box-shadow: 0 16px 36px rgba(0,0,0,0.7); }
 .card.focused .name { color: #fff; }
 .hscroll.dim .card .poster { opacity: 0.6; }
 .hscroll.dim .card.focused .poster { opacity: 1; }
-/* marcas sobre el póster: visto y nota (la nota solo en la enfocada) */
+/* marcas sobre el póster: visto y nota (la nota solo en la enfocada, y no donde ya sale en la cabecera grande) */
 .card .mark { position: absolute; right: 8px; top: 8px; width: 40px; height: 40px; line-height: 40px; text-align: center; border-radius: 20px;
   background: rgba(13,15,20,0.85); color: #6ee7a8; font-size: 24px; font-weight: bold; }
 .card .rate { position: absolute; left: 8px; bottom: 14px; padding: 2px 12px; border-radius: 8px; background: rgba(13,15,20,0.85);
   color: #ffd84a; font-size: 22px; font-weight: bold; opacity: 0; }
 .card.focused .rate { opacity: 1; }
+.with-hero .card .rate { display: none; }
 /* filas que aún cargan: carátulas vacías que laten */
 /* una sola animación por fila (no por carátula): la tele de 2017 va justa al arrancar */
 .skel { -webkit-animation: pulse 1s ease-in-out infinite alternate; animation: pulse 1s ease-in-out infinite alternate; }
@@ -233,8 +233,7 @@ html, body { width: 1920px; height: 1080px; overflow: hidden; background: #0d0f1
 .with-hero > .header { position: absolute; left: 0; right: 0; top: 0; z-index: 2; }
 .with-hero > .vscroll { top: 560px; }
 .hero { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; }
-.hero-bg { position: absolute; right: 0; top: 0; width: 1440px; height: 810px; background: #0d0f14 center/cover no-repeat; opacity: 0;
-  -webkit-transition: opacity .5s; transition: opacity .5s; }
+.hero-bg { position: absolute; right: 0; top: 0; width: 1440px; height: 810px; background: #0d0f14 center/cover no-repeat; opacity: 0; }
 .hero-bg.on { opacity: 1; }
 .hero-shade { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px;
   background: -webkit-linear-gradient(left, #0d0f14 25%, rgba(13,15,20,0.6) 50%, rgba(13,15,20,0) 75%);
@@ -244,16 +243,14 @@ html, body { width: 1920px; height: 1080px; overflow: hidden; background: #0d0f1
 .hero-shade:before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 140px;
   background: -webkit-linear-gradient(top, rgba(13,15,20,0.7) 0%, rgba(13,15,20,0) 100%); background: linear-gradient(to bottom, rgba(13,15,20,0.7) 0%, rgba(13,15,20,0) 100%); }
 .hero-info { position: absolute; left: 80px; top: 150px; width: 900px; }
-.hero-title { font-size: 60px; font-weight: bold; line-height: 70px; max-height: 140px; overflow: hidden; }
+.hero-title { font-size: 60px; font-weight: bold; line-height: 70px; height: 140px; overflow: hidden; display: -webkit-flex; display: flex;
+  -webkit-align-items: flex-end; align-items: flex-end; }
 .hero-logo { height: 140px; }
 .hero-logo img { max-width: 520px; max-height: 140px; }
 .hero-meta { font-size: 24px; color: #ccd; margin: 16px 0 12px 0; }
 .hero-meta span { margin-right: 22px; }
 .hero-meta .star { color: #ffd84a; font-weight: bold; }
 .hero-desc { font-size: 24px; line-height: 34px; color: #bbc; max-height: 102px; overflow: hidden; }
-.hero-fade { -webkit-animation: fadein .35s; animation: fadein .35s; }
-@-webkit-keyframes fadein { from { opacity: 0; } to { opacity: 1; } }
-@keyframes fadein { from { opacity: 0; } to { opacity: 1; } }
 
 /* INFO en el reproductor */
 #infopanel { position: absolute; left: 100px; top: 100px; width: 1720px; padding: 40px; border-radius: 20px; background: rgba(13,15,20,0.92);
