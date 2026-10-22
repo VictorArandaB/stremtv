@@ -958,9 +958,9 @@
             var e = d && d.next_episode;
             if (!e || (d.aired && d.completed >= d.aired)) return null; // al día: lo «siguiente» aún no se ha emitido
             if (e.first_aired && new Date(e.first_aired) > new Date()) return null;
-            // barra: lo visto de la serie; «Nuevo»: emitido en las últimas 48 h
+            // insignia: episodios emitidos que faltan por ver; «Nuevo»: emitido en las últimas 48 h
             return { id: sh.ids.imdb, type: 'series', name: sh.title, poster: metahubPoster(sh.ids.imdb),
-              label: sh.title + ' · ' + tr('T{0}:E{1}', e.season, e.number), pct: d.aired ? d.completed / d.aired : 0,
+              label: sh.title + ' · ' + tr('T{0}:E{1}', e.season, e.number), left: d.aired ? d.aired - d.completed : 0,
               isNew: !!(e.first_aired && Date.now() - new Date(e.first_aired) < 48 * 3600000) };
           }).catch(function () { return null; });
         });
@@ -1700,6 +1700,7 @@
       p.appendChild(bar);
     }
     if (extra && extra.isNew) p.appendChild(el('div', 'new', esc(tr('Nuevo'))));
+    if (extra && extra.left > 0) p.appendChild(el('div', 'left', String(extra.left)));
     // ✓ en lo ya visto (en las filas de progreso o historial no hace falta) y la nota al enfocarla
     // (en las pantallas con cabecera grande la nota sale en la cabecera y la de la carátula no se ve)
     if (!extra && isSeenMeta(meta)) p.appendChild(el('div', 'mark', '✓'));
@@ -1769,7 +1770,7 @@
     return row;
   }
 
-  // fila que se rellena cuando llega la promesa (metas con .pct/.label opcionales). Si en vez de la promesa se da
+  // fila que se rellena cuando llega la promesa (metas con .pct/.label/.isNew/.left opcionales). Si en vez de la promesa se da
   // una función que la crea, la fila que falla por la red se vuelve a pedir sola cuando vuelve la conexión
   function promiseRow(container, title, promise, onPick, hideIfEmpty, max) {
     var row = el('div', 'row');
@@ -1785,7 +1786,7 @@
         if (!metas.length && hideIfEmpty) { container.removeChild(row); return; }
         var hadFocus = Nav.cur && row.contains(Nav.cur);
         var fresh = metas.length
-          ? posterRow(title, metas, onPick, metas.map(function (m) { return m.pct || m.label || m.isNew ? { pct: m.pct, label: m.label, isNew: m.isNew } : null; }))
+          ? posterRow(title, metas, onPick, metas.map(function (m) { return m.pct || m.label || m.isNew || m.left ? { pct: m.pct, label: m.label, isNew: m.isNew, left: m.left } : null; }))
           : el('div', 'row', '<div class="row-title">' + esc(title) + '</div><div class="empty">' + tr('Sin resultados') + '</div>');
         container.replaceChild(fresh, row);
         if (hadFocus) Nav.setRoot(Nav.root);
@@ -5120,7 +5121,7 @@
 
   // ---------------------------------------------------------------- arranque
 
-  var VERSION = '0.21.0';
+  var VERSION = '0.21.1';
 
   function fitScreen() {
     var z = window.innerWidth / 1920;

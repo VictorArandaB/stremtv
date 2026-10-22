@@ -199,9 +199,9 @@ const ADDONS = JSON.stringify([{ url: 'https://torrentio.strem.fun', manifest: {
   await p.reload({ waitUntil: 'networkidle2' }); await sleep(5000);
   const upn = await ev(() => {
     const r = Array.from(document.querySelectorAll('.row')).filter((x) => /Siguientes/.test(x.querySelector('.row-title').textContent))[0];
-    return r ? Array.from(r.querySelectorAll('.card')).map((c) => ({ name: c.querySelector('.name').textContent, isNew: !!c.querySelector('.new'), bar: (c.querySelector('.pbar') || {}).style ? c.querySelector('.pbar').style.width : '' })) : [];
+    return r ? Array.from(r.querySelectorAll('.card')).map((c) => ({ name: c.querySelector('.name').textContent, isNew: !!c.querySelector('.new'), bar: !!c.querySelector('.pbar'), left: (c.querySelector('.left') || {}).textContent || '' })) : [];
   });
-  check(upn.length === 2 && upn[0].isNew && /Game of Thrones/.test(upn[0].name) && upn[0].bar === '90%' && !upn[1].isNew && upn[1].bar === '20%', 'Siguientes: ' + JSON.stringify(upn));
+  check(upn.length === 2 && upn[0].isNew && /Game of Thrones/.test(upn[0].name) && upn[0].left === '1' && !upn[1].isNew && upn[1].left === '8' && !upn[0].bar && !upn[1].bar, 'Siguientes: ' + JSON.stringify(upn));
   await ev(() => { const r = Array.from(document.querySelectorAll('.row')).filter((x) => /Siguientes/.test(x.textContent))[0]; StremTV.Nav.focus(r.querySelector('.card')); }); await sleep(800);
   await p.screenshot({ path: OUT + '/203-upnext-new.png' });
 

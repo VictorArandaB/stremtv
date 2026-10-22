@@ -175,9 +175,9 @@
             var e = d && d.next_episode;
             if (!e || (d.aired && d.completed >= d.aired)) return null; // al día: lo «siguiente» aún no se ha emitido
             if (e.first_aired && new Date(e.first_aired) > new Date()) return null;
-            // barra: lo visto de la serie; «Nuevo»: emitido en las últimas 48 h
+            // insignia: episodios emitidos que faltan por ver; «Nuevo»: emitido en las últimas 48 h
             return { id: sh.ids.imdb, type: 'series', name: sh.title, poster: metahubPoster(sh.ids.imdb),
-              label: sh.title + ' · ' + tr('T{0}:E{1}', e.season, e.number), pct: d.aired ? d.completed / d.aired : 0,
+              label: sh.title + ' · ' + tr('T{0}:E{1}', e.season, e.number), left: d.aired ? d.aired - d.completed : 0,
               isNew: !!(e.first_aired && Date.now() - new Date(e.first_aired) < 48 * 3600000) };
           }).catch(function () { return null; });
         });

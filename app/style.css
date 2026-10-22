@@ -46,6 +46,8 @@ html, body { width: 1920px; height: 1080px; overflow: hidden; background: #0d0f1
 .card .name { font-size: 22px; margin-top: 12px; color: #c8cad6; height: 56px; overflow: hidden; line-height: 28px; }
 .card .noimg { position: absolute; left: 10px; right: 10px; top: 120px; text-align: center; font-size: 24px; color: #889; }
 .card .pbar { position: absolute; left: 0; bottom: 0; height: 8px; background: #8a7dff; }
+.card .left { position: absolute; right: 8px; top: 8px; min-width: 40px; height: 40px; line-height: 40px; padding: 0 8px; box-sizing: border-box;
+  border-radius: 20px; background: #8a7dff; color: #fff; font-size: 22px; font-weight: bold; text-align: center; }
 .card .new { position: absolute; left: 10px; top: 10px; padding: 2px 10px; border-radius: 6px; background: #e5484d; color: #fff; font-size: 18px; font-weight: bold; }
 .empty { padding: 20px 80px; color: #778; font-size: 26px; }
 
