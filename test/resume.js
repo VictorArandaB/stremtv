@@ -30,7 +30,7 @@ const VIDEO = 'https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/1080/Big_Buc
   console.log('película:', await p.evaluate(() => Array.from(document.querySelectorAll('.detail .btn')).map((x) => x.textContent).join(' | ')), '· foco:', await p.evaluate(() => StremTV.Nav.cur.textContent));
   await key('Enter'); await sleep(2500);
   console.log('arranca en:', await p.evaluate(() => StremTV.Player.time.toFixed(1) + ' s de ' + StremTV.Player.duration.toFixed(1)));
-  await key('Escape'); await sleep(500); await key('Escape'); await sleep(800);
+  await key('Escape'); await sleep(800); // del vídeo directamente a la ficha
   console.log('película tras verla aquí (manda lo local):', await p.evaluate(() => document.querySelector('.detail .btn').textContent));
   await key('Escape'); await sleep(500);
   await p.evaluate(() => StremTV.open('series', 'tt0903747')); await sleep(3500);

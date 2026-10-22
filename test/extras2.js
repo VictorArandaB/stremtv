@@ -49,10 +49,10 @@ const VIDEO = 'https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/1080/Big_Buc
   // sinopsis del episodio y reparto sin TMDB
   await p.evaluate(() => StremTV.open('series', 'tt0903747')); await sleep(3500);
   const desc = () => p.evaluate(() => document.querySelector('.detail .desc').textContent.slice(0, 70));
-  await p.evaluate(() => StremTV.Nav.focus(document.querySelector('.ep'))); await sleep(200);
-  console.log('episodio enfocado:', await desc());
-  await p.evaluate(() => StremTV.Nav.focus(document.querySelector('.seasons .btn'))); await sleep(200);
-  console.log('temporada enfocada:', await desc());
+  // la sinopsis de cada episodio va en su fila; arriba se queda la de la serie
+  const epOv = () => p.evaluate(() => (document.querySelector('.ep .ep-ov') || { textContent: 'NO' }).textContent.slice(0, 70));
+  console.log('sinopsis del episodio:', await epOv());
+  console.log('sinopsis de la serie:', await desc());
   console.log('botones:', await p.evaluate(() => Array.from(document.querySelectorAll('.detail .btn.small')).map((x) => x.textContent).join(' | ')));
   await p.evaluate(() => StremTV.Nav.focus(Array.from(document.querySelectorAll('.detail .btn')).filter((x) => x.textContent === 'Reparto')[0])); await key('Enter'); await sleep(400);
   console.log('reparto sin TMDB:', await p.evaluate(() => Array.from(document.querySelectorAll('.mi')).slice(0, 3).map((x) => x.textContent).join(' | ')));
@@ -61,8 +61,7 @@ const VIDEO = 'https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/1080/Big_Buc
   // con TMDB: reparto con personajes → filmografía; sinopsis en español
   await p.evaluate(() => { StremTV.settings.tmdbKey = 'CLAVE'; });
   await p.evaluate(() => StremTV.open('series', 'tt0903747')); await sleep(3500);
-  await p.evaluate(() => StremTV.Nav.focus(document.querySelector('.ep'))); await sleep(300);
-  console.log('episodio (TMDB):', await desc());
+  console.log('episodio (TMDB):', await epOv());
   await p.evaluate(() => StremTV.Nav.focus(Array.from(document.querySelectorAll('.detail .btn')).filter((x) => x.textContent === 'Reparto')[0])); await key('Enter'); await sleep(800);
   console.log('reparto TMDB:', await p.evaluate(() => Array.from(document.querySelectorAll('.mi')).map((x) => x.textContent).join(' | ')));
   await key('Enter'); await sleep(1200);

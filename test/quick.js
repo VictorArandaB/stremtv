@@ -27,7 +27,8 @@ const VIDEO = 'https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/1080/Big_Buc
   console.log('subs:', await p.evaluate(() => document.getElementById('subs').className + ' · ' + document.getElementById('subs').innerHTML));
   await p.screenshot({ path: __dirname + '/shots/80-quick.png' });
   await key('Escape'); await sleep(800);
-  console.log('tras Atrás, lista:', await p.evaluate(() => document.querySelector('.screen-sub').textContent), '· foco:', await p.evaluate(() => StremTV.Nav.cur.textContent.slice(0, 60)));
+  // ya reproducido: Atrás vuelve a la ficha, no a la lista de fuentes
+  console.log('tras Atrás:', await p.evaluate(() => { const t = StremTV.stack[StremTV.stack.length - 1]; return (t.streamsOf ? 'lista' : t.el.querySelector('.detail') ? 'ficha' : '?') + ' · foco: ' + StremTV.Nav.cur.textContent.slice(0, 60); }));
   // subtítulos incrustados con AVPlay simulado
   const emb = await p.evaluate(() => {
     const calls = [];
@@ -42,7 +43,7 @@ const VIDEO = 'https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/1080/Big_Buc
   console.log('incrustados (audio eng, subs spa):', emb);
   // aviso del certificado: simular que faltan 10 días
   await p.evaluate(() => { Date.now = () => new Date(2026, 11, 22).getTime(); });
-  await key('Escape'); await key('Escape'); await sleep(1500);
+  await key('Escape'); await sleep(1500);
   console.log('aviso certificado:', await p.evaluate(() => (document.querySelector('.cert-warn') || {}).textContent));
   console.log('ERRORES:', errs.length ? errs : 'ninguno');
   await b.close();

@@ -48,7 +48,7 @@ const VIDEO = 'https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/1080/Big_Buc
   console.log('tras salir, pantalla:', await page.evaluate(() => document.querySelector('#player').className), await focused());
   const prog = await page.evaluate(() => localStorage.getItem('stv.progress'));
   console.log('progreso guardado:', prog && prog.slice(0, 200));
-  await key('Escape'); await key('Escape'); await sleep(1500);
+  await key('Escape'); await sleep(1500); // Atrás desde el vídeo ya vuelve a la ficha: una vez más, a Inicio
   await page.screenshot({ path: OUT + '/13-home-continue.png' });
   // ajustes
   await key('ArrowUp', 4); await key('ArrowRight', 4); await key('Enter'); await sleep(800);

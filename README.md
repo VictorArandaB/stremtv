@@ -23,10 +23,16 @@ Escrito en ES5 y CSS sin funciones modernas para que funcione en el motor web de
 - **Addons de Stremio**: en Ajustes → Fuentes y debrid se pega la URL de un manifest; sus fuentes se suman entre sí, sus catálogos salen en Inicio (hasta 4 filas) y en la búsqueda, y sus subtítulos en el menú ▲.
 - **Explorar**: películas o series por género y año, populares o mejor valoradas.
 - **Esta semana en tus series** (Trakt): episodios de las series que sigues, de hace dos días a una semana vista.
-- **Reproducción directa**: «▶ Ver» arranca la mejor fuente (instantánea, que quepa en la conexión, o la misma release que en el episodio anterior); Atrás lleva a la lista para elegir otra.
+- **Reproducción directa**: «▶ Ver» arranca la mejor fuente (instantánea, que quepa en la conexión, o la misma release que en el episodio anterior); para elegir otra, ▼ → «Cambiar fuente…».
 - Hora a la que termina el vídeo en la barra, subtítulos con fondo y subtítulos del propio MKV por defecto si los trae en tu idioma.
 - **App en español o inglés** (Ajustes → Idioma de la app, primera opción).
 - **Idioma del audio elegible** (español, inglés, francés, alemán, italiano, portugués, japonés, coreano, catalán u original): se pone solo si el archivo lo trae, y si coincide con el de los subtítulos automáticos, no los pone.
+- **Inicio con cabecera grande**: fondo, logo, nota, año y sinopsis de la carátula enfocada (también en Anime); la fila enfocada atenúa el resto, ✓ en lo visto, reloj y pestaña activa en la cabecera.
+- **Ficha** con el logo del título, botón «▶ Ver T1:E3» con el siguiente episodio pendiente y sinopsis y duración en cada episodio.
+- **Fuentes agrupadas por calidad** (4K, 1080p, 720p…) con la recomendada (la que elige «▶ Ver») marcada.
+- **Reproductor**: reloj, episodio bajo el título, burbuja con el tiempo de destino al avanzar y **INFO** con la ficha y los datos técnicos (resolución, archivo, audio, subtítulos) sin salir del vídeo.
+- **Atrás en el vídeo vuelve a la ficha** (la lista de fuentes solo si el vídeo no llegó a empezar o falló); para **cambiar de fuente** sin salir, ▼ → «Cambiar fuente…», que sigue en el mismo punto.
+- **Pausa automática** al salir de la app (Home, cambio de fuente) y **protector de pantalla** con fondos que se funden si el vídeo lleva unos minutos en pausa (Ajustes → Reproducción: 3 min, 10 min o no).
 - **Trakt**: vinculación con código, scrobble automático (visto al pasar del 80 %), «Continuar», tu lista, recomendaciones y episodios vistos. El anime se registra usando su equivalencia en IMDb.
 
 ## Instalar en TizenBrew
@@ -48,9 +54,10 @@ La clave solo se guarda en la tele.
 ## Mando
 | Tecla | Navegación | Reproductor |
 |---|---|---|
-| Flechas | Moverse | ◀ ▶ retroceder/avanzar (pulsaciones seguidas aceleran), ▲ subtítulos, ▼ audio |
+| Flechas | Moverse | ◀ ▶ retroceder/avanzar (pulsaciones seguidas aceleran), ▲ subtítulos, ▼ audio, fuente y temporizador |
 | OK | Abrir | Pausa/continuar |
-| Atrás | Volver | Salir (guarda la posición) |
+| INFO | — | Ficha y datos técnicos (cualquier tecla lo cierra) |
+| Atrás | Volver | Salir a la ficha (guarda la posición) |
 
 ## Desarrollo
 ```
