@@ -33,7 +33,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   await p.evaluate(() => { StremTV.settings.audioLang = 'spa'; StremTV.settings.lastAudio = ''; });
   console.log('rus+eng sin español → eng:', JSON.stringify(await run([{ index: 1, lang: 'rus' }, { index: 2, lang: 'eng' }], 'peli1')));
   await p.evaluate(() => { StremTV.settings.lastAudio = 'fre'; });
-  console.log('rus+eng+fra, último elegido francés → fra:', JSON.stringify(await run([{ index: 1, lang: 'rus' }, { index: 2, lang: 'eng' }, { index: 3, lang: 'fra' }], 'peli1')));
+  console.log('rus+eng+fra (lastAudio ya no cuenta) → eng:', JSON.stringify(await run([{ index: 1, lang: 'rus' }, { index: 2, lang: 'eng' }, { index: 3, lang: 'fra' }], 'peli1')));
   // elegir a mano en una película: se recuerda para esa película
   const picked = await p.evaluate(() => {
     let cur = 1;
@@ -48,7 +48,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   });
   console.log('elegido a mano en película:', JSON.stringify(picked));
   console.log('volver a poner peli2 (rus+ger) → ger:', JSON.stringify(await run([{ index: 1, lang: 'rus' }, { index: 2, lang: 'ger' }], 'peli2')));
-  console.log('otra peli sin español ni alemán recordado → último (ger):', JSON.stringify(await run([{ index: 1, lang: 'rus' }, { index: 2, lang: 'eng' }, { index: 3, lang: 'deu' }], 'peli3')));
+  console.log('otra peli sin español (lastAudio ya no cuenta) → eng:', JSON.stringify(await run([{ index: 1, lang: 'rus' }, { index: 2, lang: 'eng' }, { index: 3, lang: 'deu' }], 'peli3')));
   // tras elegir a mano con ▼, los reintentos automáticos no la cambian
   const keep = await p.evaluate(() => {
     let cur = 2, calls = [];

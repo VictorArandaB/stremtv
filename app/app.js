@@ -363,13 +363,13 @@
   var DEFAULTS = {
     debrid: 'realdebrid', key: '', onlyCached: true, maxQ: 'all',
     preferEs: true, compatFirst: true, hideWatched: true, maxRate: 'auto', measuredMbps: 0, measuredAt: 0,
-    subLang: 'spa', subSize: 'normal', autoNext: true, audioLang: 'spa', lang: 'es', quickPlay: true, subBg: true, tmdbKey: '', autoSkip: false, lastAudio: '', lastAudioAnime: '', subColor: 'white', subPos: 'low', saver: 3,
+    subLang: 'spa', subSize: 'normal', autoNext: true, audioLang: 'spa', lang: 'es', quickPlay: true, subBg: true, tmdbKey: '', autoSkip: false, subColor: 'white', subPos: 'low', saver: 3,
     idleSaver: 10, saverShow: 'mix', saverEvery: 20
   };
   var settings = extend(extend({}, DEFAULTS), load('settings', {}));
   function saveSettings() { save('settings', settings); }
-  // hasta 0.19 había un solo «último audio»: el japonés del anime pasaba a las películas y series normales
-  if (/^(jp|ja)/.test(settings.lastAudio)) { settings.lastAudioAnime = 'jpn'; settings.lastAudio = ''; saveSettings(); }
+  // el «último audio elegido» ya no se usa (0.20.1): el orden es el título, Ajustes, la app e inglés
+  if ('lastAudio' in settings || 'lastAudioAnime' in settings) { delete settings.lastAudio; delete settings.lastAudioAnime; saveSettings(); }
 
   var DEBRID_NAMES = { realdebrid: 'Real-Debrid', alldebrid: 'AllDebrid' };
   var QUALITY_NAMES = { all: 'Todas', '1080': 'Hasta 1080p', '720': 'Hasta 720p' };
@@ -2440,8 +2440,6 @@
       meta = res.meta;
       if (!meta) throw new Error(tr('sin datos'));
       if (isAnime) type = meta.type === 'movie' ? 'movie' : 'series';
-      // anime aunque venga de Cinemeta (Edgerunners): para recordar aparte su idioma de audio. Antes de TMDB, que traduce los géneros
-      meta._anime = isAnime || (/Animation/.test(String(meta.genres || '')) && /^Japan/.test(meta.country || ''));
       if (!tmdbOn() || !imdbOf()) return render();
       return withTimeout(tmdbDetail(imdbOf()), 2500).then(function (es) {
         if (es) {
@@ -2518,7 +2516,7 @@
     }
 
     function base() {
-      return { type: type, metaId: meta.id, anime: !!meta._anime, imdb: imdbOf(), name: meta.name, poster: meta.poster, background: meta.background,
+      return { type: type, metaId: meta.id, imdb: imdbOf(), name: meta.name, poster: meta.poster, background: meta.background,
         runtime: parseRuntime(meta.runtime), desc: meta.description || '', info: infoParts().join(' · ') };
     }
 
@@ -3666,12 +3664,11 @@
     autoAudio: function (quiet) {
       if (this.audioChosen) return true; // ya elegida a mano con ▼
       var c = this.ctx, pref = srcPrefs[c.metaId];
-      // por orden: lo elegido en esta película o serie, el idioma de Ajustes, el último elegido a mano (aparte en el anime),
-      // inglés y, si tampoco, el idioma de la app antes que la primera pista
-      // (muchos archivos traen primero una pista en ruso u otro doblaje; Dune traía francés y español)
+      // por orden: lo elegido a mano en esta película o serie, el idioma de Ajustes, el de la app y, si tampoco, inglés
+      // antes que la primera pista (muchos archivos traen primero una pista en ruso u otro doblaje; Dune traía francés y español)
       var wants = [], all = [];
       if (pref && pref.audio) all.push(pref.audio);
-      if (settings.audioLang !== 'orig') all.push(settings.audioLang, this.isAnime() ? settings.lastAudioAnime : settings.lastAudio, 'eng', settings.lang === 'en' ? 'eng' : 'spa');
+      if (settings.audioLang !== 'orig') all.push(settings.audioLang, settings.lang === 'en' ? 'eng' : 'spa', 'eng');
       all.forEach(function (l) { l = langKey(l); if (l && wants.indexOf(l) < 0) wants.push(l); });
       var tracks = this.avTracks('AUDIO'), cur = this.currentAudio(), i, w, pick = null;
       for (w = 0; !pick && tracks.length > 1 && w < wants.length; w++) {
@@ -3708,8 +3705,6 @@
       }
       return !pick || now === pick.index;
     },
-
-    isAnime: function () { return !!(this.ctx && (this.ctx.anime || String(this.ctx.metaId || '').indexOf('kitsu:') === 0)); },
 
     // mientras la tele no acepta la pista elegida (1-2 s al empezar) suena la primera: silencio hasta entonces.
     // Con tope de 4 s y sin tocar nada si la tele ya estaba en silencio; se guarda por si la app se cierra a medias
@@ -3921,10 +3916,8 @@
         self.audioKey = it.lang;
         self.audioChosen = true;
         if (it.lang) {
-          // se recuerda en esta película o serie, y como idioma de reserva para las demás
+          // se recuerda solo en esta película o serie
           saveSrcPref(c.metaId, { audio: it.lang });
-          settings[self.isAnime() ? 'lastAudioAnime' : 'lastAudio'] = it.lang;
-          saveSettings();
           toast(c.type === 'series' ? tr('Audio cambiado (se usará en el resto de la serie)') : tr('Audio cambiado (se recordará para esta película)'));
         } else toast(tr('Audio cambiado'));
       });
@@ -4971,7 +4964,7 @@
 
   // ---------------------------------------------------------------- arranque
 
-  var VERSION = '0.20.0';
+  var VERSION = '0.20.1';
 
   function fitScreen() {
     var z = window.innerWidth / 1920;

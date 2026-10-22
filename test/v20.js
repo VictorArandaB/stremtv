@@ -1,4 +1,4 @@
-// 0.20: audio (reserva en español, último audio aparte en el anime, sin repetidos, silencio hasta aplicar), cortes con aviso
+// 0.20: audio (título → Ajustes → idioma de la app → inglés → primera, sin repetidos, silencio hasta aplicar), cortes con aviso
 // para cambiar de fuente, recuperación de fallos a mitad, intro aprendida, teclas 0-9, salto en la burbuja,
 // cola desde el móvil (cola.txt en el Gist) y «Nuevo» con barra en Siguientes episodios.
 // Uso: node v20.js  (servidor en 127.0.0.1:8090)  -> capturas 200-… en ./shots
@@ -50,8 +50,7 @@ const ADDONS = JSON.stringify([{ url: 'https://torrentio.strem.fun', manifest: {
   await p.reload({ waitUntil: 'networkidle2' }); await sleep(800);
 
   // --- audio
-  const mig = await ev(() => ({ last: StremTV.settings.lastAudio, anime: StremTV.settings.lastAudioAnime }));
-  check(mig.last === '' && mig.anime === 'jpn', 'el «jp» guardado pasa al anime: ' + JSON.stringify(mig));
+  check(await ev(() => !('lastAudio' in JSON.parse(localStorage.getItem('stv.settings')))), 'el «último audio» guardado se borra');
   const run = (tracks, ctx) => ev((tracks, ctx) => {
     let cur = tracks[0].index;
     window.webapis = { avplay: {
@@ -64,12 +63,20 @@ const ADDONS = JSON.stringify([{ url: 'https://torrentio.strem.fun', manifest: {
   }, tracks, ctx);
   let r = await run([{ index: 1, lang: 'fr' }, { index: 2, lang: 'es' }], { type: 'movie', metaId: 'tt15239678' });
   check(r.cur === 2, 'Dune (francés y español, buscando inglés): español → ' + JSON.stringify(r));
-  r = await run([{ index: 1, lang: 'es' }, { index: 2, lang: 'jp' }], { type: 'series', metaId: 'tt12590266', anime: true });
-  check(r.cur === 2 && r.key === 'jpn', 'anime (es, jp): el último del anime, japonés → ' + JSON.stringify(r));
   r = await run([{ index: 1, lang: 'jp' }, { index: 2, lang: 'en' }], { type: 'movie', metaId: 'tt0000001' });
-  check(r.cur === 2, 'película normal (jp, en): inglés, el japonés no se cuela → ' + JSON.stringify(r));
-  r = await run([{ index: 1, lang: 'es' }, { index: 2, lang: 'jp' }], { type: 'series', metaId: 'kitsu:1376' });
-  check(r.cur === 2, 'id de Kitsu cuenta como anime → ' + JSON.stringify(r));
+  check(r.cur === 2, 'Ajustes en inglés (jp, en): inglés → ' + JSON.stringify(r));
+  await ev(() => { localStorage.setItem('stv.srcprefs', JSON.stringify({ 'tt12590266': { audio: 'jp' } })); });
+  await p.reload({ waitUntil: 'networkidle2' }); await sleep(800);
+  r = await run([{ index: 1, lang: 'es' }, { index: 2, lang: 'jp' }, { index: 3, lang: 'en' }], { type: 'series', metaId: 'tt12590266' });
+  check(r.cur === 2 && r.key === 'jpn', 'elegido a mano en la serie («jp» de AVPlay) manda sobre Ajustes → ' + JSON.stringify(r));
+  await ev(() => { StremTV.settings.audioLang = 'fre'; });
+  r = await run([{ index: 1, lang: 'ru' }, { index: 2, lang: 'en' }, { index: 3, lang: 'es' }], { type: 'movie', metaId: 'tt0000002' });
+  check(r.cur === 3, 'Ajustes en francés sin francés: idioma de la app (español) antes que inglés → ' + JSON.stringify(r));
+  r = await run([{ index: 1, lang: 'ru' }, { index: 2, lang: 'en' }], { type: 'movie', metaId: 'tt0000002' });
+  check(r.cur === 2, 'ni Ajustes ni la app: inglés antes que la primera (ruso) → ' + JSON.stringify(r));
+  r = await run([{ index: 1, lang: 'ru' }, { index: 2, lang: 'de' }], { type: 'movie', metaId: 'tt0000002' });
+  check(r.cur === 1, 'ninguno: se queda en la primera → ' + JSON.stringify(r));
+  await ev(() => { StremTV.settings.audioLang = 'eng'; });
   await sleep(1700);
   const busca = await ev(() => JSON.parse(localStorage.getItem('stv.log')).filter((e) => e.k === 'audio').map((e) => e.d.busca));
   check(busca.every((l) => l.length === new Set(l).size), 'sin idiomas repetidos en la búsqueda: ' + JSON.stringify(busca[0]));
@@ -77,22 +84,13 @@ const ADDONS = JSON.stringify([{ url: 'https://torrentio.strem.fun', manifest: {
     let cur = 1;
     window.webapis = { avplay: { getTotalTrackInfo: () => [{ type: 'AUDIO', index: 1, extra_info: '{"language":"es"}' }, { type: 'AUDIO', index: 2, extra_info: '{"language":"ko"}' }],
       getCurrentStreamInfo: () => [{ type: 'AUDIO', index: cur }], setSelectTrack: (k, i) => { cur = i; } } };
-    const P = StremTV.Player; P.backend = 'av'; P.ctx = { type: 'series', metaId: 'kitsu:11', anime: true };
+    const P = StremTV.Player; P.backend = 'av'; P.ctx = { type: 'series', metaId: 'kitsu:11' };
     P.audioMenu();
     const mi = Array.from(document.querySelectorAll('.mi')).filter((x) => /Coreano/.test(x.textContent))[0];
     StremTV.Nav.focus(mi); mi._onclick(mi); P.backend = null;
-    return { anime: StremTV.settings.lastAudioAnime, last: StremTV.settings.lastAudio };
+    return { pref: JSON.parse(localStorage.getItem('stv.srcprefs'))['kitsu:11'].audio, last: 'lastAudio' in StremTV.settings };
   });
-  check(manual.anime === 'kor' && manual.last === '', 'elegido a mano en anime: se guarda solo para el anime ' + JSON.stringify(manual));
-  // ficha: Edgerunners (Cinemeta, animación japonesa) lleva anime; Breaking Bad no
-  const animeCtx = async (id) => {
-    await ev((id) => StremTV.open('series', id), id); await sleep(3500);
-    await ev(() => StremTV.Nav.focus(document.querySelector('.ep'))); await key('Enter'); await sleep(1500);
-    const a = await ev(() => { const s = StremTV.stack[StremTV.stack.length - 1]; return s.ctx ? s.ctx.anime : s.streamsOf; });
-    await key('Escape'); await key('Escape'); await sleep(400);
-    return a;
-  };
-
+  check(manual.pref === 'kor' && !manual.last, 'elegido a mano: solo para esa serie ' + JSON.stringify(manual));
   // --- silencio mientras la tele no acepta la pista
   const mute = await ev(async () => {
     let muted = false; const calls = [];
@@ -180,8 +178,6 @@ const ADDONS = JSON.stringify([{ url: 'https://torrentio.strem.fun', manifest: {
   await ev(() => StremTV.Player.leave()); await sleep(300);
   await key('Escape'); await key('Escape'); await sleep(400);
 
-  check(await animeCtx('tt12590266') === true, 'ficha de Edgerunners (Cinemeta): cuenta como anime');
-  check(await animeCtx('tt0903747') === false, 'ficha de Breaking Bad: no es anime');
 
   // --- cola desde el móvil
   cola = '# instrucciones\nver https://m.imdb.com/title/tt0816692/\nserie The Bear\nzzqqxx título inexistente 123\n';

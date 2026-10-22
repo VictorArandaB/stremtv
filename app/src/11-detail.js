@@ -72,8 +72,6 @@
       meta = res.meta;
       if (!meta) throw new Error(tr('sin datos'));
       if (isAnime) type = meta.type === 'movie' ? 'movie' : 'series';
-      // anime aunque venga de Cinemeta (Edgerunners): para recordar aparte su idioma de audio. Antes de TMDB, que traduce los géneros
-      meta._anime = isAnime || (/Animation/.test(String(meta.genres || '')) && /^Japan/.test(meta.country || ''));
       if (!tmdbOn() || !imdbOf()) return render();
       return withTimeout(tmdbDetail(imdbOf()), 2500).then(function (es) {
         if (es) {
@@ -150,7 +148,7 @@
     }
 
     function base() {
-      return { type: type, metaId: meta.id, anime: !!meta._anime, imdb: imdbOf(), name: meta.name, poster: meta.poster, background: meta.background,
+      return { type: type, metaId: meta.id, imdb: imdbOf(), name: meta.name, poster: meta.poster, background: meta.background,
         runtime: parseRuntime(meta.runtime), desc: meta.description || '', info: infoParts().join(' · ') };
     }
 

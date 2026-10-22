@@ -530,12 +530,11 @@
     autoAudio: function (quiet) {
       if (this.audioChosen) return true; // ya elegida a mano con ▼
       var c = this.ctx, pref = srcPrefs[c.metaId];
-      // por orden: lo elegido en esta película o serie, el idioma de Ajustes, el último elegido a mano (aparte en el anime),
-      // inglés y, si tampoco, el idioma de la app antes que la primera pista
-      // (muchos archivos traen primero una pista en ruso u otro doblaje; Dune traía francés y español)
+      // por orden: lo elegido a mano en esta película o serie, el idioma de Ajustes, el de la app y, si tampoco, inglés
+      // antes que la primera pista (muchos archivos traen primero una pista en ruso u otro doblaje; Dune traía francés y español)
       var wants = [], all = [];
       if (pref && pref.audio) all.push(pref.audio);
-      if (settings.audioLang !== 'orig') all.push(settings.audioLang, this.isAnime() ? settings.lastAudioAnime : settings.lastAudio, 'eng', settings.lang === 'en' ? 'eng' : 'spa');
+      if (settings.audioLang !== 'orig') all.push(settings.audioLang, settings.lang === 'en' ? 'eng' : 'spa', 'eng');
       all.forEach(function (l) { l = langKey(l); if (l && wants.indexOf(l) < 0) wants.push(l); });
       var tracks = this.avTracks('AUDIO'), cur = this.currentAudio(), i, w, pick = null;
       for (w = 0; !pick && tracks.length > 1 && w < wants.length; w++) {
@@ -572,8 +571,6 @@
       }
       return !pick || now === pick.index;
     },
-
-    isAnime: function () { return !!(this.ctx && (this.ctx.anime || String(this.ctx.metaId || '').indexOf('kitsu:') === 0)); },
 
     // mientras la tele no acepta la pista elegida (1-2 s al empezar) suena la primera: silencio hasta entonces.
     // Con tope de 4 s y sin tocar nada si la tele ya estaba en silencio; se guarda por si la app se cierra a medias
@@ -785,10 +782,8 @@
         self.audioKey = it.lang;
         self.audioChosen = true;
         if (it.lang) {
-          // se recuerda en esta película o serie, y como idioma de reserva para las demás
+          // se recuerda solo en esta película o serie
           saveSrcPref(c.metaId, { audio: it.lang });
-          settings[self.isAnime() ? 'lastAudioAnime' : 'lastAudio'] = it.lang;
-          saveSettings();
           toast(c.type === 'series' ? tr('Audio cambiado (se usará en el resto de la serie)') : tr('Audio cambiado (se recordará para esta película)'));
         } else toast(tr('Audio cambiado'));
       });

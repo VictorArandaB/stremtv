@@ -3,13 +3,13 @@
   var DEFAULTS = {
     debrid: 'realdebrid', key: '', onlyCached: true, maxQ: 'all',
     preferEs: true, compatFirst: true, hideWatched: true, maxRate: 'auto', measuredMbps: 0, measuredAt: 0,
-    subLang: 'spa', subSize: 'normal', autoNext: true, audioLang: 'spa', lang: 'es', quickPlay: true, subBg: true, tmdbKey: '', autoSkip: false, lastAudio: '', lastAudioAnime: '', subColor: 'white', subPos: 'low', saver: 3,
+    subLang: 'spa', subSize: 'normal', autoNext: true, audioLang: 'spa', lang: 'es', quickPlay: true, subBg: true, tmdbKey: '', autoSkip: false, subColor: 'white', subPos: 'low', saver: 3,
     idleSaver: 10, saverShow: 'mix', saverEvery: 20
   };
   var settings = extend(extend({}, DEFAULTS), load('settings', {}));
   function saveSettings() { save('settings', settings); }
-  // hasta 0.19 había un solo «último audio»: el japonés del anime pasaba a las películas y series normales
-  if (/^(jp|ja)/.test(settings.lastAudio)) { settings.lastAudioAnime = 'jpn'; settings.lastAudio = ''; saveSettings(); }
+  // el «último audio elegido» ya no se usa (0.20.1): el orden es el título, Ajustes, la app e inglés
+  if ('lastAudio' in settings || 'lastAudioAnime' in settings) { delete settings.lastAudio; delete settings.lastAudioAnime; saveSettings(); }
 
   var DEBRID_NAMES = { realdebrid: 'Real-Debrid', alldebrid: 'AllDebrid' };
   var QUALITY_NAMES = { all: 'Todas', '1080': 'Hasta 1080p', '720': 'Hasta 720p' };

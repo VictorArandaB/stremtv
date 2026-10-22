@@ -16,7 +16,7 @@ Escrito en ES5 y CSS sin funciones modernas para que funcione en el motor web de
 - En cada serie recuerda la **fuente** (misma release o pack) y la **pista de audio** elegidas y las usa en los demás episodios.
 - **Registro de diagnóstico** (errores, pistas de audio de cada archivo, fallos de fuentes, tiempos de arranque) que se envía con la copia al Gist; sinopsis del episodio al pasar por él; **Reparto** con la filmografía de cada actor (TMDB); fila **Visto recientemente**; subtítulos en más idiomas, amarillos o más arriba.
 - Búsquedas recientes y resultados mientras escribes, «Más como esto» en la ficha, **saltar intro/ending de anime** (AniSkip) y **temporizador** (menú ▼).
-- La pista de audio elegida se recuerda por película o serie; si falta tu idioma, se prueba el último elegido y después inglés.
+- La pista de audio elegida se recuerda por película o serie.
 - **Títulos y sinopsis en español** con una clave gratuita de TMDB (Ajustes, debajo del idioma): tarjetas, fichas, géneros, nombres de episodio y búsqueda en español.
 - **Retomar desde Trakt** lo dejado a medias en otro dispositivo («▶ Continuar (35 %)»).
 - **Copia de seguridad** en un Gist secreto de GitHub (Ajustes → Copia de seguridad): diaria y automática; para restaurar basta con escribir el token.
@@ -38,7 +38,7 @@ Escrito en ES5 y CSS sin funciones modernas para que funcione en el motor web de
 - **Marcar como visto a mano**: películas (botón en la ficha), episodios y temporadas enteras (botón verde); con Trakt también se añade o quita de su historial.
 - **Botones de colores del mando**: rojo Mi lista, verde visto, amarillo Más como esto (en la ficha y sobre cualquier carátula); azul en el vídeo, cambiar fuente.
 - **Protector de pantalla** (Ajustes → Protector de pantalla): sin tocar el mando unos minutos, fondos a pantalla completa con logo, nota y sinopsis de lo que elijas (pendientes de ver, Mi lista, novedades o un poco de todo); OK abre la ficha del título que se ve. Con el vídeo en pausa sigue el de siempre.
-- **Audio más fino**: si el archivo no trae ninguno de tus idiomas, prefiere el de la app (español) antes que la primera pista; el último audio elegido se recuerda aparte para el anime (el japonés no pasa a las películas) y la tele se queda en silencio el segundo que tarda en aceptar la pista elegida.
+- **Audio**: por orden, el elegido a mano en esa película o serie, el de Ajustes, el idioma de la app y, si no, inglés antes que la primera pista; la tele se queda en silencio el segundo que tarda en aceptar la pista elegida.
 - **Fuentes que se cortan**: tres cortes en 10 minutos ofrecen pasar a una fuente más ligera en el mismo punto (OK); si una fuente falla a mitad de vídeo, sigue sola con otra (hasta dos veces seguidas). Los cortes de cada vídeo quedan en el registro.
 - **Saltar intro en cualquier serie**: si saltas la intro en un episodio (de 30 s a 3 min hacia delante en los 10 primeros minutos), los siguientes ofrecen «⏭ OK: saltar intro» en el mismo tramo. En el anime manda AniSkip.
 - **Teclas 0-9 en el vídeo**: 1-9 van al 10 %-90 % y 0 al principio; la burbuja al avanzar dice también cuánto se salta.
