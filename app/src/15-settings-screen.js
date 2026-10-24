@@ -88,7 +88,7 @@
     if (id === 'subs') return langName(SUB_NAMES, settings.subLang) + ' · ' + (settings.subColor === 'yellow' ? tr('Amarillo') : tr('Blanco'));
     if (id === 'accounts') {
       var mark = function (on) { return on ? ' ✓' : ' —'; }; // sin configurar no es un error: son opcionales
-      return 'Trakt' + mark(Trakt.linked()) + ' · TMDB' + mark(settings.tmdbKey) + ' · GitHub' + mark(backup.token);
+      return 'Trakt' + mark(Trakt.linked()) + ' · TMDB' + mark(settings.tmdbKey) + ' · OMDb' + mark(settings.omdbKey) + ' · GitHub' + mark(backup.token);
     }
     if (id === 'saver') {
       return settings.idleSaver ? tr('A los {0} min', settings.idleSaver) + ' · ' + tr(SAVER_SHOW_NAMES[settings.saverShow] || SAVER_SHOW_NAMES.mix) : tr('No');
@@ -351,6 +351,21 @@
       var tmdbStatus = el('div', 'note', esc(tr('Gratis en themoviedb.org → Ajustes → API. Solo se usa con la app en español.')));
       box.appendChild(tmdbStatus);
 
+      heading(tr('Notas de Rotten Tomatoes y Metacritic (OMDb)'));
+      var omdbInput = textField('Clave de OMDb (pulsa OK para escribirla)', settings.omdbKey, 'Clave de omdbapi.com', function (v) {
+        settings.omdbKey = (v || '').replace(/\s+/g, '');
+        omdbInput.value = settings.omdbKey;
+        saveSettings();
+        omdbCache = {};
+        if (!settings.omdbKey) { omdbStatus.textContent = tr('Sin clave: solo la nota de IMDb.'); return; }
+        omdbStatus.textContent = tr('Comprobando…');
+        omdbRatings('tt0111161').then(function (r) {
+          omdbStatus.textContent = r ? tr('✓ Clave válida (Cadena perpetua: Rotten Tomatoes {0} %)', r.rt) : tr('✗ La clave no es válida o aún no está activada (llega un correo para activarla)');
+        });
+      });
+      var omdbStatus = el('div', 'note', esc(tr('Gratis en omdbapi.com → API Key (plan FREE, 1000 consultas al día). Las notas salen en la ficha junto a la de IMDb.')));
+      box.appendChild(omdbStatus);
+
       heading(tr('Copia de seguridad (GitHub)'));
       box.appendChild(el('div', 'note', esc(tr('Guarda tus ajustes, claves, Trakt, progreso y addons en un Gist secreto de tu cuenta de GitHub, una vez al día. Si se borran los datos de la app, escribe el token y pulsa Restaurar.'))));
       var tokenInput = textField('Token de GitHub con permiso «gist» (pulsa OK para escribirlo)', backup.token ? backup.token.slice(0, 8) + '…' : '', 'ghp_…', function (v) {
@@ -419,6 +434,8 @@
       });
 
       opt('Ocultar lo que ya he visto (Trakt y esta app)', function () { return yesNo(settings.hideWatched); }, function () { settings.hideWatched = !settings.hideWatched; Seen.at = 0; });
+
+      opt('Filas de Inicio', function () { return tr('Ordenar u ocultar ›'); }, function () { push(homeRowsScreen()); });
     };
 
     build.data = function () {
@@ -482,6 +499,73 @@
 
     build[section]();
     return { el: root, initialFocus: function () { return box.querySelector('.f'); } };
+  }
+
+  // Ajustes → General → Filas de Inicio: OK sobre una fila la sube, baja, lleva arriba del todo u oculta
+  function homeRowsScreen() {
+    var root = el('div', 'screen');
+    var vs = el('div', 'vscroll');
+    root.appendChild(vs);
+    vs.appendChild(header('settings'));
+    vs.appendChild(el('div', 'screen-title settings-title', esc(tr('Ajustes') + ' › ' + tr('Filas de Inicio'))));
+    var box = el('div');
+    box.style.cssText = 'padding:0 80px;width:1400px';
+    vs.appendChild(box);
+    box.appendChild(el('div', 'note', esc(tr('OK sobre una fila para subirla, bajarla u ocultarla. Los avisos (fuentes, certificado) salen siempre arriba.'))));
+    var list = el('div');
+    box.appendChild(list);
+    var reset = el('div', 'btn', tr('Volver al orden de siempre'));
+    focusable(reset, function () {
+      settings.homeRows = null;
+      saveSettings();
+      paint();
+      toast(tr('Inicio vuelve a tener todas las filas en su orden de siempre'));
+    });
+    box.appendChild(reset);
+
+    function store(rows) {
+      var hidden = {};
+      rows.forEach(function (r) { if (r.hidden) hidden[r.k] = true; });
+      var order = rows.map(function (r) { return r.k; });
+      // las que ahora no tocan (de Trakt sin vincular, de un addon quitado) conservan su sitio para cuando vuelvan
+      var prev = settings.homeRows || {};
+      (prev.order || []).forEach(function (k) { if (order.indexOf(k) < 0) { order.push(k); if (prev.hidden && prev.hidden[k]) hidden[k] = true; } });
+      settings.homeRows = { order: order, hidden: hidden };
+      saveSettings();
+    }
+    function paint(focusK) {
+      var rows = homeRows(), target = null;
+      list.innerHTML = '';
+      rows.forEach(function (r, i) {
+        var o = el('div', 'opt' + (r.hidden ? ' off' : ''));
+        o.appendChild(el('span', null, esc((i + 1) + '. ' + r.title)));
+        o.appendChild(el('span', 'val', esc(r.hidden ? tr('Oculta') : tr('Visible'))));
+        focusable(o, function () {
+          var items = [];
+          if (i > 0) items.push({ label: tr('Subir'), value: 'up' });
+          if (i < rows.length - 1) items.push({ label: tr('Bajar'), value: 'down' });
+          if (i > 1) items.push({ label: tr('Arriba del todo'), value: 'top' });
+          items.push({ label: r.hidden ? tr('Mostrar') : tr('Ocultar'), value: 'toggle' });
+          items.push({ label: tr('Cancelar'), value: '' });
+          items[0].selected = true;
+          menu(r.title, items, function (it) {
+            if (!it.value) return;
+            rows.splice(i, 1);
+            if (it.value === 'up') rows.splice(i - 1, 0, r);
+            else if (it.value === 'down') rows.splice(i + 1, 0, r);
+            else if (it.value === 'top') rows.unshift(r);
+            else { rows.splice(i, 0, r); r.hidden = !r.hidden; }
+            store(rows);
+            paint(r.k);
+          });
+        });
+        list.appendChild(o);
+        if (r.k === focusK) target = o;
+      });
+      if (target && Nav.root === root) Nav.setRoot(root, target);
+    }
+    paint();
+    return { el: root, initialFocus: function () { return list.querySelector('.f'); } };
   }
 
   // al cambiar el idioma, rehacer las pantallas (inicio + ajustes) con los textos nuevos

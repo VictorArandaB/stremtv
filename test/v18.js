@@ -110,7 +110,7 @@ const check = (ok, what) => { console.log((ok ? 'OK  ' : 'MAL ') + what); if (!o
   // Ajustes: resúmenes discretos y «—» en lo opcional sin configurar
   await ev(() => StremTV.openSettings('')); await sleep(800);
   const sum = await ev(() => { const v = document.querySelectorAll('.opt .val.sum')[3]; return v.textContent + ' ' + getComputedStyle(v).fontWeight; });
-  check(/Trakt — · TMDB — · GitHub —/.test(sum) && !/bold|700/.test(sum), 'cuentas sin configurar con «—» y sin negrita: ' + sum);
+  check(/Trakt — · TMDB — · OMDb — · GitHub —/.test(sum) && !/bold|700/.test(sum), 'cuentas sin configurar con «—» y sin negrita: ' + sum);
   await p.screenshot({ path: OUT + '/115-settings.png' });
   console.log('ERRORES:', errs.length ? errs : 'ninguno');
   await b.close();

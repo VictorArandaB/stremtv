@@ -226,13 +226,51 @@
     return { root: root, vs: vs };
   }
 
+  // filas de Inicio que se pueden ordenar u ocultar (Ajustes → General → Filas de Inicio); las de los addons van detrás,
+  // con la clave «addon:url|tipo|id». settings.homeRows: { order: [claves], hidden: { clave: true } }
+  var HOME_ROWS = [
+    { k: 'cont', name: 'Continuar viendo' },
+    { k: 'mylist', name: 'Mi lista', local: true }, // sin Trakt (con Trakt, su lista va en dos filas)
+    { k: 'traktCont', name: 'Continuar (Trakt)', trakt: true },
+    { k: 'upnext', name: 'Siguientes episodios', trakt: true },
+    { k: 'week', name: 'Esta semana en tus series', trakt: true },
+    { k: 'wlMovies', name: 'Mi lista: películas', trakt: true },
+    { k: 'wlSeries', name: 'Mi lista: series', trakt: true },
+    { k: 'recMovies', name: 'Recomendadas para ti: películas', trakt: true },
+    { k: 'recSeries', name: 'Recomendadas para ti: series', trakt: true },
+    { k: 'history', name: 'Visto recientemente' },
+    { k: 'popMovies', name: 'Películas populares', url: CINEMETA + '/catalog/movie/top.json' },
+    { k: 'popSeries', name: 'Series populares', url: CINEMETA + '/catalog/series/top.json' },
+    { k: 'topMovies', name: 'Películas mejor valoradas', url: CINEMETA + '/catalog/movie/imdbRating.json' },
+    { k: 'topSeries', name: 'Series mejor valoradas', url: CINEMETA + '/catalog/series/imdbRating.json' }
+  ];
+
+  // las filas que tocan ahora (con o sin Trakt; de cada addon, como mucho 4) en el orden elegido; las nuevas, al final
+  function homeRows() {
+    var linked = Trakt.linked(), perAddon = {};
+    var all = HOME_ROWS.filter(function (r) { return !(r.trakt && !linked) && !(r.local && linked); })
+      .map(function (r) { return extend({ title: tr(r.name) }, r); });
+    addonCatalogs(false).forEach(function (c) {
+      var n = perAddon[c.addon.url] = (perAddon[c.addon.url] || 0) + 1;
+      if (n <= 4) all.push({ k: 'addon:' + c.addon.url + '|' + c.catalog.type + '|' + c.catalog.id, title: c.title, catalog: c });
+    });
+    var pref = settings.homeRows || {}, order = pref.order || [], hidden = pref.hidden || {};
+    return all.map(function (r, i) {
+      var p = order.indexOf(r.k);
+      r.hidden = !!hidden[r.k];
+      return { r: r, p: p < 0 ? 1000 + i : p };
+    }).sort(function (a, b) { return a.p - b.p; }).map(function (x) { return x.r; });
+  }
+
   function homeScreen() {
     var hs = heroScreen('home'), root = hs.root, vs = hs.vs;
-    var contWrap = el('div');
-    vs.appendChild(contWrap);
+    var warnWrap = el('div'), slots = {}, rowsSig = '', first = true;
+    var screen = { el: root };
+    // cada fila tiene su hueco en el orden elegido; una fila oculta no tiene hueco y no se pide
+    function slot(k) { return slots[k] || null; }
 
-    function renderTop() {
-      contWrap.innerHTML = '';
+    function renderWarnings() {
+      warnWrap.innerHTML = '';
       var noSources = !hasSources();
       if (noSources || !settings.key) {
         var warn = el('div', 'row');
@@ -241,17 +279,21 @@
         b.style.marginLeft = '80px';
         focusable(b, function () { openSettings('sources'); });
         warn.appendChild(b);
-        contWrap.appendChild(warn);
+        warnWrap.appendChild(warn);
       }
       if (CERT_EXPIRES - Date.now() < 30 * 86400000) {
         var cw = el('div', 'row');
         cw.appendChild(el('div', 'note cert-warn', esc(tr('⚠ El certificado de StremTV caduca el {0}. Si deja de abrirse, hay que volver a firmarla e instalarla desde el Mac.', fmtDate(CERT_EXPIRES)))));
-        contWrap.appendChild(cw);
+        warnWrap.appendChild(cw);
       }
-      var cont = continueList();
-      if (cont.length) {
+    }
+
+    function renderLocal() {
+      var cw = slot('cont'), cont = continueList();
+      if (cw) cw.innerHTML = '';
+      if (cw && cont.length) {
         var contRow;
-        contWrap.appendChild(contRow = posterRow(tr('Continuar viendo'), cont.map(function (p) {
+        cw.appendChild(contRow = posterRow(tr('Continuar viendo'), cont.map(function (p) {
           return { id: p.metaId, type: p.type, name: p.name, poster: p.poster };
         }), function (m, i) {
           var p = cont[i];
@@ -264,21 +306,19 @@
           ms.forEach(function (m, i) { if (m.left && cards[i]) cards[i].firstChild.appendChild(leftBadge(m.left)); });
         });
       }
-      var mine = Trakt.linked() ? [] : myListMetas(); // con Trakt, su lista sale más abajo
-      if (mine.length) contWrap.appendChild(posterRow(tr('Mi lista'), mine, openMeta));
+      var lw = slot('mylist'), mine = myListMetas();
+      if (lw) lw.innerHTML = '';
+      if (lw && mine.length) lw.appendChild(posterRow(tr('Mi lista'), mine, openMeta));
     }
-    renderTop();
 
-    var traktWrap = el('div');
-    vs.appendChild(traktWrap);
     var traktLoaded = 0;
     function renderTrakt() {
-      if (!Trakt.linked()) { traktWrap.innerHTML = ''; traktLoaded = 0; return; }
+      if (!Trakt.linked()) { traktLoaded = 0; return; }
       if (Date.now() - traktLoaded < 120000) return; // como mucho cada 2 minutos
       traktLoaded = Date.now();
-      traktWrap.innerHTML = '';
+      ['traktCont', 'upnext', 'week', 'wlMovies', 'wlSeries', 'recMovies', 'recSeries'].forEach(function (k) { if (slots[k]) slots[k].innerHTML = ''; });
       var local = {};
-      continueList().forEach(function (p) { local[p.metaId] = true; });
+      if (slot('cont')) continueList().forEach(function (p) { local[p.metaId] = true; });
       // cada fila se da como función: si falla por la red, se vuelve a pedir sola al volver (las que comparten datos, con shared)
       var paused = shared(function () {
         return Trakt.playback().then(function (items) {
@@ -290,48 +330,35 @@
           }));
         });
       });
-      promiseRow(traktWrap, tr('Continuar (Trakt)'), paused, openMeta, true);
+      if (slot('traktCont')) promiseRow(slot('traktCont'), tr('Continuar (Trakt)'), paused, openMeta, true);
       // series con el siguiente episodio pendiente (sin repetir las que ya salen arriba)
-      promiseRow(traktWrap, tr('Siguientes episodios'), function () {
-        return Promise.all([Trakt.upNext(), paused().catch(function () { return []; })]).then(function (r) {
+      if (slot('upnext')) promiseRow(slot('upnext'), tr('Siguientes episodios'), function () {
+        return Promise.all([Trakt.upNext(), slot('traktCont') ? paused().catch(function () { return []; }) : []]).then(function (r) {
           var above = {};
           r[1].forEach(function (m) { above[m.id] = true; });
           return r[0].filter(function (m) { return !local[m.id] && !above[m.id]; });
         });
       }, openMeta, true, 100);
-      promiseRow(traktWrap, tr('Esta semana en tus series'), function () { return Trakt.calendar(); }, openMeta, true);
+      if (slot('week')) promiseRow(slot('week'), tr('Esta semana en tus series'), function () { return Trakt.calendar(); }, openMeta, true);
       var wl = shared(function () { return Trakt.loadWatchlist(); });
       var wlOf = function (type) { return function () { return wl().then(function (m) { return m.filter(function (x) { return x.type === type; }); }); }; };
-      promiseRow(traktWrap, tr('Mi lista: películas'), wlOf('movie'), openMeta, true, 100);
-      promiseRow(traktWrap, tr('Mi lista: series'), function () { return wlOf('series')().then(Trakt.withPending); }, openMeta, true, 100);
+      if (slot('wlMovies')) promiseRow(slot('wlMovies'), tr('Mi lista: películas'), wlOf('movie'), openMeta, true, 100);
+      if (slot('wlSeries')) promiseRow(slot('wlSeries'), tr('Mi lista: series'), function () { return wlOf('series')().then(Trakt.withPending); }, openMeta, true, 100);
       var recs = function (kind) {
         return function () { return Promise.all([Trakt.recommendations(kind), seenReady()]).then(function (r) { return filterSeen(r[0]); }); };
       };
-      promiseRow(traktWrap, tr('Recomendadas para ti: películas'), recs('movies'), openMeta, true);
-      promiseRow(traktWrap, tr('Recomendadas para ti: series'), recs('shows'), openMeta, true);
+      if (slot('recMovies')) promiseRow(slot('recMovies'), tr('Recomendadas para ti: películas'), recs('movies'), openMeta, true);
+      if (slot('recSeries')) promiseRow(slot('recSeries'), tr('Recomendadas para ti: series'), recs('shows'), openMeta, true);
     }
-    renderTrakt();
 
-    // con Trakt vinculado, sus filas van arriba: los catálogos generales (fuera de pantalla) esperan 1,5 s
-    // para no competir con ellas por la red y el procesador de la tele al arrancar
-    var generalRows = el('div');
-    vs.appendChild(generalRows);
-    function loadGeneral() {
-      asyncRow(generalRows, tr('Películas populares'), CINEMETA + '/catalog/movie/top.json', openMeta);
-      asyncRow(generalRows, tr('Series populares'), CINEMETA + '/catalog/series/top.json', openMeta);
-      asyncRow(generalRows, tr('Películas mejor valoradas'), CINEMETA + '/catalog/movie/imdbRating.json', openMeta);
-      asyncRow(generalRows, tr('Series mejor valoradas'), CINEMETA + '/catalog/series/imdbRating.json', openMeta);
-    }
-    if (Trakt.linked()) setTimeout(loadGeneral, 1500); else loadGeneral();
     // lo último visto: de Trakt si está vinculado (incluye otros dispositivos) o, si no, de esta tele
-    var histWrap = el('div');
-    vs.insertBefore(histWrap, traktWrap.nextSibling);
     var histLoaded = 0;
     function renderHistory() {
-      if (Trakt.linked() && Date.now() - histLoaded < 120000) return;
+      var hw = slot('history');
+      if (!hw || (Trakt.linked() && Date.now() - histLoaded < 120000)) return;
       histLoaded = Date.now();
-      histWrap.innerHTML = '';
-      promiseRow(histWrap, tr('Visto recientemente'), function () { return Trakt.linked() ? Trakt.history().then(Trakt.withPending) : Promise.resolve(localHistory()); }, openMeta, true, 30);
+      hw.innerHTML = '';
+      promiseRow(hw, tr('Visto recientemente'), function () { return Trakt.linked() ? Trakt.history().then(Trakt.withPending) : Promise.resolve(localHistory()); }, openMeta, true, 30);
     }
     function localHistory() {
       var seen = {};
@@ -342,26 +369,65 @@
           return true;
         }).map(function (p) { return { id: p.metaId, type: p.type, name: p.name, poster: p.poster, label: dayLabel(new Date(p.ts)) + ' · ' + (p.label || p.name) }; });
     }
-    renderHistory();
 
-    // catálogos de los addons añadidos: como mucho 4 filas por addon para no llenar el inicio
-    var perAddon = {};
-    addonCatalogs(false).forEach(function (c) {
-      var n = perAddon[c.addon.url] = (perAddon[c.addon.url] || 0) + 1;
-      if (n > 4) return;
-      // si el catálogo viene vacío o el addon falla, la fila desaparece
-      promiseRow(vs, c.title, function () {
-        return Promise.all([getJSON(c.addon.url + '/catalog/' + c.catalog.type + '/' + c.catalog.id + '.json'), seenReady()]).then(function (r) {
-          return filterSeen(r[0].metas || []);
-        });
-      }, openMeta, true);
-    });
+    // catálogos generales y de los addons (si el catálogo viene vacío o el addon falla, la fila desaparece)
+    function loadCatalogs(rows) {
+      rows.forEach(function (r) {
+        var w = slot(r.k);
+        if (!w) return;
+        if (r.url) asyncRow(w, r.title, r.url, openMeta);
+        else if (r.catalog) {
+          var c = r.catalog;
+          promiseRow(w, r.title, function () {
+            return Promise.all([getJSON(c.addon.url + '/catalog/' + c.catalog.type + '/' + c.catalog.id + '.json'), seenReady()]).then(function (res) {
+              return filterSeen(res[0].metas || []);
+            });
+          }, openMeta, true);
+        }
+      });
+    }
 
-    return { el: root, onShow: function () { primeHero(vs); }, onResume: function () {
-      renderTop(); renderTrakt(); renderHistory();
+    function rowsKey(rows) { return rows.map(function (r) { return r.k + (r.hidden ? '-' : '+'); }).join(','); }
+    function layout(rows) {
+      rowsSig = rowsKey(rows);
+      vs.innerHTML = '';
+      scrollTop0(vs);
+      slots = {};
+      vs.appendChild(warnWrap);
+      rows.forEach(function (r) {
+        if (r.hidden) return;
+        slots[r.k] = el('div');
+        vs.appendChild(slots[r.k]);
+      });
+      renderWarnings();
+      renderLocal();
+      traktLoaded = histLoaded = 0;
+      renderTrakt();
+      renderHistory();
+      // al arrancar con Trakt vinculado, sus filas van primero: los catálogos esperan 1,5 s
+      // para no competir con ellas por la red y el procesador de la tele
+      if (first && Trakt.linked()) setTimeout(function () { if (rowsSig === rowsKey(rows)) loadCatalogs(rows); }, 1500);
+      else loadCatalogs(rows);
+      first = false;
+    }
+    layout(homeRows());
+
+    screen.onShow = function () { primeHero(vs); };
+    screen.onResume = function () {
+      var rows = homeRows();
+      // filas cambiadas en Ajustes (orden, ocultas, Trakt vinculado o addons nuevos): rehacer Inicio
+      if (rowsKey(rows) !== rowsSig) {
+        layout(rows);
+        screen.lastFocus = null;
+        if (root._hero) root._hero.cur = null;
+        primeHero(vs);
+        return;
+      }
+      renderWarnings(); renderLocal(); renderTrakt(); renderHistory();
       // si se acaba de poner la clave de TMDB, traducir las tarjetas que ya se ven
       Array.prototype.forEach.call(root.querySelectorAll('.card'), function (c) { if (c._loaded || !c._img) nameCard(c); });
-    } };
+    };
+    return screen;
   }
 
   function resumeMovie(p) {

@@ -161,7 +161,12 @@
     }));
   }
 
-  function gridScreen(title, promise) {
+  function collectionScreen(id, name) {
+    return gridScreen(name, tmdbCollection(id), true);
+  }
+
+  // keepSeen: sin quitar lo visto aunque esté puesto «ocultar lo visto» (en una saga, las vistas salen con ✓)
+  function gridScreen(title, promise, keepSeen) {
     var root = el('div', 'screen');
     var vs = el('div', 'vscroll');
     root.appendChild(vs);
@@ -171,7 +176,7 @@
     var status = el('div', 'empty', tr('Cargando…'));
     grid.appendChild(status);
     Promise.all([promise, seenReady()]).then(function (r) {
-      var metas = filterSeen(r[0]), cards = [];
+      var metas = keepSeen ? r[0].filter(Boolean) : filterSeen(r[0]), cards = [];
       grid.innerHTML = '';
       if (!metas.length) { grid.appendChild(el('div', 'empty', tr('Sin resultados'))); return; }
       metas.forEach(function (m, i) {

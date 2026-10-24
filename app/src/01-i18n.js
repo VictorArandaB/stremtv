@@ -236,7 +236,20 @@
     'información': 'info', 'salir': 'exit', 'Fuente': 'Source', 'Archivo': 'File', 'incrustados': 'embedded', 'Reproductor': 'Player',
     'Pulsa cualquier tecla para cerrar': 'Press any key to close', 'En pausa: {0}': 'Paused: {0}',
     'Pulsa cualquier tecla para volver': 'Press any key to go back', 'Protector de pantalla con el vídeo en pausa': 'Screensaver while the video is paused',
-    'A los {0} min': 'After {0} min', 'Vídeo en pausa al salir de la app: pulsa OK para seguir': 'Video paused when you left the app: press OK to continue'
+    'A los {0} min': 'After {0} min', 'Vídeo en pausa al salir de la app: pulsa OK para seguir': 'Video paused when you left the app: press OK to continue',
+    // tráiler, saga, notas y plataformas
+    'Tráiler': 'Trailer', 'Saga': 'Collection', 'En España: {0}': 'In Spain: {0}', 'Abriendo el tráiler en TizenTube…': 'Opening the trailer in TizenTube…',
+    'Para ver tráileres, abre TizenTube una vez desde que encendiste la tele y vuelve a probar': 'To watch trailers, open TizenTube once after turning on the TV and try again',
+    'Notas de Rotten Tomatoes y Metacritic (OMDb)': 'Rotten Tomatoes and Metacritic scores (OMDb)', 'Clave de OMDb (pulsa OK para escribirla)': 'OMDb key (press OK to type it)',
+    'Clave de omdbapi.com': 'omdbapi.com key', 'Sin clave: solo la nota de IMDb.': 'No key: IMDb rating only.',
+    '✓ Clave válida (Cadena perpetua: Rotten Tomatoes {0} %)': '✓ Valid key (The Shawshank Redemption: Rotten Tomatoes {0} %)',
+    '✗ La clave no es válida o aún no está activada (llega un correo para activarla)': '✗ The key is not valid or not activated yet (you get an email to activate it)',
+    'Gratis en omdbapi.com → API Key (plan FREE, 1000 consultas al día). Las notas salen en la ficha junto a la de IMDb.': 'Free at omdbapi.com → API Key (FREE plan, 1000 requests a day). Scores show on the detail page next to IMDb’s.',
+    // filas de Inicio
+    'Filas de Inicio': 'Home rows', 'Ordenar u ocultar ›': 'Reorder or hide ›', 'Oculta': 'Hidden', 'Visible': 'Visible',
+    'Subir': 'Move up', 'Bajar': 'Move down', 'Arriba del todo': 'Move to top', 'Ocultar': 'Hide',
+    'OK sobre una fila para subirla, bajarla u ocultarla. Los avisos (fuentes, certificado) salen siempre arriba.': 'Press OK on a row to move it up, down or hide it. Warnings (sources, certificate) always show at the top.',
+    'Volver al orden de siempre': 'Restore the default order', 'Inicio vuelve a tener todas las filas en su orden de siempre': 'Home is back to all rows in the default order'
   };
 
   function tr(s) {

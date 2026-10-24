@@ -77,6 +77,8 @@ html, body { width: 1920px; height: 1080px; overflow: hidden; background: #0d0f1
 .meta-line { color: #aab; font-size: 26px; margin-bottom: 24px; }
 .meta-line span { margin-right: 26px; }
 .meta-line .star { color: #ffd84a; font-weight: bold; }
+.opt.off { opacity: .5; }
+.detail .providers { color: #9fe0b0; font-size: 24px; margin: -14px 0 20px 0; }
 .desc { width: 1000px; font-size: 26px; line-height: 38px; color: #ccd; max-height: 190px; overflow: hidden; margin-bottom: 34px; }
 .btn { display: inline-block; font-size: 30px; padding: 16px 40px; border-radius: 12px; background: #262b3d; color: #e8eaf0;
   margin: 0 18px 18px 0; border: 4px solid transparent;

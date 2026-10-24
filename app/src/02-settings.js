@@ -4,7 +4,7 @@
     debrid: 'realdebrid', key: '', onlyCached: true, maxQ: 'all',
     preferEs: true, compatFirst: true, hideWatched: true, maxRate: 'auto', measuredMbps: 0, measuredAt: 0,
     subLang: 'spa', subSize: 'normal', autoNext: true, audioLang: 'spa', lang: 'es', quickPlay: true, subBg: true, tmdbKey: '', autoSkip: false, subColor: 'white', subPos: 'low', saver: 3,
-    idleSaver: 10, saverShow: 'mix', saverEvery: 20
+    idleSaver: 10, saverShow: 'mix', saverEvery: 20, omdbKey: '', homeRows: null
   };
   var settings = extend(extend({}, DEFAULTS), load('settings', {}));
   function saveSettings() { save('settings', settings); }

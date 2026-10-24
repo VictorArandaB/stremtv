@@ -1,0 +1,57 @@
+// Numeración distinta en Trakt y en Cinemeta (como Mashle o The Apothecary Diaries: en Trakt una sola temporada):
+// la ficha marca como vistos los episodios de la T2 de Cinemeta que Trakt tiene como T1:E3…, «▶ Ver» va al siguiente
+// con la numeración de Cinemeta y lo que se marca como visto se manda a Trakt con la suya.
+// Sale con código 1 si alguna comprobación falla.
+const puppeteer = require('puppeteer-core');
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+let fails = 0;
+const check = (ok, what, got) => { console.log((ok ? '✓ ' : '✗ ') + what + (got !== undefined ? ' → ' + got : '')); if (!ok) fails++; };
+(async () => {
+  const b = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: 'new', defaultViewport: { width: 1920, height: 1080 } });
+  const p = await b.newPage(); const errs = []; p.on('pageerror', (e) => errs.push(e.message));
+  await p.setRequestInterception(true);
+  const hdr = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': '*' };
+  const json = (req, o, status) => req.respond({ status: status || 200, headers: hdr, contentType: 'application/json', body: JSON.stringify(o) });
+  const day = (d) => '2024-0' + d + '-10T14:30:00.000Z';
+  // Cinemeta: T1 y T2 de 2 episodios; Trakt: una T1 de 4, con las mismas fechas
+  const videos = [[1, 1, 1], [1, 2, 2], [2, 1, 3], [2, 2, 4]].map((x) => ({ id: 'tt9000001:' + x[0] + ':' + x[1], season: x[0], episode: x[1], name: 'Ep ' + x[0] + 'x' + x[1], released: day(x[2]) }));
+  const history = [];
+  p.on('request', (req) => {
+    const u = req.url();
+    if (req.method() === 'OPTIONS') return req.respond({ status: 204, headers: hdr });
+    if (u.indexOf('/meta/series/tt9000001.json') >= 0) return json(req, { meta: { id: 'tt9000001', type: 'series', name: 'Serie de prueba', videos: videos } });
+    if (u.indexOf('api.trakt.tv') >= 0) {
+      if (u.indexOf('/shows/tt9000001/seasons') >= 0) return json(req, [{ number: 0, episodes: [] }, { number: 1, episodes: [1, 2, 3, 4].map((n) => ({ number: n, first_aired: day(n) })) }]);
+      if (u.indexOf('/shows/tt9000001/progress/watched') >= 0) return json(req, { aired: 4, completed: 3, seasons: [{ number: 1, episodes: [1, 2, 3, 4].map((n) => ({ number: n, completed: n <= 3 })) }], next_episode: { season: 1, number: 4 } });
+      if (u.indexOf('/sync/history') >= 0 && req.method() === 'POST') { history.push(req.postData()); return json(req, {}, 201); }
+      return json(req, []);
+    }
+    if (u.indexOf('/stream/') >= 0) return json(req, { streams: [] });
+    req.continue();
+  });
+  const key = async (k, n = 1) => { for (let i = 0; i < n; i++) { await p.keyboard.press(k); await sleep(250); } };
+  const top = 'StremTV.stack[StremTV.stack.length - 1].el';
+
+  await p.goto('http://127.0.0.1:8090/', { waitUntil: 'networkidle2' });
+  await p.evaluate(() => { localStorage.clear(); localStorage.setItem('stv.settings', JSON.stringify({ quickPlay: false, hideWatched: false, key: 'K', debrid: 'alldebrid' }));
+    localStorage.setItem('stv.trakt', JSON.stringify({ clientId: 'c', access: 'a', refresh: 'r', expires: Date.now() + 9e9 }));
+    localStorage.setItem('stv.addons', JSON.stringify([{ url: 'https://torrentio.strem.fun', manifest: { id: 'com.stremio.torrentio.addon', name: 'Torrentio', resources: ['stream'], types: ['movie', 'series'], idPrefixes: null, catalogs: [] } }])); });
+  await p.reload({ waitUntil: 'networkidle2' }); await sleep(1000);
+  await p.evaluate(() => StremTV.open('series', 'tt9000001')); await sleep(3000);
+
+  const play = await p.evaluate((top) => eval(top).querySelector('.btn.primary').textContent, top);
+  check(play === '▶ Ver T2:E2', '«▶ Ver» con la numeración de Cinemeta (Trakt dice 1x4)', play);
+  const eps = await p.evaluate((top) => Array.from(eval(top).querySelectorAll('.ep')).map((e) => e.querySelector('.ep-title').textContent.slice(0, 2) + (e.classList.contains('seen') ? '✓' : '·')).join(' '), top);
+  check(eps === '1.✓ 2.·', 'en la T2, el 1 visto (Trakt 1x3) y el 2 pendiente', eps);
+  const map = await p.evaluate(() => JSON.stringify(JSON.parse(localStorage.getItem('stv.epmaps'))['tt9000001'].map));
+  check(map === '{"2:1":"1:3","2:2":"1:4"}', 'equivalencia guardada en la tele', map);
+  // verde sobre el T2:E2 → a Trakt como 1x4
+  await p.evaluate((top) => StremTV.Nav.focus(eval(top).querySelectorAll('.ep')[1]), top);
+  await p.evaluate(() => { const e = new KeyboardEvent('keydown', { bubbles: true }); Object.defineProperty(e, 'keyCode', { get: () => 404 }); document.dispatchEvent(e); });
+  await sleep(800);
+  check(/"seasons":\[\{"number":1,"episodes":\[\{"number":4\}\]\}\]/.test(history[0] || ''), 'marcar visto el T2:E2 manda a Trakt el 1x4', history[0]);
+
+  console.log('ERRORES:', errs.length ? errs.join(' | ') : 'ninguno');
+  await b.close();
+  process.exit(fails || errs.length ? 1 : 0);
+})();

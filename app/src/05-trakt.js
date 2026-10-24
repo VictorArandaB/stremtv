@@ -111,10 +111,66 @@
       Seen.movies = {}; Seen.shows = {}; Seen.at = 0; Seen.loading = null;
     },
 
+    // Trakt y Cinemeta pueden numerar distinto los episodios de una serie (Mashle: en Trakt una T1 de 24, en Cinemeta T1 y T2
+    // de 12). Se emparejan por fecha de emisión: imdb → { ts, n: episodios en Cinemeta, map: { 'T:E de Cinemeta': 'T:E de Trakt' } };
+    // map vacío si coinciden. Se rehace al mes o si Cinemeta tiene otro número de episodios
+    epMaps: load('epmaps', {}),
+    epMap: function (imdb, videos) {
+      var eps = (videos || []).filter(function (v) { return v.season > 0 && v.episode > 0; })
+        .sort(function (a, b) { return a.season - b.season || a.episode - b.episode; });
+      var c = Trakt.epMaps[imdb];
+      if (c && c.n === eps.length && Date.now() - c.ts < 30 * 86400000) return Promise.resolve(c.map);
+      return Trakt.call('GET', '/shows/' + imdb + '/seasons?extended=episodes,full').then(function (seasons) {
+        var aired = {}, byDay = {}, map = {};
+        (seasons || []).forEach(function (se) {
+          if (!se.number) return;
+          (se.episodes || []).forEach(function (e) {
+            var k = se.number + ':' + e.number;
+            aired[k] = e.first_aired || '';
+            if (e.first_aired) (byDay[e.first_aired.slice(0, 10)] = byDay[e.first_aired.slice(0, 10)] || []).push(k);
+          });
+        });
+        var near = function (a, b) { return !a || !b || Math.abs(new Date(a) - new Date(b)) < 2 * 86400000; };
+        var same = eps.every(function (v) { var k = v.season + ':' + v.episode; return aired.hasOwnProperty(k) && near(aired[k], v.released); });
+        if (!same) eps.forEach(function (v) {
+          if (!v.released) return;
+          var t = new Date(v.released).getTime(), bucket = null;
+          // el mismo día o el de al lado (las fechas de una y otra pueden ir en otra zona horaria)
+          [0, -1, 1].some(function (off) {
+            var b = byDay[new Date(t + off * 86400000).toISOString().slice(0, 10)];
+            if (b && b.length) { bucket = b; return true; }
+            return false;
+          });
+          var tk = bucket && bucket.shift();
+          if (tk && tk !== v.season + ':' + v.episode) map[v.season + ':' + v.episode] = tk;
+        });
+        Trakt.epMaps[imdb] = { ts: Date.now(), n: eps.length, map: map };
+        capByTs(Trakt.epMaps, 300);
+        save('epmaps', Trakt.epMaps);
+        return map;
+      });
+    },
+    // «T1:E3» de un episodio que da Trakt, con la numeración de Cinemeta si se conoce la equivalencia
+    epCode: function (imdb, season, number) {
+      var c = Trakt.epMaps[imdb], tk = season + ':' + number;
+      if (c) for (var k in c.map) if (c.map[k] === tk) { var p = k.split(':'); season = p[0]; number = p[1]; break; }
+      return tr('T{0}:E{1}', season, number);
+    },
+    // equivalencias de las series de una fila que aún no se conocen: en segundo plano y de dos en dos (sirven la próxima vez)
+    learnEpMaps: function (imdbs) {
+      var todo = imdbs.filter(function (id, i) { return id && imdbs.indexOf(id) === i && !Trakt.epMaps[id]; });
+      if (!todo.length) return;
+      setTimeout(function () {
+        mapLimit(todo, 2, function (imdb) {
+          return getJSON(CINEMETA + '/meta/series/' + imdb + '.json').then(function (r) { return Trakt.epMap(imdb, (r.meta || {}).videos); });
+        });
+      }, 20000);
+    },
+
     body: function (ctx) {
       if (!ctx.imdb) return null;
       if (ctx.type === 'movie') return { movie: { ids: { imdb: ctx.imdb } } };
-      return { show: { ids: { imdb: ctx.imdb } }, episode: { season: +ctx.imdbS, number: +ctx.imdbE } };
+      return { show: { ids: { imdb: ctx.imdb } }, episode: { season: +(ctx.traktS || ctx.imdbS), number: +(ctx.traktE || ctx.imdbE) } };
     },
 
     // start al reproducir, pause al pausar, stop al salir: Trakt lo marca como visto si progress >= 80
@@ -190,7 +246,7 @@
             if (e.first_aired && new Date(e.first_aired) > new Date()) return null;
             // insignia: episodios emitidos que faltan por ver; «Nuevo»: emitido en las últimas 48 h
             return { id: sh.ids.imdb, type: 'series', name: sh.title, poster: metahubPoster(sh.ids.imdb),
-              label: sh.title + ' · ' + tr('T{0}:E{1}', e.season, e.number), left: d.aired ? d.aired - d.completed : 0,
+              label: sh.title + ' · ' + Trakt.epCode(sh.ids.imdb, e.season, e.number), left: d.aired ? d.aired - d.completed : 0,
               isNew: !!(e.first_aired && Date.now() - new Date(e.first_aired) < 48 * 3600000) };
           }).catch(function () { return null; });
         }).then(function (list) {
@@ -202,6 +258,7 @@
       }).then(function (list) {
         // los recién emitidos primero, el resto en su orden (de la serie vista más recientemente a la más antigua)
         list = list.filter(Boolean);
+        Trakt.learnEpMaps(list.map(function (m) { return m.id; }));
         return list.filter(function (m) { return m.isNew; }).concat(list.filter(function (m) { return !m.isNew; }));
       });
       Trakt.upNextCache = { at: Date.now(), promise: promise };
@@ -233,7 +290,8 @@
         if (!c.imdb) return;
         if (c.type === 'movie') { movies.push({ ids: { imdb: c.imdb } }); return; }
         var sh = shows[c.imdb] = shows[c.imdb] || {};
-        (sh[c.imdbS] = sh[c.imdbS] || []).push({ number: +c.imdbE });
+        var se = c.traktS || c.imdbS;
+        (sh[se] = sh[se] || []).push({ number: +(c.traktE || c.imdbE) });
       });
       var body = { movies: movies, shows: Object.keys(shows).map(function (imdb) {
         return { ids: { imdb: imdb }, seasons: Object.keys(shows[imdb]).map(function (n) { return { number: +n, episodes: shows[imdb][n] }; }) };
@@ -261,7 +319,7 @@
             out.push({ id: it.movie.ids.imdb, type: 'movie', name: it.movie.title, poster: metahubPoster(it.movie.ids.imdb), pct: it.progress / 100 });
           } else if (it.type === 'episode' && it.show && it.show.ids.imdb && it.episode) {
             out.push({ id: it.show.ids.imdb, type: 'series', name: it.show.title, poster: metahubPoster(it.show.ids.imdb), pct: it.progress / 100,
-              label: it.show.title + ' · ' + tr('T{0}:E{1}', it.episode.season, it.episode.number) });
+              label: it.show.title + ' · ' + Trakt.epCode(it.show.ids.imdb, it.episode.season, it.episode.number) });
           }
         });
         return out;
@@ -276,7 +334,7 @@
           var o = it.movie || it.show;
           if (!o || !o.ids || !o.ids.imdb || seen[o.ids.imdb]) return;
           seen[o.ids.imdb] = true;
-          var what = it.episode ? o.title + ' ' + tr('T{0}:E{1}', it.episode.season, it.episode.number) : o.title;
+          var what = it.episode ? o.title + ' ' + Trakt.epCode(o.ids.imdb, it.episode.season, it.episode.number) : o.title;
           out.push({ id: o.ids.imdb, type: it.movie ? 'movie' : 'series', name: o.title, poster: metahubPoster(o.ids.imdb),
             label: dayLabel(new Date(it.watched_at)) + ' · ' + what });
         });
@@ -313,7 +371,7 @@
         return (items || []).filter(function (it) { return it.show && it.show.ids && it.show.ids.imdb && it.episode; }).map(function (it) {
           var imdb = it.show.ids.imdb;
           return { id: imdb, type: 'series', name: it.show.title, poster: metahubPoster(imdb),
-            label: dayLabel(new Date(it.first_aired)) + ' · ' + it.show.title + ' ' + tr('T{0}:E{1}', it.episode.season, it.episode.number) };
+            label: dayLabel(new Date(it.first_aired)) + ' · ' + it.show.title + ' ' + Trakt.epCode(imdb, it.episode.season, it.episode.number) };
         });
       });
     },

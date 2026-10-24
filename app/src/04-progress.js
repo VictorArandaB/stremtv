@@ -19,7 +19,7 @@
   }
 
   // marcar como visto (o quitarlo) a mano: en la tele y, con Trakt vinculado, en su historial.
-  // ctxs: contextos como los del reproductor (videoId, metaId, type, name, poster, epLabel, imdb, imdbS, imdbE)
+  // ctxs: contextos como los del reproductor (videoId, metaId, type, name, poster, epLabel, imdb, imdbS, imdbE, traktS, traktE)
   function setSeen(ctxs, on) {
     var now = Date.now();
     ctxs.forEach(function (c, i) {

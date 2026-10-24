@@ -47,14 +47,72 @@
     return tmdbPending[imdb];
   }
 
-  // título, sinopsis y géneros en español para la ficha
+  // título, sinopsis y géneros en español para la ficha; en la misma consulta, la saga (películas)
+  // y dónde se puede ver en España con suscripción (datos de JustWatch), y el tráiler de YouTube (en español si lo hay)
   function tmdbDetail(imdb) {
     return tmdbFind(imdb).then(function (r) {
       if (!r.id) return null;
-      return tmdbGet('/' + r.k + '/' + r.id).then(function (d) {
-        return { k: r.k, id: r.id, name: d.title || d.name, overview: d.overview, genres: (d.genres || []).map(function (g) { return g.name; }) };
+      return tmdbGet('/' + r.k + '/' + r.id + '?append_to_response=watch/providers,videos&include_video_language=es,en').then(function (d) {
+        var es = ((d['watch/providers'] || {}).results || {}).ES || {};
+        var vids = ((d.videos || {}).results || []).filter(function (v) { return v.site === 'YouTube' && v.type === 'Trailer'; });
+        vids.sort(function (a, b) { return (a.iso_639_1 === 'es' ? 0 : 1) - (b.iso_639_1 === 'es' ? 0 : 1); });
+        return { trailer: vids.length ? vids[0].key : '', k: r.k, id: r.id, name: d.title || d.name, overview: d.overview, genres: (d.genres || []).map(function (g) { return g.name; }),
+          collection: d.belongs_to_collection ? { id: d.belongs_to_collection.id, name: d.belongs_to_collection.name } : null,
+          providers: (es.flatrate || []).map(function (p) { return p.provider_name; }) };
       });
     });
+  }
+
+  // películas de una saga en orden de estreno, con su id de IMDb (para abrirlas y marcar las vistas)
+  function tmdbCollection(id) {
+    return tmdbGet('/collection/' + id).then(function (d) {
+      var parts = (d.parts || []).filter(function (x) { return x.release_date; })
+        .sort(function (a, b) { return a.release_date < b.release_date ? -1 : 1; });
+      return mapLimit(parts, 4, function (x) {
+        return tmdbGet('/movie/' + x.id + '/external_ids').then(function (e) { return e.imdb_id; }, function () { return null; }).then(function (imdb) {
+          return { id: imdb || 'tmdb:movie:' + x.id, imdb: imdb, type: 'movie', name: x.title, releaseInfo: x.release_date.slice(0, 4),
+            poster: x.poster_path ? 'https://image.tmdb.org/t/p/w185' + x.poster_path : '' };
+        });
+      });
+    });
+  }
+
+  // ---------------------------------------------------------------- tráileres (en TizenTube)
+
+  // la tele no reproduce YouTube dentro de la app: se le pide a TizenTube por DIAL. Su servicio escucha en el puerto 8095
+  // desde que se abre TizenTube por primera vez tras encender la tele (y sigue aunque se salga de ella)
+  var TIZENTUBE_DIAL = 'http://127.0.0.1:8095/dial/apps/YouTube';
+  function trailerId(meta) {
+    var t = meta._tmdb && meta._tmdb.trailer;
+    (meta.trailerStreams || []).forEach(function (s) { if (!t && s.ytId) t = s.ytId; });
+    (meta.trailers || []).forEach(function (s) { if (!t && s.source && (!s.type || s.type === 'Trailer')) t = s.source; });
+    return /^[\w-]{11}$/.test(t || '') ? t : '';
+  }
+  function playTrailer(id) {
+    toast(tr('Abriendo el tráiler en TizenTube…'));
+    xhr('POST', TIZENTUBE_DIAL, { body: 'v=' + id, timeout: 4000, probe: true, headers: { 'Content-Type': 'text/plain' } }).then(function () {
+      logEv('tráiler', id);
+    }, function () {
+      toast(tr('Para ver tráileres, abre TizenTube una vez desde que encendiste la tele y vuelve a probar'), 7000);
+    });
+  }
+
+  // ---------------------------------------------------------------- notas de Rotten Tomatoes y Metacritic (OMDb)
+
+  var omdbCache = {};
+  function omdbRatings(imdb) {
+    if (!settings.omdbKey || !imdb) return Promise.resolve(null);
+    if (!omdbCache[imdb]) {
+      omdbCache[imdb] = getJSON('https://www.omdbapi.com/?i=' + imdb + '&apikey=' + encodeURIComponent(settings.omdbKey)).then(function (d) {
+        var out = {};
+        (d && d.Ratings || []).forEach(function (r) {
+          if (r.Source === 'Rotten Tomatoes') out.rt = parseInt(r.Value, 10);
+          else if (r.Source === 'Metacritic') out.mc = parseInt(r.Value, 10);
+        });
+        return out.rt || out.mc ? out : null;
+      }).catch(function () { delete omdbCache[imdb]; return null; });
+    }
+    return omdbCache[imdb];
   }
 
   // como mucho «ms» de espera: si TMDB tarda, la ficha sale en inglés

@@ -60,6 +60,23 @@
       container.appendChild(b);
     }
 
+    function trailerButton(container) {
+      var yt = trailerId(meta);
+      if (!yt) return;
+      var b = el('div', 'btn small', tr('Tráiler'));
+      focusable(b, function () { playTrailer(yt); });
+      container.appendChild(b);
+    }
+
+    // películas de la misma saga (TMDB), en orden y con ✓ en las vistas
+    function sagaButton(container) {
+      var c = meta._tmdb && meta._tmdb.collection;
+      if (!c) return;
+      var b = el('div', 'btn small', tr('Saga'));
+      focusable(b, function () { push(collectionScreen(c.id, c.name)); });
+      container.appendChild(b);
+    }
+
     var isAnime = String(id).indexOf('kitsu:') === 0;
     function imdbOf() { return imdbOfMeta(meta); }
 
@@ -73,15 +90,21 @@
         meta = res.meta;
         if (!meta) throw new Error(tr('sin datos'));
         if (isAnime) type = meta.type === 'movie' ? 'movie' : 'series';
-        if (!tmdbOn() || !imdbOf()) return render();
-        return withTimeout(tmdbDetail(imdbOf()), 2500).then(function (es) {
+        // la numeración de Trakt (a la vez que TMDB; guardada en la tele, así que casi siempre está ya)
+        var mapping = type === 'series' && !isAnime && Trakt.linked() && imdbOf()
+          ? withTimeout(Trakt.epMap(imdbOf(), meta.videos), 2500).then(function (m) { epMap = m || {}; }, function () { /* sin ella: la misma numeración */ })
+          : null;
+        if (!tmdbOn() || !imdbOf()) return Promise.resolve(mapping).then(render);
+        var es = withTimeout(tmdbDetail(imdbOf()), 2500).catch(function () { return null; }); // sin traducción: en inglés
+        return Promise.all([mapping, es]).then(function (r) {
+          var es = r[1];
           if (es) {
             if (es.name) meta.name = es.name;
             if (es.overview) meta.description = es.overview;
             if (es.genres.length) meta.genres = es.genres;
             meta._tmdb = es;
           }
-        }, function () { /* sin traducción: en inglés */ }).then(render);
+        }).then(render);
       }).catch(function (e) {
         if (screen.closed) return;
         d.innerHTML = '';
@@ -101,6 +124,9 @@
       if (meta.releaseInfo || meta.year) parts.push(meta.releaseInfo || meta.year);
       if (meta.runtime) parts.push(meta.runtime);
       if (meta.imdbRating && parseFloat(meta.imdbRating)) parts.push('★ ' + num(meta.imdbRating));
+      var r = meta._ratings;
+      if (r && r.rt >= 0) parts.push('Rotten Tomatoes ' + r.rt + ' %');
+      if (r && r.mc >= 0) parts.push('Metacritic ' + r.mc);
       if (meta.genres && meta.genres.length) parts.push(meta.genres.slice(0, 3).join(', '));
       return parts;
     }
@@ -115,7 +141,16 @@
       var h1 = el('h1', null, '<span>' + esc(meta.name) + '</span>');
       d.appendChild(h1);
       titleLogo(h1, meta.logo || (imdbOf() ? metahubImg('logo', imdbOf()) : ''), 'd-logo', '');
-      d.appendChild(el('div', 'meta-line', info()));
+      var metaLine = el('div', 'meta-line', info());
+      d.appendChild(metaLine);
+      var prov = meta._tmdb && meta._tmdb.providers;
+      if (prov && prov.length) d.appendChild(el('div', 'providers', esc(tr('En España: {0}', prov.slice(0, 5).join(', ')))));
+      // notas de Rotten Tomatoes y Metacritic (con clave de OMDb): llegan después y se añaden a la línea
+      if (!meta._ratings) omdbRatings(imdbOf()).then(alive(screen, function (r) {
+        if (!r) return;
+        meta._ratings = r;
+        metaLine.innerHTML = info();
+      }));
       var desc = el('div', 'desc', esc(meta.description || ''));
       d.appendChild(desc);
       actions = el('div');
@@ -183,6 +218,8 @@
       focusable(seenB, toggleMovieSeen);
       actions.appendChild(seenB);
       watchlistButton(actions);
+      trailerButton(actions);
+      sagaButton(actions);
       similarButton(actions);
       castButton(actions);
     }
@@ -246,8 +283,11 @@
     }
 
     // temporada:episodio en IMDb/Trakt (el anime de Kitsu trae su propia numeración)
+    // y si Trakt numera distinto que Cinemeta (Trakt.epMap), con su numeración
+    var epMap = {};
     function traktKey(v) {
-      return (v.imdbSeason !== undefined ? v.imdbSeason : v.season) + ':' + (v.imdbEpisode !== undefined ? v.imdbEpisode : v.episode);
+      var k = (v.imdbSeason !== undefined ? v.imdbSeason : v.season) + ':' + (v.imdbEpisode !== undefined ? v.imdbEpisode : v.episode);
+      return epMap[k] || k;
     }
 
     function lastWatchedSeason(seasons) {
@@ -274,11 +314,13 @@
     function epCtx(v) {
       var p = progress[v.id];
       var label = tr('T{0}:E{1}', v.season, v.episode) + ' · ' + (v.name || v.title || tr('Episodio {0}', v.episode));
+      var tk = traktKey(v).split(':'); // para Trakt (scrobble y visto), con su numeración
       return extend(base(), {
         videoId: v.id, label: meta.name + ' — ' + label, epLabel: label,
         imdb: v.imdb_id || imdbOf(),
         imdbS: v.imdbSeason !== undefined ? v.imdbSeason : v.season,
         imdbE: v.imdbEpisode !== undefined ? v.imdbEpisode : v.episode,
+        traktS: tk[0], traktE: tk[1],
         startAt: p && !p.done ? p.t : 0,
         startPct: p ? 0 : resumePct(imdbOf() + ':' + traktKey(v)),
         runtime: parseRuntime(v.runtime) || parseRuntime(meta.runtime),
@@ -338,6 +380,7 @@
         if (!screen.closed) prefetchStreams(type, nx.v.id);
       }
       watchlistButton(top);
+      trailerButton(top);
       similarButton(top);
       castButton(top);
       var toggle = null;
