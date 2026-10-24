@@ -8,12 +8,13 @@
   }
   function continueList() {
     var byMeta = {};
+    // lo último de cada título: si ya está visto (p. ej. un episodio posterior), los anteriores a medias no cuentan
     Object.keys(progress).forEach(function (id) {
       var p = progress[id];
-      if (p.done || !p.d || p.t < 60) return;
       if (!byMeta[p.metaId] || byMeta[p.metaId].ts < p.ts) byMeta[p.metaId] = p;
     });
     return Object.keys(byMeta).map(function (k) { return byMeta[k]; })
+      .filter(function (p) { return !p.done && p.d && p.t >= 60; })
       .sort(function (a, b) { return b.ts - a.ts; }).slice(0, 20);
   }
 

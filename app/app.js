@@ -730,12 +730,13 @@
   }
   function continueList() {
     var byMeta = {};
+    // lo último de cada título: si ya está visto (p. ej. un episodio posterior), los anteriores a medias no cuentan
     Object.keys(progress).forEach(function (id) {
       var p = progress[id];
-      if (p.done || !p.d || p.t < 60) return;
       if (!byMeta[p.metaId] || byMeta[p.metaId].ts < p.ts) byMeta[p.metaId] = p;
     });
     return Object.keys(byMeta).map(function (k) { return byMeta[k]; })
+      .filter(function (p) { return !p.done && p.d && p.t >= 60; })
       .sort(function (a, b) { return b.ts - a.ts; }).slice(0, 20);
   }
 
@@ -1877,10 +1878,22 @@
 
   function clockText(d) { return d.getHours() + ':' + (d.getMinutes() < 10 ? '0' : '') + d.getMinutes(); }
   // un solo temporizador para todos los relojes (cabeceras y reproductor)
-  setInterval(function () {
+  var clockTick = Date.now();
+  function tickClocks() {
+    clockTick = Date.now();
     var t = clockText(new Date());
     Array.prototype.forEach.call(document.querySelectorAll('.clock'), function (c) { if (c.textContent !== t) c.textContent = t; });
-  }, 10000);
+  }
+  setInterval(tickClocks, 10000);
+  // en la tele el reloj se ha visto parado sin poder reproducirlo: al volver a la app o al pulsar una tecla se pone al día
+  // y, si el temporizador llevaba más de un minuto sin saltar, queda en el registro
+  function clockCheck(why) {
+    var gap = Date.now() - clockTick;
+    if (gap > 60000 && !document.hidden) logEv('reloj', 'temporizador parado ' + Math.round(gap / 1000) + ' s', { al: why });
+    tickClocks();
+  }
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) clockCheck('volver a la app'); });
+  document.addEventListener('keydown', function () { if (Date.now() - clockTick > 15000) clockCheck('tecla'); }, true);
 
   function header(active) {
     var h = el('div', 'header');
@@ -4338,7 +4351,8 @@
     saveProgress: function () {
       var c = this.ctx;
       if (!c || !this.started || !this.duration || this.time < 5) return;
-      var done = this.time / this.duration > 0.92;
+      // visto: casi al final, en el ending (AniSkip) o ya en el aviso del siguiente episodio (últimos 40 s)
+      var done = this.time / this.duration > 0.92 || this.duration - this.time <= 40 || this.inEnding();
       saveProgress({
         videoId: c.videoId, metaId: c.metaId, type: c.type, name: c.name, poster: c.poster,
         label: c.epLabel ? c.name + ' · ' + c.epLabel.split(' · ')[0] : c.name,
@@ -5184,7 +5198,7 @@
 
   // ---------------------------------------------------------------- arranque
 
-  var VERSION = '0.22.2';
+  var VERSION = '0.22.3';
 
   function fitScreen() {
     var z = window.innerWidth / 1920;

@@ -2,10 +2,22 @@
 
   function clockText(d) { return d.getHours() + ':' + (d.getMinutes() < 10 ? '0' : '') + d.getMinutes(); }
   // un solo temporizador para todos los relojes (cabeceras y reproductor)
-  setInterval(function () {
+  var clockTick = Date.now();
+  function tickClocks() {
+    clockTick = Date.now();
     var t = clockText(new Date());
     Array.prototype.forEach.call(document.querySelectorAll('.clock'), function (c) { if (c.textContent !== t) c.textContent = t; });
-  }, 10000);
+  }
+  setInterval(tickClocks, 10000);
+  // en la tele el reloj se ha visto parado sin poder reproducirlo: al volver a la app o al pulsar una tecla se pone al día
+  // y, si el temporizador llevaba más de un minuto sin saltar, queda en el registro
+  function clockCheck(why) {
+    var gap = Date.now() - clockTick;
+    if (gap > 60000 && !document.hidden) logEv('reloj', 'temporizador parado ' + Math.round(gap / 1000) + ' s', { al: why });
+    tickClocks();
+  }
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) clockCheck('volver a la app'); });
+  document.addEventListener('keydown', function () { if (Date.now() - clockTick > 15000) clockCheck('tecla'); }, true);
 
   function header(active) {
     var h = el('div', 'header');

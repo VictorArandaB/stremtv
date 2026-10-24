@@ -1002,7 +1002,8 @@
     saveProgress: function () {
       var c = this.ctx;
       if (!c || !this.started || !this.duration || this.time < 5) return;
-      var done = this.time / this.duration > 0.92;
+      // visto: casi al final, en el ending (AniSkip) o ya en el aviso del siguiente episodio (últimos 40 s)
+      var done = this.time / this.duration > 0.92 || this.duration - this.time <= 40 || this.inEnding();
       saveProgress({
         videoId: c.videoId, metaId: c.metaId, type: c.type, name: c.name, poster: c.poster,
         label: c.epLabel ? c.name + ' · ' + c.epLabel.split(' · ')[0] : c.name,
