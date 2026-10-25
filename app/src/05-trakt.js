@@ -274,6 +274,10 @@
             return d;
           })).then(function (d) {
             var e = d && d.next_episode;
+            if (d && d.aired && d.completed >= d.aired) { // al día: cuenta como vista (✓ en las filas)
+              if (sh.ids.imdb) Seen.shows[sh.ids.imdb] = true;
+              if (sh.ids.tmdb) Seen.tmdb['tv:' + sh.ids.tmdb] = true;
+            }
             if (!e || (d.aired && d.completed >= d.aired)) return null; // al día: lo «siguiente» aún no se ha emitido
             if (e.first_aired && new Date(e.first_aired) > new Date()) return null;
             // insignia: episodios emitidos que faltan por ver; «Nuevo»: emitido en las últimas 48 h
@@ -506,7 +510,10 @@
           (it.seasons || []).forEach(function (se) { if (se.number > 0) n += (se.episodes || []).length; });
           if (sh.ids.imdb) started[sh.ids.imdb] = true;
           if (sh.ids.tmdb) started['tv:' + sh.ids.tmdb] = true;
-          if (sh.aired_episodes && n >= sh.aired_episodes) {
+          // vista: todo lo emitido, o al día según su progreso sin especiales (el de «Siguientes episodios»): aired_episodes
+          // puede contar especiales y entonces una serie terminada, como Breaking Bad, no cuadraba
+          var pc = Trakt.progressCache[sh.ids.trakt], d = pc && pc.d;
+          if ((sh.aired_episodes && n >= sh.aired_episodes) || (d && d.aired && d.completed >= d.aired)) {
             if (sh.ids.imdb) shows[sh.ids.imdb] = true;
             if (sh.ids.tmdb) tmdb['tv:' + sh.ids.tmdb] = true;
           }

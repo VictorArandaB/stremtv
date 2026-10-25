@@ -1095,14 +1095,23 @@
     };
     // la serie elegida se comprueba con su progreso en Trakt (consulta pequeña): si ya hay algo visto, otra. Por si la lista
     // de vistos (la respuesta más pesada de Trakt) no llegó o se quedó corta: pasó con Breaking Bad
+    // y lo de TMDB, con su id de IMDb: sin él no se puede reproducir (y no se abre su ficha), así que se elige otro
     var pick = function (left) {
+      var skip = function (m, why) {
+        logEv('sorpréndeme', why, { titulo: m.name });
+        Surprise.picked.push(m.id);
+        return left > 0 ? pick(left - 1) : null;
+      };
       return next(0).then(function (m) {
-        if (!m || m.type !== 'series' || !Trakt.linked() || left <= 0) return m;
-        return surpriseStarted(m).then(function (started) {
-          if (!started) return m;
-          logEv('sorpréndeme', 'descartada: ya empezada en Trakt', { titulo: m.name });
-          Surprise.picked.push(m.id);
-          return pick(left - 1);
+        if (!m) return m;
+        var tm = /^tmdb:(movie|tv):(\d+)$/.exec(String(m.id || ''));
+        var imdb = tm ? tmdbGet('/' + tm[1] + '/' + tm[2] + '/external_ids').then(function (x) { return x.imdb_id || ''; }, function () { return null; })
+          : Promise.resolve(null);
+        return imdb.then(function (id) {
+          if (id === '') return skip(m, 'descartada: sin id de IMDb');
+          if (id) { Surprise.picked.push(m.id); m = extend(extend({}, m), { id: id }); }
+          if (m.type !== 'series' || !Trakt.linked()) return m;
+          return surpriseStarted(m).then(function (started) { return started ? skip(m, 'descartada: ya empezada en Trakt') : m; });
         });
       });
     };

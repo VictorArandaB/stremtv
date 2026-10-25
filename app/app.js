@@ -1239,6 +1239,10 @@
             return d;
           })).then(function (d) {
             var e = d && d.next_episode;
+            if (d && d.aired && d.completed >= d.aired) { // al día: cuenta como vista (✓ en las filas)
+              if (sh.ids.imdb) Seen.shows[sh.ids.imdb] = true;
+              if (sh.ids.tmdb) Seen.tmdb['tv:' + sh.ids.tmdb] = true;
+            }
             if (!e || (d.aired && d.completed >= d.aired)) return null; // al día: lo «siguiente» aún no se ha emitido
             if (e.first_aired && new Date(e.first_aired) > new Date()) return null;
             // insignia: episodios emitidos que faltan por ver; «Nuevo»: emitido en las últimas 48 h
@@ -1471,7 +1475,10 @@
           (it.seasons || []).forEach(function (se) { if (se.number > 0) n += (se.episodes || []).length; });
           if (sh.ids.imdb) started[sh.ids.imdb] = true;
           if (sh.ids.tmdb) started['tv:' + sh.ids.tmdb] = true;
-          if (sh.aired_episodes && n >= sh.aired_episodes) {
+          // vista: todo lo emitido, o al día según su progreso sin especiales (el de «Siguientes episodios»): aired_episodes
+          // puede contar especiales y entonces una serie terminada, como Breaking Bad, no cuadraba
+          var pc = Trakt.progressCache[sh.ids.trakt], d = pc && pc.d;
+          if ((sh.aired_episodes && n >= sh.aired_episodes) || (d && d.aired && d.completed >= d.aired)) {
             if (sh.ids.imdb) shows[sh.ids.imdb] = true;
             if (sh.ids.tmdb) tmdb['tv:' + sh.ids.tmdb] = true;
           }
@@ -4649,14 +4656,23 @@
     };
     // la serie elegida se comprueba con su progreso en Trakt (consulta pequeña): si ya hay algo visto, otra. Por si la lista
     // de vistos (la respuesta más pesada de Trakt) no llegó o se quedó corta: pasó con Breaking Bad
+    // y lo de TMDB, con su id de IMDb: sin él no se puede reproducir (y no se abre su ficha), así que se elige otro
     var pick = function (left) {
+      var skip = function (m, why) {
+        logEv('sorpréndeme', why, { titulo: m.name });
+        Surprise.picked.push(m.id);
+        return left > 0 ? pick(left - 1) : null;
+      };
       return next(0).then(function (m) {
-        if (!m || m.type !== 'series' || !Trakt.linked() || left <= 0) return m;
-        return surpriseStarted(m).then(function (started) {
-          if (!started) return m;
-          logEv('sorpréndeme', 'descartada: ya empezada en Trakt', { titulo: m.name });
-          Surprise.picked.push(m.id);
-          return pick(left - 1);
+        if (!m) return m;
+        var tm = /^tmdb:(movie|tv):(\d+)$/.exec(String(m.id || ''));
+        var imdb = tm ? tmdbGet('/' + tm[1] + '/' + tm[2] + '/external_ids').then(function (x) { return x.imdb_id || ''; }, function () { return null; })
+          : Promise.resolve(null);
+        return imdb.then(function (id) {
+          if (id === '') return skip(m, 'descartada: sin id de IMDb');
+          if (id) { Surprise.picked.push(m.id); m = extend(extend({}, m), { id: id }); }
+          if (m.type !== 'series' || !Trakt.linked()) return m;
+          return surpriseStarted(m).then(function (started) { return started ? skip(m, 'descartada: ya empezada en Trakt') : m; });
         });
       });
     };
@@ -8550,7 +8566,7 @@
 
   // ---------------------------------------------------------------- arranque
 
-  var VERSION = '0.27.1';
+  var VERSION = '0.27.2';
 
   function fitScreen() {
     var z = window.innerWidth / 1920;

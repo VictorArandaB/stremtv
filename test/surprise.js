@@ -48,7 +48,7 @@ const imdbOf = (id) => 'tt' + String(id).padStart(7, '0');
     }
     if (u.indexOf('api.trakt.tv') >= 0) {
       if (u.indexOf('/search/tmdb/508') >= 0) return json(req, [{ type: 'show', show: { title: 'VistaSoloEnProgreso', ids: { trakt: 508, tmdb: 508 } } }]);
-      if (u.indexOf('/shows/508/progress/watched') >= 0) return json(req, { aired: 62, completed: 62 });
+      if (u.indexOf('/shows/508/progress/watched') >= 0 || u.indexOf('/shows/' + imdbOf(508) + '/progress/watched') >= 0) return json(req, { aired: 62, completed: 62 });
       if (u.indexOf('/sync/ratings') >= 0) return json(req, [
         { type: 'movie', rating: 9, movie: { title: 'SemillaPeli', ids: { imdb: 'tt0000010', tmdb: 10 }, genres: ['drama'] } },
         { type: 'show', rating: 8, show: { title: 'SemillaSerie', ids: { imdb: 'tt0000020', tmdb: 20 }, genres: ['drama'] } },
