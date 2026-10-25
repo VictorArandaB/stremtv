@@ -35,7 +35,7 @@ const VIDEO = 'https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/1080/Big_Buc
   const go = async (re) => { const ok = await page.evaluate((src) => { const r = new RegExp(src); const e = StremTV.Nav.items().filter((x) => r.test(x.textContent))[0]; if (e) StremTV.Nav.focus(e); return !!e; }, re); if (!ok) console.log('NO ENCONTRADO', re); await key('Enter'); };
   const focused = () => page.evaluate(() => { const f = document.querySelector('.focused'); return f ? (f.textContent || f.value || '').replace(/\s+/g, ' ').slice(0, 80) : null; });
 
-  await page.goto('http://127.0.0.1:8090/', { waitUntil: 'networkidle2' });
+  await page.goto(('http://127.0.0.1:' + (process.env.STV_PORT || 8090) + '/'), { waitUntil: 'networkidle2' });
   await page.evaluate(() => { localStorage.clear(); localStorage.setItem('stv.addons', JSON.stringify([{ url: 'https://torrentio.strem.fun', manifest: { id: 'com.stremio.torrentio.addon', name: 'Torrentio', resources: ['stream'], types: ['movie', 'series', 'anime', 'other'], idPrefixes: null, catalogs: [] } }])); localStorage.setItem('stv.settings', JSON.stringify({ key: 'FAKE' })); localStorage.setItem('stv.trakt', JSON.stringify({ clientId: 'cid' })); });
   await page.reload({ waitUntil: 'networkidle2' }); await sleep(1500);
 

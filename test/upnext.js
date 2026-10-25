@@ -47,7 +47,7 @@ let rickWhen = '2026-10-15T00:00:00Z', progressCalls = [];
       .concat(Array.from({ length: 10 }, (_, i) => ({ show: { title: 'Serie ' + i, ids: { imdb: 'tt80000' + (10 + i) } } }))));
     return json(req, []);
   });
-  await p.goto('http://127.0.0.1:8090/', { waitUntil: 'networkidle2' });
+  await p.goto(('http://127.0.0.1:' + (process.env.STV_PORT || 8090) + '/'), { waitUntil: 'networkidle2' });
   await p.evaluate(() => { localStorage.clear(); localStorage.setItem('stv.addons', JSON.stringify([{ url: 'https://torrentio.strem.fun', manifest: { id: 'com.stremio.torrentio.addon', name: 'Torrentio', resources: ['stream'], types: ['movie', 'series', 'anime', 'other'], idPrefixes: null, catalogs: [] } }])); localStorage.setItem('stv.settings', JSON.stringify({ key: 'K', debrid: 'alldebrid', hideWatched: false }));
     localStorage.setItem('stv.trakt', JSON.stringify({ clientId: 'c', access: 'a', refresh: 'r', expires: Date.now() + 9e9 }));
     // a medias en esta tele: sale en «Continuar viendo» (local) con la barra del episodio y el número de la serie

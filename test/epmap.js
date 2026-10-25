@@ -43,7 +43,7 @@ const check = (ok, what, got) => { console.log((ok ? '✓ ' : '✗ ') + what + (
   const key = async (k, n = 1) => { for (let i = 0; i < n; i++) { await p.keyboard.press(k); await sleep(250); } };
   const top = 'StremTV.stack[StremTV.stack.length - 1].el';
 
-  await p.goto('http://127.0.0.1:8090/', { waitUntil: 'networkidle2' });
+  await p.goto(('http://127.0.0.1:' + (process.env.STV_PORT || 8090) + '/'), { waitUntil: 'networkidle2' });
   await p.evaluate(() => { localStorage.clear(); localStorage.setItem('stv.settings', JSON.stringify({ quickPlay: false, hideWatched: false, key: 'K', debrid: 'alldebrid' }));
     localStorage.setItem('stv.trakt', JSON.stringify({ clientId: 'c', access: 'a', refresh: 'r', expires: Date.now() + 9e9 }));
     localStorage.setItem('stv.addons', JSON.stringify([{ url: 'https://torrentio.strem.fun', manifest: { id: 'com.stremio.torrentio.addon', name: 'Torrentio', resources: ['stream'], types: ['movie', 'series'], idPrefixes: null, catalogs: [] } }])); });

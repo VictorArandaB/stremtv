@@ -3,7 +3,7 @@
 const puppeteer = require('puppeteer-core');
 const fs = require('fs');
 
-const URL = process.argv[2] || 'http://127.0.0.1:8090/';
+const URL = process.argv[2] || ('http://127.0.0.1:' + (process.env.STV_PORT || 8090) + '/');
 const OUT = __dirname + '/shots';
 fs.mkdirSync(OUT, { recursive: true });
 

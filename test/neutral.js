@@ -16,7 +16,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     }
     req.continue();
   });
-  await p.goto('http://127.0.0.1:8090/', { waitUntil: 'networkidle2' });
+  await p.goto(('http://127.0.0.1:' + (process.env.STV_PORT || 8090) + '/'), { waitUntil: 'networkidle2' });
   await p.evaluate(() => { localStorage.clear(); localStorage.setItem('stv.settings', JSON.stringify({ key: 'CLAVE', debrid: 'alldebrid', quickPlay: false, maxQ: '1080' })); });
   await p.reload({ waitUntil: 'networkidle2' }); await sleep(1200);
   console.log('Inicio sin addon:', await p.evaluate(() => (document.querySelector('.btn.primary') || {}).textContent));

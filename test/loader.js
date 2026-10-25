@@ -7,7 +7,7 @@ let fails = 0;
 const check = (ok, what, got) => { console.log((ok ? 'OK  ' : 'MAL ') + what + (got !== undefined ? ' → ' + JSON.stringify(got) : '')); if (!ok) fails++; };
 (async () => {
   const b = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: 'new', defaultViewport: { width: 1920, height: 1080 } });
-  for (const port of [8090, 8091]) {
+  for (const port of [+(process.env.STV_PORT || 8090), +(process.env.STV_PORT2 || 8091)]) {
     const p = await b.newPage();
     const errs = [];
     p.on('pageerror', (e) => errs.push(e.message));

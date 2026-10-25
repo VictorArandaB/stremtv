@@ -15,7 +15,7 @@ const check = (ok, what, got) => { console.log((ok ? 'OK  ' : 'MAL ') + what + (
       files: Array.from(document.scripts).filter((s) => /app\.js/.test(s.src)).length };
   });
   const booted = async () => { const t0 = Date.now(); while (!(await p.evaluate(() => !!document.querySelector('.focused'))) && Date.now() - t0 < 10000) await sleep(50); return Date.now() - t0; };
-  await p.goto('http://127.0.0.1:8091/', { waitUntil: 'domcontentloaded' });
+  await p.goto(('http://127.0.0.1:' + (process.env.STV_PORT2 || 8091) + '/'), { waitUntil: 'domcontentloaded' });
   await p.evaluate(() => localStorage.clear()); await p.reload({ waitUntil: 'domcontentloaded' });
   let ms = await booted(), s = await state();
   check(s.app && /^paquete/.test(s.src) && s.files === 1, '1.er arranque desde el paquete (' + ms + ' ms)', s.src);

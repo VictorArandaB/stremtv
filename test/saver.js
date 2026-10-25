@@ -3,7 +3,7 @@
 // Uso: node saver.js [url]  -> capturas 120-… en ./shots
 const puppeteer = require('puppeteer-core');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const URL = process.argv[2] || 'http://127.0.0.1:8090/';
+const URL = process.argv[2] || ('http://127.0.0.1:' + (process.env.STV_PORT || 8090) + '/');
 const OUT = __dirname + '/shots';
 let fails = 0;
 const check = (ok, what) => { console.log((ok ? 'OK  ' : 'MAL ') + what); if (!ok) fails++; };

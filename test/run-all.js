@@ -1,5 +1,5 @@
 // Pasa todos los tests de uno en uno y dice cuáles fallan. Sirve app/ en 8090 (desarrollo) y 8091 (como en la tele)
-// si no hay ya algo escuchando. Uso: npm test (en test/) o node test/run-all.js [nombres…] (p. ej. upnext v20).
+// si no hay ya algo escuchando; con STV_PORT=8190 usa 8190 y 8191 (para pasar los tests de otra copia a la vez). Uso: npm test (en test/) o node test/run-all.js [nombres…] (p. ej. upnext v20).
 // Un test falla si sale con código distinto de 0, si escribe «MAL …» o «✗ …», o «ERRORES:» con algo distinto de «ninguno».
 const { spawn } = require('child_process');
 const fs = require('fs');
@@ -8,6 +8,7 @@ const path = require('path');
 
 const DIR = __dirname, APP = path.join(DIR, '..', 'app');
 const TIMEOUT = 300000;
+const PORT = +(process.env.STV_PORT || 8090), PORT2 = +(process.env.STV_PORT2 || PORT + 1);
 // necesitan algo que no se puede montar aquí: se pasan a mano
 const SKIP = {
   'update.js': 'necesita wgt-build en 8092 y una versión antigua como argumento',
@@ -30,7 +31,7 @@ function run(file) {
   return new Promise((resolve) => {
     const t0 = Date.now();
     let out = '';
-    const child = spawn(process.execPath, [path.join(DIR, file)], { cwd: DIR });
+    const child = spawn(process.execPath, [path.join(DIR, file)], { cwd: DIR, env: Object.assign({}, process.env, { STV_PORT: String(PORT), STV_PORT2: String(PORT2) }) });
     child.stdout.on('data', (d) => { out += d; });
     child.stderr.on('data', (d) => { out += d; });
     const timer = setTimeout(() => { out += '\n(se pasó de ' + TIMEOUT / 1000 + ' s)'; child.kill('SIGKILL'); }, TIMEOUT);
@@ -55,7 +56,7 @@ function run(file) {
   const only = process.argv.slice(2).map((n) => n.replace(/\.js$/, '') + '.js');
   const files = fs.readdirSync(DIR).filter((f) => f.endsWith('.js') && f !== 'run-all.js')
     .filter((f) => !only.length || only.indexOf(f) >= 0).sort();
-  const servers = [await serve(8090), await serve(8091)];
+  const servers = [await serve(PORT), await serve(PORT2)];
   const results = [];
   for (const f of files) {
     if (SKIP[f] && !only.length) { console.log('--   ' + f + ' (se salta: ' + SKIP[f] + ')'); continue; }

@@ -33,7 +33,7 @@ const check = (ok, what, got) => { console.log((ok ? '✓ ' : '✗ ') + what + (
     await p.reload({ waitUntil: 'networkidle2' }); await sleep(800);
   };
   const torrentio = [{ url: 'https://torrentio.strem.fun', manifest: { id: 'com.stremio.torrentio.addon', name: 'Torrentio', resources: ['stream'], types: ['movie', 'series'], idPrefixes: null, catalogs: [] } }];
-  await p.goto('http://127.0.0.1:8090/', { waitUntil: 'networkidle2' });
+  await p.goto(('http://127.0.0.1:' + (process.env.STV_PORT || 8090) + '/'), { waitUntil: 'networkidle2' });
 
   // 1. sin addon de fuentes: ▶ Ver muestra el aviso y el botón de Ajustes (en 0.16.2 salía una pantalla vacía)
   await reset({ quickPlay: true });

@@ -44,7 +44,7 @@ const ADDONS = JSON.stringify([{ url: 'https://torrentio.strem.fun', manifest: {
   });
   const ev = (fn, ...a) => p.evaluate(fn, ...a);
   const key = async (k, n = 1) => { for (let i = 0; i < n; i++) { await p.keyboard.press(k); await sleep(250); } };
-  await p.goto('http://127.0.0.1:8090/', { waitUntil: 'networkidle2' });
+  await p.goto(('http://127.0.0.1:' + (process.env.STV_PORT || 8090) + '/'), { waitUntil: 'networkidle2' });
   await ev((a) => { localStorage.clear(); localStorage.setItem('stv.addons', a);
     localStorage.setItem('stv.settings', JSON.stringify({ key: 'K', debrid: 'alldebrid', quickPlay: false, autoNext: false, audioLang: 'eng', lastAudio: 'jp' })); }, ADDONS);
   await p.reload({ waitUntil: 'networkidle2' }); await sleep(800);

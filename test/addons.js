@@ -29,7 +29,7 @@ const manifest = { id: 'test.addon', name: 'Prueba', version: '1.0.0', types: ['
   });
   const key = async (k, n = 1) => { for (let i = 0; i < n; i++) { await p.keyboard.press(k); await sleep(250); } };
   const text = (sel) => p.evaluate((sel) => Array.from(document.querySelectorAll(sel)).map((x) => x.textContent).join(' | '), sel);
-  await p.goto('http://127.0.0.1:8090/', { waitUntil: 'networkidle2' });
+  await p.goto(('http://127.0.0.1:' + (process.env.STV_PORT || 8090) + '/'), { waitUntil: 'networkidle2' });
   await p.evaluate(() => { localStorage.clear(); localStorage.setItem('stv.settings', JSON.stringify({ key: 'K', debrid: 'alldebrid', quickPlay: false, hideWatched: false })); });
   await p.reload({ waitUntil: 'networkidle2' }); await sleep(1000);
   // Ajustes → escribir la URL del addon

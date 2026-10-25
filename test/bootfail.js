@@ -7,7 +7,7 @@ const check = (ok, what, got) => { console.log((ok ? '✓ ' : '✗ ') + what + (
 (async () => {
   const b = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: 'new', defaultViewport: { width: 1920, height: 1080 } });
   const p = await b.newPage(); const errs = []; p.on('pageerror', (e) => errs.push(e.message));
-  await p.goto('http://127.0.0.1:8091/', { waitUntil: 'domcontentloaded' });
+  await p.goto(('http://127.0.0.1:' + (process.env.STV_PORT2 || 8091) + '/'), { waitUntil: 'domcontentloaded' });
   // la guardada registra un listener de teclas (como app.js) y después lanza una excepción
   await p.evaluate(() => {
     localStorage.clear();

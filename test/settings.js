@@ -21,7 +21,7 @@ const check = (ok, what, got) => { console.log((ok ? '✓ ' : '✗ ') + what + (
     await p.reload({ waitUntil: 'networkidle2' }); await sleep(800);
   };
 
-  await p.goto('http://127.0.0.1:8090/', { waitUntil: 'networkidle2' });
+  await p.goto(('http://127.0.0.1:' + (process.env.STV_PORT || 8090) + '/'), { waitUntil: 'networkidle2' });
   await reset({ quickPlay: false });
   await tab();
   check(await shown() === 'Ajustes › Fuentes y debrid', 'sin addon, la pestaña abre Fuentes y debrid', await shown());

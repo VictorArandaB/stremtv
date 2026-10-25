@@ -28,7 +28,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const typeToken = async (t) => { await p.evaluate((t) => { const i = Array.from(document.querySelectorAll('input')).filter((x) => x.placeholder === 'ghp_…')[0]; StremTV.Nav.focus(i); i.focus(); i.value = t; }, t); await key('Enter'); await sleep(1500); };
   const press = async (label) => { await p.evaluate((label) => StremTV.Nav.focus(Array.from(document.querySelectorAll('.btn,.mi')).filter((x) => x.textContent === label)[0]), label); await key('Enter'); await sleep(1500); };
 
-  await p.goto('http://127.0.0.1:8090/', { waitUntil: 'networkidle2' });
+  await p.goto(('http://127.0.0.1:' + (process.env.STV_PORT || 8090) + '/'), { waitUntil: 'networkidle2' });
   await p.evaluate(() => { localStorage.clear();
     localStorage.setItem('stv.addons', JSON.stringify([{ url: 'https://torrentio.strem.fun', manifest: { id: 'com.stremio.torrentio.addon', name: 'Torrentio', resources: ['stream'], types: ['movie', 'series', 'anime', 'other'], idPrefixes: null, catalogs: [] } }])); localStorage.setItem('stv.settings', JSON.stringify({ key: 'CLAVE-DEBRID', debrid: 'alldebrid', lang: 'es', audioLang: 'eng' }));
     localStorage.setItem('stv.trakt', JSON.stringify({ clientId: 'cid', access: 'acc', refresh: 'ref', expires: Date.now() + 9e9 }));

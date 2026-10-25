@@ -83,7 +83,7 @@ La clave solo se guarda en la tele.
 ## Desarrollo
 El código está partido en módulos en `app/src/` (por orden: base, idioma, ajustes, Trakt, navegación, pantallas, reproductor…). La tele carga un solo `app/app.js`, que se genera uniéndolos: **se edita en `app/src/` y después se ejecuta `node tools/build-app.js`** (`--check` dice si está al día; `build-wgt.sh` no empaqueta uno desfasado). Los módulos comparten una sola función (`00-base.js` la abre y `16-start.js` la cierra), así que por separado no son JavaScript válido.
 
-Tests (Chrome + puppeteer-core): `cd test && npm install && npm test` los pasa todos de uno en uno y dice cuáles fallan (sirve `app/` en los puertos 8090 y 8091 si no hay nada en ellos); `node test/run-all.js upnext v20` pasa solo esos. `update.js` y `loader2.js` se saltan: necesitan un paquete firmado o la red y se pasan a mano.
+Tests (Chrome + puppeteer-core): `cd test && npm install && npm test` los pasa todos de uno en uno y dice cuáles fallan (sirve `app/` en los puertos 8090 y 8091 si no hay nada en ellos; con `STV_PORT=8190` usa 8190 y 8191, para pasar a la vez los de otra copia, como un worktree); `node test/run-all.js upnext v20` pasa solo esos. `update.js` y `loader2.js` se saltan: necesitan un paquete firmado o la red y se pasan a mano.
 ```
 node tools/build-app.js                 # genera app/app.js desde app/src
 cd app && python3 -m http.server 8090   # abrir http://127.0.0.1:8090 (flechas, Intro, Esc)

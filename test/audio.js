@@ -4,7 +4,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 (async () => {
   const b = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: 'new', defaultViewport: { width: 1920, height: 1080 } });
   const p = await b.newPage(); const errs = []; p.on('pageerror', (e) => errs.push(e.message));
-  await p.goto('http://127.0.0.1:8090/', { waitUntil: 'networkidle2' });
+  await p.goto(('http://127.0.0.1:' + (process.env.STV_PORT || 8090) + '/'), { waitUntil: 'networkidle2' });
   await p.evaluate(() => localStorage.clear());
   await p.reload({ waitUntil: 'networkidle2' }); await sleep(800);
   const run = (tracks, metaId) => p.evaluate((tracks, metaId, prefAudio) => {

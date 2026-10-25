@@ -3,7 +3,7 @@
 // Uso: node v18.js [url]  -> capturas 110-… en ./shots
 const puppeteer = require('puppeteer-core');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const URL = process.argv[2] || 'http://127.0.0.1:8090/';
+const URL = process.argv[2] || ('http://127.0.0.1:' + (process.env.STV_PORT || 8090) + '/');
 const VIDEO = 'https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/1080/Big_Buck_Bunny_1080_10s_30MB.mp4';
 const OUT = __dirname + '/shots';
 let fails = 0;

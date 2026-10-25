@@ -52,7 +52,7 @@ const check = (ok, what, got) => { console.log((ok ? '✓ ' : '✗ ') + what + (
     }, extra);
     await p.reload({ waitUntil: 'networkidle2' }); await sleep(800);
   };
-  await p.goto('http://127.0.0.1:8090/', { waitUntil: 'networkidle2' });
+  await p.goto(('http://127.0.0.1:' + (process.env.STV_PORT || 8090) + '/'), { waitUntil: 'networkidle2' });
 
   // 1. Atrás mientras carga la ficha: el mando sigue en Inicio
   await reset();

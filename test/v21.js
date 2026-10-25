@@ -37,7 +37,7 @@ const ADDONS = JSON.stringify([{ url: 'https://torrentio.strem.fun', manifest: {
   const key = async (k, n = 1) => { for (let i = 0; i < n; i++) { await p.keyboard.press(k); await sleep(250); } };
   const waitFor = async (fn, ms) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (await ev(fn)) return true; await sleep(200); } return false; };
   const banner = () => ev(() => { const n = document.querySelector('#netbox'); return !!n && !n.classList.contains('hidden'); });
-  await p.goto('http://127.0.0.1:8090/', { waitUntil: 'networkidle2' });
+  await p.goto(('http://127.0.0.1:' + (process.env.STV_PORT || 8090) + '/'), { waitUntil: 'networkidle2' });
   await ev((a) => { localStorage.clear(); localStorage.setItem('stv.addons', a);
     localStorage.setItem('stv.settings', JSON.stringify({ key: 'K', debrid: 'alldebrid', quickPlay: false })); }, ADDONS);
   await p.reload({ waitUntil: 'networkidle2' }); await sleep(800);
