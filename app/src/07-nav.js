@@ -4,9 +4,9 @@
   // started: series con algún episodio visto (imdb y «tv:id»)
   var Seen = { movies: {}, shows: {}, tmdb: {}, started: {}, at: 0, loading: null };
 
-  // espera (como mucho una vez cada 10 min) a tener la lista de vistos de Trakt; «always»: aunque no se oculte lo visto
-  function seenReady(always) {
-    if ((!settings.hideWatched && !always) || !Trakt.linked()) return Promise.resolve();
+  // espera (como mucho una vez cada 10 min) a tener la lista de vistos de Trakt: aunque no se oculte lo visto, se marca (✓)
+  function seenReady() {
+    if (!Trakt.linked()) return Promise.resolve();
     if (Date.now() - Seen.at < 600000) return Promise.resolve();
     if (!Seen.loading) {
       Seen.loading = Trakt.loadWatched().catch(function () { /* sin Trakt: se muestra todo */ }).then(function () { Seen.loading = null; });

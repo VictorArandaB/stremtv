@@ -24,7 +24,9 @@ const imdbOf = (id) => 'tt' + String(id).padStart(7, '0');
   const RECS = {
     // la serie valorada con un 8: dos buenas sin ver; vista, empezada, con mala nota, con pocos votos y anime no valen
     'tv/20': tm([[501, 'SerieVista'], [502, 'SerieEmpezada'], [503, 'RecSerieA'], [504, 'RecSerieB'], [505, 'SerieMala', { vote: 5 }],
-      [507, 'SeriePocosVotos', { votes: 20 }], [506, 'AnimeEnSeries', { anime: true }]]),
+      [507, 'SeriePocosVotos', { votes: 20 }], [506, 'AnimeEnSeries', { anime: true }],
+      // como Breaking Bad: no sale en la lista de vistos, pero su progreso en Trakt dice que está vista (se descarta al elegirla)
+      [508, 'VistaSoloEnProgreso']]),
     // el anime valorado con un 9
     'tv/30': tm([[601, 'RecAnimeA', { anime: true }], [602, 'RecAnimeB', { anime: true }], [603, 'NoAnimeEnAnime']]),
     'movie/10': tm([[701, 'RecPeliA'], [702, 'RecPeliB'], [703, 'AnimePeli', { anime: true }]]),
@@ -45,6 +47,8 @@ const imdbOf = (id) => 'tt' + String(id).padStart(7, '0');
       return json(req, { results: [] });
     }
     if (u.indexOf('api.trakt.tv') >= 0) {
+      if (u.indexOf('/search/tmdb/508') >= 0) return json(req, [{ type: 'show', show: { title: 'VistaSoloEnProgreso', ids: { trakt: 508, tmdb: 508 } } }]);
+      if (u.indexOf('/shows/508/progress/watched') >= 0) return json(req, { aired: 62, completed: 62 });
       if (u.indexOf('/sync/ratings') >= 0) return json(req, [
         { type: 'movie', rating: 9, movie: { title: 'SemillaPeli', ids: { imdb: 'tt0000010', tmdb: 10 }, genres: ['drama'] } },
         { type: 'show', rating: 8, show: { title: 'SemillaSerie', ids: { imdb: 'tt0000020', tmdb: 20 }, genres: ['drama'] } },

@@ -101,6 +101,23 @@
   }
   function tmdbList(path, k) { return tmdbPage(path, k).then(function (r) { return r.metas; }); }
 
+  // logo del título (para la cabecera grande de las filas de TMDB, que no traen id de IMDb para el de metahub):
+  // en español, si no en inglés, si no sin texto; '' si no tiene
+  var tmdbLogos = {};
+  function tmdbLogo(k, id) {
+    var key = k + ':' + id;
+    if (!tmdbLogos[key]) {
+      tmdbLogos[key] = tmdbGet('/' + k + '/' + id + '/images?include_image_language=es,en,null').then(function (d) {
+        var rank = { es: 0, en: 1 }, logos = (d.logos || []).slice().sort(function (a, b) {
+          var ra = a.iso_639_1 in rank ? rank[a.iso_639_1] : 2, rb = b.iso_639_1 in rank ? rank[b.iso_639_1] : 2;
+          return ra - rb;
+        });
+        return logos.length ? 'https://image.tmdb.org/t/p/w500' + logos[0].file_path : '';
+      }, function () { delete tmdbLogos[key]; return ''; });
+    }
+    return tmdbLogos[key];
+  }
+
   function isoDay(ms) { return new Date(ms).toISOString().slice(0, 10); }
 
   // plataformas con suscripción en España: por su id de TMDB y, si ya no está, por el nombre (cambian: Max → HBO Max).

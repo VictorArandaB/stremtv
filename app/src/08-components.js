@@ -16,7 +16,8 @@
     if (extra && extra.badge) p.appendChild(el('div', 'new award', esc(extra.badge)));
     // ✓ en lo ya visto (en las filas de progreso o historial no hace falta) y la nota al enfocarla
     // (en las pantallas con cabecera grande la nota sale en la cabecera y la de la carátula no se ve)
-    if ((!extra || extra.badge) && isSeenMeta(meta)) p.appendChild(el('div', 'mark', '✓'));
+    // lo visto, además, atenuado; en las filas con etiqueta (progreso, historial, calendario) solo si lo piden (seenMark)
+    if ((!extra || extra.badge || extra.seenMark) && isSeenMeta(meta)) { p.appendChild(el('div', 'mark', '✓')); c.className += ' seen'; }
     if (meta.imdbRating && parseFloat(meta.imdbRating)) p.appendChild(el('div', 'rate', '★ ' + esc(num(meta.imdbRating))));
     c.appendChild(p);
     c.appendChild(el('div', 'name', esc(extra && extra.label ? extra.label : meta.name)));
@@ -115,7 +116,7 @@
         var hadFocus = Nav.cur && row.contains(Nav.cur);
         var fresh = metas.length
           ? posterRow(t, metas, onPick, metas.map(function (m) {
-            return m.pct || m.label || m.isNew || m.left || m.badge ? { pct: m.pct, label: m.label, isNew: m.isNew, left: m.left, badge: m.badge } : null;
+            return m.pct || m.label || m.isNew || m.left || m.badge ? { pct: m.pct, label: m.label, isNew: m.isNew, left: m.left, badge: m.badge, seenMark: m.seenMark } : null;
           }), more)
           : el('div', 'row', '<div class="row-title">' + esc(t) + '</div><div class="empty">' + tr('Sin resultados') + '</div>');
         container.replaceChild(fresh, row);

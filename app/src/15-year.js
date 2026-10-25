@@ -316,6 +316,7 @@
       list.filter(Boolean).forEach(function (t) {
         var s = el('div', 'yr-stat' + (cls ? ' ' + cls : ''), '<div class="yr-big"></div><div class="yr-lbl"></div><div class="yr-sub"></div>');
         s.childNodes[0].textContent = t[0];
+        if (cls !== 'wide' && t[0].length > 6) s.childNodes[0].className += t[0].length > 9 ? ' xlong' : ' long'; // que no se corte
         s.childNodes[1].textContent = t[1];
         s.childNodes[2].textContent = t[2] || '';
         sc.appendChild(focusable(s, function () { /* solo para leer */ }));

@@ -21,6 +21,7 @@ const check = (ok, what, got) => { console.log((ok ? '✓ ' : '✗ ') + what + (
     if (req.method() === 'OPTIONS') return req.respond({ status: 204, headers: hdr });
     if (u.indexOf('api.themoviedb.org') >= 0) {
       if (/\/watch\/providers\/(tv|movie)/.test(u)) return json(req, { results: [{ provider_id: 8, provider_name: 'Netflix' }, { provider_id: 1899, provider_name: 'Max' }, { provider_id: 2, provider_name: 'Apple TV' }, { provider_id: 283, provider_name: 'Crunchyroll' }] });
+      if (/\/tv\/100\/images/.test(u)) return json(req, { logos: [{ iso_639_1: 'en', file_path: '/logo-en.png' }, { iso_639_1: 'es', file_path: '/logo-es.png' }] });
       if (/\/trending\/tv\/week/.test(u)) return json(req, res(['Tendencia uno', { name: 'Anime en tendencia', anime: true }], 100));
       if (/\/search\/multi/.test(u)) return json(req, res([{ name: 'Peli', media: 'movie' }, { name: 'Serie', media: 'tv' }, { name: 'Anime buscado', media: 'tv', anime: true }], 400));
       if (/\/discover\//.test(u)) {
@@ -42,6 +43,8 @@ const check = (ok, what, got) => { console.log((ok ? '✓ ' : '✗ ') + what + (
     }
     // premios (Wikipedia y Wikidata): sin datos, sus filas no salen
     if (u.indexOf('wikipedia.org') >= 0 || u.indexOf('wikidata.org') >= 0) return json(req, {});
+    // logo de TMDB (PNG de 1×1)
+    if (u.indexOf('image.tmdb.org/t/p/w500/logo-') >= 0) return req.respond({ status: 200, headers: hdr, contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', 'base64') });
     if (u.indexOf('/catalog/') >= 0 && u.indexOf('v3-cinemeta') >= 0) return json(req, { metas: [{ id: 'tt0111161', type: /movie/.test(u) ? 'movie' : 'series', name: 'Cinemeta', poster: '' },
       { id: 'tt0111162', type: /movie/.test(u) ? 'movie' : 'series', name: 'Cinemeta anime', genres: ['Animation', 'Action'], country: 'Japan', poster: '' }] });
     if (u.indexOf('anime-kitsu.strem.fun/catalog/') >= 0) return json(req, { metas: [{ id: /search=/.test(u) ? 'kitsu:2' : 'kitsu:1', type: 'anime', name: /search=/.test(u) ? 'Kitsu búsqueda' : 'Kitsu', poster: '' }] });
@@ -76,12 +79,20 @@ const check = (ok, what, got) => { console.log((ok ? '✓ ' : '✗ ') + what + (
   await tab('Series'); await sleep(1500);
   const sr = await rows();
   const titles = sr.map((r) => r.split(':')[0]).join(' | ');
-  check(titles === 'Para ti | Tendencia esta semana | En emisión | Populares | Estrenos | Mejor valoradas | En Netflix | En HBO Max', 'filas de Series (sin las plataformas que no hay ni las ocultas)', titles);
+  check(titles === 'Para ti | Tendencia esta semana | Recién llegado al streaming | En emisión | Populares | Estrenos | Mejor valoradas | En Netflix | En HBO Max', 'filas de Series (sin las plataformas que no hay ni las ocultas)', titles);
   check(sr[0] === 'Para ti: Rec nueva', '«Para ti» sin lo visto ni lo empezado (ni anime)', sr[0]);
-  check(sr[1] === 'Tendencia esta semana: Tendencia uno' && sr[3] === 'Populares: Cinemeta', 'Series sin anime (TMDB y Cinemeta)', sr[1] + ' · ' + sr[3]);
+  check(sr[1] === 'Tendencia esta semana: Tendencia uno' && sr[4] === 'Populares: Cinemeta', 'Series sin anime (TMDB y Cinemeta)', sr[1] + ' · ' + sr[4]);
   check(sr.indexOf('En Netflix: Serie Netflix') >= 0 && /with_watch_providers=8&watch_region=ES&with_watch_monetization_types=flatrate/.test(discover.join(' ')), 'fila de Netflix (TMDB, con suscripción en España)');
   check(await p.evaluate(() => StremTV.Nav.cur.textContent === 'Series' && StremTV.Nav.cur.classList.contains('active')), 'el foco empieza en la pestaña Series');
+  // lo visto en Trakt sale atenuado y con ✓ aunque no se oculte lo visto (la 1 de TMDB es «Rec vista»)
+  const seenCards = await p.evaluate((top) => Array.from(eval(top).querySelectorAll('.card.seen .name')).map((x) => x.textContent).filter((n, i, a) => a.indexOf(n) === i).join(', '), top);
+  check(seenCards === 'Vista en Trakt', 'lo visto, atenuado y con ✓', seenCards);
   await p.screenshot({ path: OUT + '/240-series.png' });
+  // cabecera de una carátula de TMDB (sin id de IMDb): el logo de TMDB, en español si lo hay
+  await p.evaluate((top) => { const r = Array.from(eval(top).querySelectorAll('.row')).filter((x) => /^Tendencia/.test(x.querySelector('.row-title').textContent))[0]; StremTV.Nav.focus(r.querySelector('.card')); }, top);
+  await sleep(2000);
+  const logo = await p.evaluate((top) => { const i = eval(top).querySelector('.hero-logo img'); return i ? i.src : ''; }, top);
+  check(/w500\/logo-es\.png$/.test(logo), 'cabecera de una fila de TMDB con su logo', logo);
 
   // --- Anime: las mismas filas que Series (Kitsu y TMDB) y Crunchyroll
   await tab('Anime'); await sleep(1500);
