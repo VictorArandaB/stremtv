@@ -40,6 +40,8 @@ const check = (ok, what, got) => { console.log((ok ? '✓ ' : '✗ ') + what + (
         { show: { title: 'Rec empezada', ids: { imdb: 'tt0000002', tmdb: 5, trakt: 2 }, aired_episodes: 5 }, last_watched_at: '2024-01-01', seasons: [{ number: 1, episodes: [{ number: 1 }] }] }]);
       return json(req, []);
     }
+    // premios (Wikipedia y Wikidata): sin datos, sus filas no salen
+    if (u.indexOf('wikipedia.org') >= 0 || u.indexOf('wikidata.org') >= 0) return json(req, {});
     if (u.indexOf('/catalog/') >= 0 && u.indexOf('v3-cinemeta') >= 0) return json(req, { metas: [{ id: 'tt0111161', type: /movie/.test(u) ? 'movie' : 'series', name: 'Cinemeta', poster: '' },
       { id: 'tt0111162', type: /movie/.test(u) ? 'movie' : 'series', name: 'Cinemeta anime', genres: ['Animation', 'Action'], country: 'Japan', poster: '' }] });
     if (u.indexOf('anime-kitsu.strem.fun/catalog/') >= 0) return json(req, { metas: [{ id: /search=/.test(u) ? 'kitsu:2' : 'kitsu:1', type: 'anime', name: /search=/.test(u) ? 'Kitsu búsqueda' : 'Kitsu', poster: '' }] });

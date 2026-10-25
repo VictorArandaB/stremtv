@@ -12,9 +12,11 @@
     }
     if (extra && extra.isNew) p.appendChild(el('div', 'new', esc(tr('Nuevo'))));
     if (extra && extra.left > 0) p.appendChild(leftBadge(extra.left));
+    // «Ganadora» o el año en las filas de premios
+    if (extra && extra.badge) p.appendChild(el('div', 'new award', esc(extra.badge)));
     // ✓ en lo ya visto (en las filas de progreso o historial no hace falta) y la nota al enfocarla
     // (en las pantallas con cabecera grande la nota sale en la cabecera y la de la carátula no se ve)
-    if (!extra && isSeenMeta(meta)) p.appendChild(el('div', 'mark', '✓'));
+    if ((!extra || extra.badge) && isSeenMeta(meta)) p.appendChild(el('div', 'mark', '✓'));
     if (meta.imdbRating && parseFloat(meta.imdbRating)) p.appendChild(el('div', 'rate', '★ ' + esc(num(meta.imdbRating))));
     c.appendChild(p);
     c.appendChild(el('div', 'name', esc(extra && extra.label ? extra.label : meta.name)));
@@ -84,7 +86,8 @@
     return row;
   }
 
-  // fila que se rellena cuando llega la promesa (metas con .pct/.label/.isNew/.left opcionales). Si en vez de la promesa se da
+  // fila que se rellena cuando llega la promesa (metas con .pct/.label/.isNew/.left/.badge opcionales; la lista puede traer
+  // .title si el título depende de los datos, como «Óscar 2026»). Si en vez de la promesa se da
   // una función que la crea, la fila que falla por la red se vuelve a pedir sola cuando vuelve la conexión
   function promiseRow(container, title, promise, onPick, hideIfEmpty, max) {
     var row = el('div', 'row');
@@ -96,12 +99,15 @@
       p.then(function (metas) {
         bootMark('firstRow');
         if (!row.parentNode) return;
+        var t = (metas && metas.title) || title;
         metas = (metas || []).slice(0, max || 40);
         if (!metas.length && hideIfEmpty) { container.removeChild(row); return; }
         var hadFocus = Nav.cur && row.contains(Nav.cur);
         var fresh = metas.length
-          ? posterRow(title, metas, onPick, metas.map(function (m) { return m.pct || m.label || m.isNew || m.left ? { pct: m.pct, label: m.label, isNew: m.isNew, left: m.left } : null; }))
-          : el('div', 'row', '<div class="row-title">' + esc(title) + '</div><div class="empty">' + tr('Sin resultados') + '</div>');
+          ? posterRow(t, metas, onPick, metas.map(function (m) {
+            return m.pct || m.label || m.isNew || m.left || m.badge ? { pct: m.pct, label: m.label, isNew: m.isNew, left: m.left, badge: m.badge } : null;
+          }))
+          : el('div', 'row', '<div class="row-title">' + esc(t) + '</div><div class="empty">' + tr('Sin resultados') + '</div>');
         container.replaceChild(fresh, row);
         if (hadFocus) Nav.setRoot(Nav.root);
         primeHero(container);
