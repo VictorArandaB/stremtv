@@ -11,6 +11,8 @@ cp "$ROOT"/app/index.html "$ROOT"/app/boot.js "$ROOT"/app/app.js "$ROOT"/app/sty
 cp "$ROOT"/wgt/config.xml "$ROOT"/wgt/icon.png "$OUT"/
 VERSION=$(sed -n 's/.*"version": "\([0-9.]*\)".*/\1/p' "$ROOT/package.json" | head -1)
 sed -i '' "s/__PKG_VERSION__/$VERSION/" "$OUT/boot.js"
+# la versión del widget siempre cuadra con package.json (solo la línea <widget, no la declaración <?xml version="1.0"?>)
+sed -i '' "/<widget/ s/version=\"[0-9][0-9.]*\"/version=\"$VERSION\"/" "$OUT/config.xml"
 # tizen.js empaqueta el directorio actual (ignora el argumento), así que se ejecuta desde $OUT
 cd "$OUT"
 node "$ROOT/tools/node_modules/tizen/cli.js" build . -t wgt -o "$ROOT/StremTV.wgt" \
