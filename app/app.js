@@ -429,7 +429,13 @@
     // listas y premios
     'IMDb Top 250 series': 'IMDb Top 250 shows', 'Óscar': 'Oscars', 'Goya': 'Goya Awards', 'Globos de Oro': 'Golden Globes', 'Emmy': 'Emmys',
     'Palma de Oro (Cannes)': 'Palme d’Or (Cannes)', 'Ganadoras del Óscar': 'Best Picture Oscar winners', 'Ganadora': 'Winner',
-    '{0} {1}: nominadas': '{0} {1}: nominees'
+    '{0} {1}: nominadas': '{0} {1}: nominees',
+    // novedades en tus plataformas
+    'Novedades en tus plataformas': 'New on your services', 'Mis plataformas': 'My streaming services', 'Ninguna': 'None',
+    '{0} plataformas': '{0} services', 'Elige tus plataformas (Netflix, Prime Video…) para ver aquí lo que acaba de llegar': 'Choose your streaming services (Netflix, Prime Video…) to see what just arrived here',
+    'Las plataformas que tienes contratadas. Inicio muestra lo que acaba de llegar a ellas (según su fecha de estreno o del último episodio: TMDB no dice el día en que entró en la plataforma) y en Anime, Películas y Series se ven sus filas y se ocultan las de las demás (en Filas de … se pueden volver a mostrar).':
+      'The services you subscribe to. Home shows what just arrived on them (by release date or latest episode: TMDB doesn’t say the day a title was added) and Anime, Movies and Series show their rows and hide the others (they can be shown again in … rows).',
+    'Necesita una clave de TMDB (Ajustes → Cuentas).': 'Needs a TMDB key (Settings → Accounts).'
   };
 
   function tr(s) {
@@ -474,7 +480,8 @@
     preferEs: true, compatFirst: true, hideWatched: true, maxRate: 'auto', measuredMbps: 0, measuredAt: 0,
     subLang: 'spa', subSize: 'normal', autoNext: true, audioLang: 'spa', lang: 'es', quickPlay: true, subBg: true, tmdbKey: '', autoSkip: false, subColor: 'white', subPos: 'low', saver: 3,
     idleSaver: 10, saverShow: 'mix', saverEvery: 20, omdbKey: '', homeRows: null, animeRows: null, moviesRows: null, seriesRows: null,
-    noSpoilers: false
+    noSpoilers: false,
+    myPlatforms: [] // claves de PLATFORMS (Ajustes → General → Mis plataformas)
   };
   var settings = extend(extend({}, DEFAULTS), load('settings', {}));
   function saveSettings() { save('settings', settings); }
@@ -3658,7 +3665,7 @@
   // detrás, con la clave «addon:url|tipo|id»: las de películas en Películas, las de series en Series, las de anime en Anime
   // y las demás en Inicio.
   // settings.homeRows / animeRows / moviesRows / seriesRows: { order: [claves], hidden: { clave: true | false } }; sin dato, oculta si «off»
-  // (u «offIfTrakt» con Trakt vinculado).
+  // (u «offIfTrakt» con Trakt vinculado); las de plataforma, con Mis plataformas elegidas, ocultas si no es una de ellas.
   // trakt: solo con Trakt vinculado; local: solo sin él; tmdb: solo con clave de TMDB; traktKey: con el Client ID de Trakt
   // (aunque la cuenta no esté vinculada); max: cuántas carátulas como mucho (40 si no se dice)
   var PAGE_ROWS = {
@@ -3668,6 +3675,8 @@
       { k: 'traktCont', name: 'Continuar (Trakt)', trakt: true },
       { k: 'upnext', name: 'Siguientes episodios', trakt: true },
       { k: 'week', name: 'Esta semana en tus series', trakt: true },
+      // películas y series recién llegadas a las plataformas de Ajustes → General → Mis plataformas (sin elegir, un aviso)
+      { k: 'novedades', name: 'Novedades en tus plataformas', tmdb: true },
       { k: 'wlMovies', name: 'Mi lista: películas', trakt: true },
       { k: 'wlSeries', name: 'Mi lista: series', trakt: true },
       { k: 'history', name: 'Visto recientemente' },
@@ -3678,6 +3687,7 @@
     series: [
       { k: 'forYou', name: 'Para ti', trakt: true },
       { k: 'trending', name: 'Tendencia esta semana', tmdb: true },
+      { k: 'novedades', name: 'Novedades en tus plataformas', tmdb: true }, // solo con Mis plataformas
       { k: 'airing', name: 'En emisión', tmdb: true },
       { k: 'pop', name: 'Populares', url: CINEMETA + '/catalog/series/top.json' },
       { k: 'new', name: 'Estrenos', tmdb: true },
@@ -3699,6 +3709,7 @@
     movies: [
       { k: 'forYou', name: 'Para ti', trakt: true },
       { k: 'trending', name: 'Tendencia esta semana', tmdb: true },
+      { k: 'novedades', name: 'Novedades en tus plataformas', tmdb: true }, // solo con Mis plataformas
       { k: 'new', name: 'Estrenos en digital', tmdb: true },
       { k: 'cinema', name: 'En cines', tmdb: true },
       { k: 'pop', name: 'Populares', url: CINEMETA + '/catalog/movie/top.json' },
@@ -3711,7 +3722,7 @@
       { k: 'oscarWins', name: 'Ganadoras del Óscar', wins: 'Q102427', season: 'oscar', off: true }
     ]
   };
-  // una fila por plataforma en Series y Películas
+  // una fila por plataforma en Series y Películas; con Mis plataformas elegidas, de serie solo se ven las suyas
   PLATFORMS.forEach(function (pl) {
     ['movies', 'series', 'anime'].forEach(function (page) {
       if (pl.anime && page !== 'anime') return; // Crunchyroll, solo en Anime
@@ -3724,7 +3735,7 @@
 
   // las filas que tocan ahora en una pestaña (de cada addon, como mucho 4) en el orden elegido; las nuevas, al final
   function pageRows(page) {
-    var linked = Trakt.linked(), tmdb = !!settings.tmdbKey, perAddon = {};
+    var linked = Trakt.linked(), tmdb = !!settings.tmdbKey, perAddon = {}, mine = myPlatformKeys();
     var all = PAGE_ROWS[page].filter(function (r) { return !(r.trakt && !linked) && !(r.local && linked) && !(r.tmdb && !tmdb) && !(r.traktKey && !trakt.clientId); })
       .map(function (r) { return extend({ title: tr(r.name, r.arg) }, r); });
     addonCatalogs(false).forEach(function (c) {
@@ -3736,7 +3747,8 @@
     var pref = settings[ROWS_SETTING[page]] || {}, order = pref.order || [], hidden = pref.hidden || {};
     return all.map(function (r, i) {
       var p = order.indexOf(r.k);
-      r.hidden = hidden[r.k] === undefined ? !!(r.off || (r.offIfTrakt && linked)) : !!hidden[r.k];
+      var def = r.platform && mine.length ? mine.indexOf(r.platform.k) < 0 : !!(r.off || (r.offIfTrakt && linked));
+      r.hidden = hidden[r.k] === undefined ? def : !!hidden[r.k];
       return { r: r, p: p < 0 ? 1000 + i : p };
     }).sort(function (a, b) { return a.p - b.p; }).map(function (x) { return x.r; });
   }
@@ -3846,12 +3858,31 @@
         }).map(function (p) { return { id: p.metaId, type: p.type, name: p.name, poster: p.poster, label: dayLabel(new Date(p.ts)) + ' · ' + (p.label || p.name) }; });
     }
 
+    // novedades en tus plataformas: sin plataformas elegidas, un botón que lleva a elegirlas
+    function renderNovedades(w, title) {
+      w.innerHTML = '';
+      if (myPlatformKeys().length) {
+        promiseRow(w, title, function () {
+          return Promise.all([novedades(['movie', 'tv']), seenReady()]).then(function (x) { return filterSeen(x[0]); });
+        }, openMeta, true);
+        return;
+      }
+      var row = el('div', 'row');
+      row.appendChild(el('div', 'row-title', esc(title)));
+      var b = el('div', 'btn', tr('Elige tus plataformas (Netflix, Prime Video…) para ver aquí lo que acaba de llegar'));
+      b.style.marginLeft = '80px';
+      focusable(b, function () { openSettings('general'); push(platformsScreen()); });
+      row.appendChild(b);
+      w.appendChild(row);
+    }
+
     // catálogos generales y de los addons (si el catálogo viene vacío o el addon falla, la fila desaparece)
     function loadCatalogs(rows) {
       rows.forEach(function (r) {
         var w = slot(r.k);
         if (!w) return;
-        if (r.url) asyncRow(w, r.title, r.url, openMeta);
+        if (r.k === 'novedades') renderNovedades(w, r.title);
+        else if (r.url) asyncRow(w, r.title, r.url, openMeta);
         else if (r.catalog) {
           var c = r.catalog;
           promiseRow(w, r.title, function () {
@@ -3864,7 +3895,7 @@
     }
 
     function layout(rows) {
-      rowsSig = rowsKey(rows);
+      rowsSig = rowsKey(rows) + myPlatformKeys().join();
       vs.innerHTML = '';
       scrollTop0(vs);
       slots = {};
@@ -3881,7 +3912,7 @@
       renderHistory();
       // al arrancar con Trakt vinculado, sus filas van primero: los catálogos esperan 1,5 s
       // para no competir con ellas por la red y el procesador de la tele
-      if (first && Trakt.linked()) setTimeout(function () { if (rowsSig === rowsKey(rows)) loadCatalogs(rows); }, 1500);
+      if (first && Trakt.linked()) setTimeout(function () { if (rowsSig === rowsKey(rows) + myPlatformKeys().join()) loadCatalogs(rows); }, 1500);
       else loadCatalogs(rows);
       first = false;
     }
@@ -3890,8 +3921,8 @@
     screen.onShow = function () { primeHero(vs); };
     screen.onResume = function () {
       var rows = homeRows();
-      // filas cambiadas en Ajustes (orden, ocultas, Trakt vinculado o addons nuevos): rehacer Inicio
-      if (rowsKey(rows) !== rowsSig) {
+      // filas cambiadas en Ajustes (orden, ocultas, Trakt vinculado, addons nuevos o Mis plataformas): rehacer Inicio
+      if (rowsKey(rows) + myPlatformKeys().join() !== rowsSig) {
         layout(rows);
         screen.lastFocus = null;
         if (root._hero) root._hero.cur = null;
@@ -4110,6 +4141,70 @@
 
   // ---------------------------------------------------------------- pantallas: anime, películas y series
 
+  // ---------------------------------------------------------------- novedades en tus plataformas
+
+  // claves de Ajustes → General → Mis plataformas, en el orden de PLATFORMS (las que ya no existen no cuentan)
+  function myPlatformKeys() {
+    var sel = settings.myPlatforms || [];
+    return PLATFORMS.filter(function (pl) { return sel.indexOf(pl.k) >= 0; }).map(function (pl) { return pl.k; });
+  }
+
+  // fecha del último episodio emitido de una serie (TMDB no la da en discover); se guarda 6 horas en memoria
+  var tvLastAir = {};
+  function tvLastDate(id) {
+    var c = tvLastAir[id];
+    if (c && Date.now() - c.ts < 6 * 3600000) return Promise.resolve(c.d);
+    return tmdbGet('/tv/' + id).then(function (d) {
+      var e = d.last_episode_to_air;
+      tvLastAir[id] = { d: (e && e.air_date) || d.last_air_date || '', ts: Date.now() };
+      return tvLastAir[id].d;
+    });
+  }
+
+  // lo recién llegado a tus plataformas (kinds: 'movie' y/o 'tv'), lo más nuevo primero, con la plataforma en el nombre.
+  // TMDB no sabe cuándo entró un título en una plataforma: se aproxima con las fechas. Películas con algún estreno
+  // (en cualquier país y formato) en los últimos 60 días; series con algún episodio emitido en los últimos 30, ordenadas
+  // por la fecha de ese episodio (una consulta por serie, como mucho 10 por plataforma). Una consulta por plataforma y tipo:
+  // así se sabe en cuál está cada título sin preguntar título a título; si está en varias, salen todas
+  function novedades(kinds) {
+    var now = Date.now(), today = isoDay(now), err = null, mine = myPlatformKeys(), jobs = [];
+    var pls = PLATFORMS.filter(function (pl) { return mine.indexOf(pl.k) >= 0; });
+    pls.forEach(function (pl) {
+      kinds.forEach(function (k) {
+        jobs.push(platformId(k, pl).then(function (id) {
+          if (!id) return [];
+          var q = k === 'movie'
+            ? '/discover/movie?release_date.gte=' + isoDay(now - 60 * 86400000) + '&release_date.lte=' + today + '&sort_by=popularity.desc&vote_count.gte=10'
+            : '/discover/tv?air_date.gte=' + isoDay(now - 30 * 86400000) + '&air_date.lte=' + today + '&sort_by=popularity.desc&vote_count.gte=5' + TV_JUNK;
+          return tmdbGet(q + platformParams(id)).then(function (d) {
+            return (d.results || []).slice(0, k === 'movie' ? 20 : 10).map(function (x) { return { x: x, k: k, pl: pl }; });
+          });
+        }).then(null, function (e) { err = err || e; return null; }));
+      });
+    });
+    return Promise.all(jobs).then(function (lists) {
+      // si no ha respondido ninguna, es un error (la fila se vuelve a pedir sola cuando vuelva la red)
+      if (err && lists.every(function (l) { return !l; })) throw err;
+      var byKey = {}, all = [];
+      lists.forEach(function (l) {
+        (l || []).forEach(function (it) {
+          var key = it.k + ':' + it.x.id, cur = byKey[key];
+          if (cur) { if (cur.names.indexOf(it.pl.name) < 0) cur.names.push(it.pl.name); return; }
+          all.push(byKey[key] = { x: it.x, k: it.k, names: [it.pl.name], date: it.x.release_date || it.x.first_air_date || '' });
+        });
+      });
+      var series = all.filter(function (it) { return it.k === 'tv'; });
+      return mapLimit(series, 4, function (it) { return tvLastDate(it.x.id); }).then(function (dates) {
+        series.forEach(function (it, i) { if (dates[i]) it.date = dates[i]; });
+        return all.sort(function (a, b) { return a.date < b.date ? 1 : a.date > b.date ? -1 : 0; }).map(function (it) {
+          var m = tmdbMeta(it.x, it.k);
+          m.label = m.name + ' · ' + it.names.join(', ');
+          return m;
+        });
+      });
+    });
+  }
+
   // lo que carga cada fila (función: si falla por la red, la fila se vuelve a pedir sola al volver)
   // anime: animación japonesa (TMDB y Cinemeta) o con el género «anime» de Trakt
   var TMDB_ANIME = '&with_genres=16&with_original_language=ja';
@@ -4159,6 +4254,7 @@
           // estrenadas en digital (alquiler, compra o plataforma) en España en los últimos 4 meses
           : tmdb('/discover/movie?region=ES&with_release_type=4%7C5&release_date.gte=' + isoDay(now - 120 * 86400000) + '&release_date.lte=' + today + '&sort_by=popularity.desc&vote_count.gte=10');
       case 'cinema': return tmdb('/movie/now_playing?region=ES');
+      case 'novedades': return function () { return seen(novedades([k])); };
     }
     return function () { return Promise.resolve([]); };
   }
@@ -4433,8 +4529,8 @@
     var hs = heroScreen(page), root = hs.root, vs = hs.vs, sig = '';
     var screen = { el: root, initialFocus: activeTab(root) };
     function layout() {
-      var rows = pageRows(page);
-      sig = rowsKey(rows) + settings.tmdbKey;
+      var rows = pageRows(page), mine = myPlatformKeys();
+      sig = rowsKey(rows) + settings.tmdbKey + mine.join();
       vs.innerHTML = '';
       scrollTop0(vs);
       // «Sorpréndeme», encima de la primera fila
@@ -4442,12 +4538,15 @@
       focusable(sb, function () { surprise(page, screen); });
       bar.appendChild(sb);
       vs.appendChild(bar);
-      rows.forEach(function (r) { if (!r.hidden) promiseRow(vs, r.title, pageRowLoader(page, r), openMeta, true, r.max); });
+      rows.forEach(function (r) {
+        // «Novedades en tus plataformas» solo con plataformas elegidas (el aviso para elegirlas sale en Inicio)
+        if (!r.hidden && !(r.k === 'novedades' && !mine.length)) promiseRow(vs, r.title, pageRowLoader(page, r), openMeta, true, r.max);
+      });
     }
     layout();
     screen.onShow = function () { primeHero(vs); };
     screen.onResume = function () {
-      if (rowsKey(pageRows(page)) + settings.tmdbKey === sig) return;
+      if (rowsKey(pageRows(page)) + settings.tmdbKey + myPlatformKeys().join() === sig) return;
       layout();
       screen.lastFocus = null;
       if (root._hero) root._hero.cur = null;
@@ -7383,7 +7482,7 @@
       return inp;
     }
 
-    var build = {};
+    var build = {}, onResume = null;
     function heading(t) {
       var h = el('div', 'row-title', esc(t));
       h.style.padding = box.children.length ? '30px 0 16px 0' : '0 0 16px 0';
@@ -7649,6 +7748,9 @@
       // sin spoilers: de los episodios sin ver, ni sinopsis ni imagen (ficha e INFO del vídeo); el título se queda
       opt('Sin spoilers (episodios sin ver: sin sinopsis ni imagen)', function () { return yesNo(settings.noSpoilers); }, function () { settings.noSpoilers = !settings.noSpoilers; });
 
+      var platOpt = opt('Mis plataformas', platformsSummary, function () { push(platformsScreen()); });
+      onResume = function () { platOpt.lastChild.textContent = platformsSummary(); };
+
       ['home', 'anime', 'movies', 'series'].forEach(function (page) {
         opt(tr('Filas de {0}', tr(PAGE_NAMES[page])), function () { return tr('Ordenar u ocultar ›'); }, function () { push(rowsScreen(page)); });
       });
@@ -7714,6 +7816,54 @@
     };
 
     build[section]();
+    return { el: root, initialFocus: function () { return box.querySelector('.f'); }, onResume: function () { if (onResume) onResume(); } };
+  }
+
+  // «Netflix, Prime Video», «4 plataformas» o «Ninguna»
+  function platformsSummary() {
+    var mine = myPlatformKeys();
+    if (!mine.length) return tr('Ninguna');
+    if (mine.length > 2) return tr('{0} plataformas', mine.length);
+    return PLATFORMS.filter(function (pl) { return mine.indexOf(pl.k) >= 0; }).map(function (pl) { return pl.name; }).join(', ');
+  }
+
+  // Ajustes → General → Mis plataformas: OK marca o desmarca cada una. Con alguna elegida, Inicio tiene «Novedades en tus
+  // plataformas» y, en las pestañas, las filas de las demás plataformas pasan a estar ocultas de serie
+  function platformsScreen() {
+    var root = el('div', 'screen');
+    var vs = el('div', 'vscroll');
+    root.appendChild(vs);
+    vs.appendChild(header('settings'));
+    vs.appendChild(el('div', 'screen-title settings-title', esc(tr('Ajustes') + ' › ' + tr('Mis plataformas'))));
+    var box = el('div');
+    box.style.cssText = 'padding:0 80px;width:1400px';
+    vs.appendChild(box);
+    box.appendChild(el('div', 'note', esc(tr('Las plataformas que tienes contratadas. Inicio muestra lo que acaba de llegar a ellas (según su fecha de estreno o del último episodio: TMDB no dice el día en que entró en la plataforma) y en Anime, Películas y Series se ven sus filas y se ocultan las de las demás (en Filas de … se pueden volver a mostrar).') +
+      (settings.tmdbKey ? '' : ' ' + tr('Necesita una clave de TMDB (Ajustes → Cuentas).')))));
+    PLATFORMS.forEach(function (pl) {
+      var o = el('div', 'opt');
+      o.appendChild(el('span', null, esc(pl.name)));
+      var v = el('span', 'val');
+      o.appendChild(v);
+      var paint = function () {
+        var on = myPlatformKeys().indexOf(pl.k) >= 0;
+        v.textContent = on ? '✓ ' + tr('Sí') : tr('No');
+        o.classList.toggle('off', !on);
+      };
+      focusable(o, function () {
+        var mine = myPlatformKeys(), on = mine.indexOf(pl.k) >= 0;
+        settings.myPlatforms = PLATFORMS.filter(function (x) { return x.k === pl.k ? !on : mine.indexOf(x.k) >= 0; }).map(function (x) { return x.k; });
+        // al cambiar de plataformas, sus filas en las pestañas vuelven a lo que toque por defecto (las elegidas, visibles)
+        for (var page in ROWS_SETTING) {
+          var pref = settings[ROWS_SETTING[page]];
+          if (pref && pref.hidden) for (var k in pref.hidden) if (k.indexOf('prov:') === 0) delete pref.hidden[k];
+        }
+        saveSettings();
+        paint();
+      });
+      paint();
+      box.appendChild(o);
+    });
     return { el: root, initialFocus: function () { return box.querySelector('.f'); } };
   }
 

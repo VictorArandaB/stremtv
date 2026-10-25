@@ -269,7 +269,13 @@
     // listas y premios
     'IMDb Top 250 series': 'IMDb Top 250 shows', 'Óscar': 'Oscars', 'Goya': 'Goya Awards', 'Globos de Oro': 'Golden Globes', 'Emmy': 'Emmys',
     'Palma de Oro (Cannes)': 'Palme d’Or (Cannes)', 'Ganadoras del Óscar': 'Best Picture Oscar winners', 'Ganadora': 'Winner',
-    '{0} {1}: nominadas': '{0} {1}: nominees'
+    '{0} {1}: nominadas': '{0} {1}: nominees',
+    // novedades en tus plataformas
+    'Novedades en tus plataformas': 'New on your services', 'Mis plataformas': 'My streaming services', 'Ninguna': 'None',
+    '{0} plataformas': '{0} services', 'Elige tus plataformas (Netflix, Prime Video…) para ver aquí lo que acaba de llegar': 'Choose your streaming services (Netflix, Prime Video…) to see what just arrived here',
+    'Las plataformas que tienes contratadas. Inicio muestra lo que acaba de llegar a ellas (según su fecha de estreno o del último episodio: TMDB no dice el día en que entró en la plataforma) y en Anime, Películas y Series se ven sus filas y se ocultan las de las demás (en Filas de … se pueden volver a mostrar).':
+      'The services you subscribe to. Home shows what just arrived on them (by release date or latest episode: TMDB doesn’t say the day a title was added) and Anime, Movies and Series show their rows and hide the others (they can be shown again in … rows).',
+    'Necesita una clave de TMDB (Ajustes → Cuentas).': 'Needs a TMDB key (Settings → Accounts).'
   };
 
   function tr(s) {
