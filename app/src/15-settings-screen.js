@@ -124,11 +124,19 @@
         box.appendChild(o);
         items.push({ o: o, id: id });
       });
+      // «Tu año en StremTV» no es una categoría: abre su pantalla
+      var yo = el('div', 'opt');
+      yo.appendChild(el('span', null, '<span class="ico"><svg viewBox="0 0 24 24">' + YEAR_ICON + '</svg></span><span class="lbl"></span>'));
+      yo.appendChild(el('span', 'val sum'));
+      focusable(yo, function () { push(yearScreen()); });
+      box.appendChild(yo);
       var paint = function () {
         items.forEach(function (it) {
           it.o.firstChild.lastChild.textContent = tr(SECTION_NAMES[it.id]);
           it.o.lastChild.textContent = sectionSummary(it.id);
         });
+        yo.firstChild.lastChild.textContent = tr('Tu año en StremTV');
+        yo.lastChild.textContent = yearSummary(wrappedYear());
       };
       paint();
       vs.appendChild(box);

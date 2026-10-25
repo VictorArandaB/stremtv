@@ -4,11 +4,12 @@
   var trakt = load('trakt', {}); // clientId, clientSecret, access, refresh, expires, user
   function saveTrakt() { save('trakt', trakt); }
 
-  function traktReq(method, path, body, auth) {
+  // head(xhr): para leer cabeceras de la respuesta (la paginación de Trakt va en X-Pagination-Page-Count)
+  function traktReq(method, path, body, auth, head) {
     var headers = { 'Content-Type': 'application/json', 'trakt-api-version': '2', 'trakt-api-key': trakt.clientId || '' };
     if (auth !== false && trakt.access) headers.Authorization = 'Bearer ' + trakt.access;
     return xhr(method, TRAKT + path, { timeout: 20000, headers: headers, body: body ? JSON.stringify(body) : null,
-      fail: function (st) { return 'Trakt ' + st; } }).then(looseJSON);
+      fail: function (st) { return 'Trakt ' + st; }, head: head }).then(looseJSON);
   }
 
   function withSecret(body) {
@@ -77,12 +78,12 @@
       return Trakt.refreshing;
     },
 
-    call: function (method, path, body) {
+    call: function (method, path, body, head) {
       if (!Trakt.linked()) return Promise.reject(new Error(tr('Trakt no vinculado')));
       var gen = Trakt.gen;
       // la respuesta de una cuenta ya desvinculada no se usa ni puede desvincular la nueva
       var stale = function () { return gen !== Trakt.gen; };
-      return Trakt.ensureFresh().then(function () { return traktReq(method, path, body); }).then(function (r) {
+      return Trakt.ensureFresh().then(function () { return traktReq(method, path, body, undefined, head); }).then(function (r) {
         if (stale()) throw new Error(tr('Trakt no vinculado'));
         return r;
       }, function (e) {

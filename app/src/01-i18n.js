@@ -275,7 +275,29 @@
     '{0} plataformas': '{0} services', 'Elige tus plataformas (Netflix, Prime Video…) para ver aquí lo que acaba de llegar': 'Choose your streaming services (Netflix, Prime Video…) to see what just arrived here',
     'Las plataformas que tienes contratadas. Inicio muestra lo que acaba de llegar a ellas (según su fecha de estreno o del último episodio: TMDB no dice el día en que entró en la plataforma) y en Anime, Películas y Series se ven sus filas y se ocultan las de las demás (en Filas de … se pueden volver a mostrar).':
       'The services you subscribe to. Home shows what just arrived on them (by release date or latest episode: TMDB doesn’t say the day a title was added) and Anime, Movies and Series show their rows and hide the others (they can be shown again in … rows).',
-    'Necesita una clave de TMDB (Ajustes → Cuentas).': 'Needs a TMDB key (Settings → Accounts).'
+    'Necesita una clave de TMDB (Ajustes → Cuentas).': 'Needs a TMDB key (Settings → Accounts).',
+    // tu año
+    'Tu año en StremTV': 'Your year in StremTV', 'Tu {0} en StremTV': 'Your {0} in StremTV', '↻ Recalcular': '↻ Recalculate',
+    'Tus horas, tus series y tu racha de {0}': 'Your hours, shows and streak of {0}', '{0} h · {1} películas · {2} episodios': '{0} h · {1} movies · {2} episodes',
+    '{0} horas, {1} películas y {2} episodios. Y alguna sorpresa más.': '{0} hours, {1} movies and {2} episodes. And a few surprises.',
+    'Tus horas, tus series, tu racha más larga y tu día de maratón': 'Your hours, your shows, your longest streak and your binge day',
+    'Calculando tu año…': 'Crunching your year…', 'Calculando tu año… {0}': 'Crunching your year… {0}', 'Calculando tu año… {0}/{1}': 'Crunching your year… {0}/{1}',
+    'cancelado': 'cancelled', 'No se pudo calcular ({0})': 'Could not calculate it ({0})',
+    'Con tu historial de Trakt · calculado el {0} a las {1}': 'From your Trakt history · calculated on {0} at {1}',
+    'Solo lo visto en esta tele (sin Trakt no hay más datos, y la tele recuerda las últimas 200 cosas que has visto).':
+      'Only what you watched on this TV (without Trakt there is no more data, and the TV remembers the last 200 things you watched).',
+    'En {0} no hay nada visto todavía. Ya habrá tiempo.': 'Nothing watched in {0} yet. There’s still time.',
+    'horas': 'hours', 'película': 'movie', 'películas': 'movies', 'episodio': 'episode', 'episodios': 'episodes',
+    '1 película': '1 movie', '{0} películas': '{0} movies', '1 episodio': '1 episode', '{0} episodios': '{0} episodes',
+    'de 1 serie': 'from 1 show', 'de {0} series': 'from {0} shows', 'serie terminada': 'show finished', 'series terminadas': 'shows finished',
+    'al día con todo lo emitido': 'caught up with everything aired', 'Ninguna… de momento': 'None… yet',
+    '≈ {0} días enteros de tele': '≈ {0} whole days of TV', 'Un año tranquilo': 'A quiet year',
+    'Tus series del año': 'Your shows of the year', 'Tus películas mejor puntuadas': 'Your top rated movies', 'tu nota: {0}': 'your rating: {0}',
+    'Tus costumbres': 'Your habits', 'tu mes con más tele': 'your busiest TV month', '{0} h de pantalla': '{0} h of screen time',
+    'tu día de sofá': 'your couch day', '1 día': '1 day', '{0} días': '{0} days', 'tu racha más larga': 'your longest streak',
+    'del {0} al {1}': 'from {0} to {1}', 'Sin dos días seguidos. Qué disciplina.': 'Never two days in a row. Such discipline.',
+    'tu día de maratón': 'your binge day', ' y ': ' and ', 'Lo que más te ha tirado': 'What pulled you in the most',
+    'lo primero que viste en {0}': 'the first thing you watched in {0}'
   };
 
   function tr(s) {

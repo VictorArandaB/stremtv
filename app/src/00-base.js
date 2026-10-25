@@ -37,7 +37,7 @@
   }
 
   // petición HTTP que resuelve con el texto; los errores llevan .status (0: sin conexión o tiempo agotado)
-  // o: { headers, body, timeout, fail(status) → mensaje propio del servicio }
+  // o: { headers, body, timeout, fail(status) → mensaje propio del servicio, head(xhr) → para leer las cabeceras de la respuesta }
   function xhr(method, url, o) {
     o = o || {};
     return new Promise(function (resolve, reject) {
@@ -48,7 +48,7 @@
       var fail = function (status, msg) { reject(extend(new Error(msg), { status: status })); };
       x.onload = function () {
         if (!o.probe) Net.alive();
-        if (x.status >= 200 && x.status < 300) return resolve(x.responseText);
+        if (x.status >= 200 && x.status < 300) { if (o.head) o.head(x); return resolve(x.responseText); }
         fail(x.status, (o.fail && o.fail(x.status)) || 'HTTP ' + x.status);
       };
       x.onerror = function () { if (!o.probe) Net.check(); fail(0, tr('sin conexión')); };

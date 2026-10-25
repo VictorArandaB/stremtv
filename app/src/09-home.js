@@ -239,10 +239,12 @@
   // settings.homeRows / animeRows / moviesRows / seriesRows: { order: [claves], hidden: { clave: true | false } }; sin dato, oculta si «off»
   // (u «offIfTrakt» con Trakt vinculado); las de plataforma, con Mis plataformas elegidas, ocultas si no es una de ellas.
   // trakt: solo con Trakt vinculado; local: solo sin él; tmdb: solo con clave de TMDB; traktKey: con el Client ID de Trakt
-  // (aunque la cuenta no esté vinculada); max: cuántas carátulas como mucho (40 si no se dice)
+  // (aunque la cuenta no esté vinculada); max: cuántas carátulas como mucho (40 si no se dice); season: sin dato, visible
+  // solo en diciembre y enero
   var PAGE_ROWS = {
     home: [
       { k: 'cont', name: 'Continuar viendo' },
+      { k: 'wrapped', name: 'Tu año en StremTV', season: true }, // recuadro que abre el resumen del año
       { k: 'mylist', name: 'Mi lista', local: true }, // sin Trakt (con Trakt, su lista va en dos filas)
       { k: 'traktCont', name: 'Continuar (Trakt)', trakt: true },
       { k: 'upnext', name: 'Siguientes episodios', trakt: true },
@@ -319,7 +321,7 @@
     var pref = settings[ROWS_SETTING[page]] || {}, order = pref.order || [], hidden = pref.hidden || {};
     return all.map(function (r, i) {
       var p = order.indexOf(r.k);
-      var def = r.platform && mine.length ? mine.indexOf(r.platform.k) < 0 : !!(r.off || (r.offIfTrakt && linked));
+      var def = r.platform && mine.length ? mine.indexOf(r.platform.k) < 0 : !!(r.off || (r.offIfTrakt && linked) || (r.season && !wrappedSeason()));
       r.hidden = hidden[r.k] === undefined ? def : !!hidden[r.k];
       return { r: r, p: p < 0 ? 1000 + i : p };
     }).sort(function (a, b) { return a.p - b.p; }).map(function (x) { return x.r; });
@@ -478,6 +480,7 @@
         vs.appendChild(slots[r.k]);
       });
       renderWarnings();
+      if (slot('wrapped')) yearTile(slot('wrapped'));
       renderLocal();
       traktLoaded = histLoaded = 0;
       renderTrakt();
@@ -502,6 +505,7 @@
         return;
       }
       renderWarnings(); renderLocal(); renderTrakt(); renderHistory();
+      if (slots.wrapped && slots.wrapped._paint) slots.wrapped._paint(); // lo recién calculado en su pantalla
       // si se acaba de poner la clave de TMDB, traducir las tarjetas que ya se ven
       Array.prototype.forEach.call(root.querySelectorAll('.card'), function (c) { if (c._loaded || !c._img) nameCard(c); });
     };
