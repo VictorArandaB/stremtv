@@ -297,7 +297,13 @@
     'tu día de sofá': 'your couch day', '1 día': '1 day', '{0} días': '{0} days', 'tu racha más larga': 'your longest streak',
     'del {0} al {1}': 'from {0} to {1}', 'Sin dos días seguidos. Qué disciplina.': 'Never two days in a row. Such discipline.',
     'tu día de maratón': 'your binge day', ' y ': ' and ', 'Lo que más te ha tirado': 'What pulled you in the most',
-    'lo primero que viste en {0}': 'the first thing you watched in {0}'
+    'lo primero que viste en {0}': 'the first thing you watched in {0}',
+    // calendario
+    'Calendario': 'Calendar', 'Calendario completo ›': 'Full calendar ›', 'Calendario de tus series ›': 'Your shows’ calendar ›',
+    'Tus series y las películas de tu lista de Trakt, de hace 3 días a 30 días vista': 'Your shows and the movies on your Trakt list, from 3 days ago to 30 days ahead',
+    'El calendario sale de Trakt: vincúlalo en Ajustes → Cuentas.': 'The calendar comes from Trakt: link it in Settings → Accounts.',
+    'Nada en tu calendario en estas semanas': 'Nothing on your calendar in these weeks',
+    'En DVD': 'On DVD', 'En digital': 'On digital', 'Serie nueva': 'New show', 'Estreno': 'Premiere'
   };
 
   function tr(s) {

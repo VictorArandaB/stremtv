@@ -44,6 +44,13 @@
     });
   }
 
+  // «2026-10-25» del día de hoy más «off» días, en la hora de la tele (para los calendarios de Trakt)
+  function localDay(off) {
+    var d = new Date(Date.now() + off * 86400000);
+    var pad = function (n) { return (n < 10 ? '0' : '') + n; };
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+  }
+
   function metahubPoster(imdb) { return 'https://images.metahub.space/poster/small/' + imdb + '/img'; }
 
   var Trakt = {
@@ -167,11 +174,16 @@
         return map;
       });
     },
+    // [temporada, episodio] de Cinemeta de un episodio que da Trakt (los mismos si no se conoce la equivalencia)
+    epCine: function (imdb, season, number) {
+      var c = Trakt.epMaps[imdb], tk = season + ':' + number;
+      if (c) for (var k in c.map) if (c.map[k] === tk) { var p = k.split(':'); return [+p[0], +p[1]]; }
+      return [+season, +number];
+    },
     // «T1:E3» de un episodio que da Trakt, con la numeración de Cinemeta si se conoce la equivalencia
     epCode: function (imdb, season, number) {
-      var c = Trakt.epMaps[imdb], tk = season + ':' + number;
-      if (c) for (var k in c.map) if (c.map[k] === tk) { var p = k.split(':'); season = p[0]; number = p[1]; break; }
-      return tr('T{0}:E{1}', season, number);
+      var c = Trakt.epCine(imdb, season, number);
+      return tr('T{0}:E{1}', c[0], c[1]);
     },
     // episodio de Trakt que según Cinemeta aún no se ha emitido (Trakt a veces da por emitida una temporada anunciada)
     epFuture: function (imdb, season, number) {
@@ -389,16 +401,78 @@
       return promise;
     },
 
-    // episodios de tus series de hace dos días a una semana vista
+    // episodios de tus series de hace dos días a una semana vista, con la numeración de Cinemeta (como «Siguientes episodios»,
+    // antes se aprenden las equivalencias que falten, como mucho 5 s)
     calendar: function () {
-      var d = new Date(Date.now() - 2 * 86400000);
-      var pad = function (n) { return (n < 10 ? '0' : '') + n; };
-      var start = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
-      return Trakt.call('GET', '/calendars/my/shows/' + start + '/10').then(function (items) {
-        return (items || []).filter(function (it) { return it.show && it.show.ids && it.show.ids.imdb && it.episode; }).map(function (it) {
+      return Trakt.call('GET', '/calendars/my/shows/' + localDay(-2) + '/10').then(function (items) {
+        items = (items || []).filter(function (it) { return it.show && it.show.ids && it.show.ids.imdb && it.episode; });
+        return withTimeout(Trakt.learnEpMaps(items.map(function (it) { return it.show.ids.imdb; })), 5000).catch(function () {}).then(function () {
+          return items.map(function (it) {
+            var imdb = it.show.ids.imdb;
+            return { id: imdb, type: 'series', name: it.show.title, poster: metahubPoster(imdb),
+              label: dayLabel(new Date(it.first_aired)) + ' · ' + it.show.title + ' ' + Trakt.epCode(imdb, it.episode.season, it.episode.number) };
+          });
+        });
+      });
+    },
+
+    // calendario completo (pantalla Calendario): episodios de tus series y películas de tu lista que se estrenan en cines,
+    // en DVD o en digital, de hace 3 días a 30 días vista (Trakt da como mucho 33 días por consulta). Los estrenos de
+    // temporada y las series nuevas ya vienen en el de series (son sus episodios 1): no hace falta pedirlos aparte.
+    // Cada entrada es una carátula con at (fecha), allDay (película: solo el día), kind ('ep', 'cinema', 'dvd', 'digital'),
+    // ep (numeración de Trakt), cine (la de Cinemeta) y seen (visto en Trakt o en la tele)
+    fullCalendar: function () {
+      var span = '/' + localDay(-3) + '/33';
+      // las de películas, si fallan, no impiden ver las series
+      var opt = function (path) { return Trakt.call('GET', path).catch(function () { return []; }); };
+      return Promise.all([
+        Trakt.call('GET', '/calendars/my/shows' + span),
+        opt('/calendars/my/movies' + span),
+        opt('/calendars/my/dvd' + span),
+        opt('/calendars/my/streaming' + span)
+      ]).then(function (r) {
+        var out = [], dup = {};
+        (r[0] || []).forEach(function (it) {
+          if (!it.show || !it.show.ids || !it.show.ids.imdb || !it.episode || !it.first_aired) return;
           var imdb = it.show.ids.imdb;
-          return { id: imdb, type: 'series', name: it.show.title, poster: metahubPoster(imdb),
-            label: dayLabel(new Date(it.first_aired)) + ' · ' + it.show.title + ' ' + Trakt.epCode(imdb, it.episode.season, it.episode.number) };
+          out.push({ id: imdb, type: 'series', name: it.show.title, poster: metahubPoster(imdb), at: new Date(it.first_aired), kind: 'ep',
+            traktId: it.show.ids.trakt, ep: { season: it.episode.season, number: it.episode.number } });
+        });
+        ['cinema', 'dvd', 'digital'].forEach(function (kind, i) {
+          (r[i + 1] || []).forEach(function (it) {
+            var o = it.movie, d = /^(\d{4})-(\d\d)-(\d\d)/.exec(it.released || '');
+            if (!o || !o.ids || !o.ids.imdb || !d) return;
+            // la fecha de estreno es un día, sin hora: ese día en la tele
+            var at = new Date(+d[1], +d[2] - 1, +d[3]), k = o.ids.imdb + '|' + at.getTime();
+            if (dup[k]) return;
+            dup[k] = true;
+            out.push({ id: o.ids.imdb, type: 'movie', name: o.title, poster: metahubPoster(o.ids.imdb), at: at, allDay: true, kind: kind });
+          });
+        });
+        var eps = out.filter(function (m) { return m.kind === 'ep'; });
+        // la numeración de Cinemeta (como en «Siguientes episodios», como mucho 5 s) y lo visto: series en Trakt (con su
+        // numeración) o en la tele (con la de Cinemeta), películas en Trakt o en la tele
+        return Promise.all([
+          withTimeout(Trakt.learnEpMaps(eps.map(function (m) { return m.id; })), 5000).catch(function () {}),
+          seenReady(true),
+          eps.length ? Trakt.watchedShows().catch(function () { return []; }) : []
+        ]).then(function (x) {
+          var watched = {};
+          (x[2] || []).forEach(function (it) {
+            var ids = it.show && it.show.ids;
+            if (!ids) return;
+            var set = {};
+            (it.seasons || []).forEach(function (se) { (se.episodes || []).forEach(function (e) { set[se.number + ':' + e.number] = true; }); });
+            if (ids.trakt) watched['t' + ids.trakt] = set;
+            if (ids.imdb) watched[ids.imdb] = set;
+          });
+          out.forEach(function (m) {
+            if (m.kind !== 'ep') { m.seen = isSeenMeta(m); return; }
+            m.cine = Trakt.epCine(m.id, m.ep.season, m.ep.number);
+            var set = watched['t' + m.traktId] || watched[m.id] || {}, local = progress[m.id + ':' + m.cine[0] + ':' + m.cine[1]];
+            m.seen = !!(set[m.ep.season + ':' + m.ep.number] || (local && local.done));
+          });
+          return out.sort(function (a, b) { return a.at - b.at; });
         });
       });
     },

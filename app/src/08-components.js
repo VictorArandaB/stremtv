@@ -69,7 +69,15 @@
     tmdbFind(c._imdb).then(function (r) { if (r.n) c.lastChild.textContent = r.n; }).catch(function () { c._named = false; });
   }
 
-  function posterRow(title, metas, onPick, extras) {
+  // casilla final de una fila que lleva a otra pantalla (more: { label, onPick }), del tamaño de una carátula
+  function moreTile(more) {
+    var c = el('div', 'card more');
+    c.appendChild(el('div', 'poster', '<div class="more-label">' + esc(more.label) + '</div>'));
+    c.appendChild(el('div', 'name'));
+    return focusable(c, more.onPick);
+  }
+
+  function posterRow(title, metas, onPick, extras, more) {
     var row = el('div', 'row');
     row.appendChild(el('div', 'row-title', esc(title)));
     var sc = el('div', 'hscroll');
@@ -81,6 +89,7 @@
       cards.push(c);
       sc.appendChild(c);
     });
+    if (more) sc.appendChild(moreTile(more));
     loadImages(cards, 8);
     row.appendChild(sc);
     return row;
@@ -88,8 +97,9 @@
 
   // fila que se rellena cuando llega la promesa (metas con .pct/.label/.isNew/.left/.badge opcionales; la lista puede traer
   // .title si el título depende de los datos, como «Óscar 2026»). Si en vez de la promesa se da
-  // una función que la crea, la fila que falla por la red se vuelve a pedir sola cuando vuelve la conexión
-  function promiseRow(container, title, promise, onPick, hideIfEmpty, max) {
+  // una función que la crea, la fila que falla por la red se vuelve a pedir sola cuando vuelve la conexión.
+  // more: casilla final que lleva a otra pantalla (ver moreTile), solo si la fila tiene algo
+  function promiseRow(container, title, promise, onPick, hideIfEmpty, max, more) {
     var row = el('div', 'row');
     row.appendChild(el('div', 'row-title', esc(title)));
     row.appendChild(skeleton());
@@ -106,7 +116,7 @@
         var fresh = metas.length
           ? posterRow(t, metas, onPick, metas.map(function (m) {
             return m.pct || m.label || m.isNew || m.left || m.badge ? { pct: m.pct, label: m.label, isNew: m.isNew, left: m.left, badge: m.badge } : null;
-          }))
+          }), more)
           : el('div', 'row', '<div class="row-title">' + esc(t) + '</div><div class="empty">' + tr('Sin resultados') + '</div>');
         container.replaceChild(fresh, row);
         if (hadFocus) Nav.setRoot(Nav.root);

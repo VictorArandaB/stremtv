@@ -124,7 +124,9 @@ const imdbOf = (id) => 'tt' + String(id).padStart(7, '0');
   // --- Series: el botón, debajo de las pestañas (▼ desde la pestaña)
   await tab('Series');
   check(await p.evaluate(() => StremTV.Nav.cur.textContent === 'Series'), 'el foco sigue empezando en la pestaña Series');
+  // en Series, al lado está «Calendario de tus series ›»: ▼ cae en el más cercano a la pestaña y ◀ lleva a «Sorpréndeme»
   await key('ArrowDown');
+  if (await p.evaluate(() => /Calendario/.test(StremTV.Nav.cur.textContent))) await key('ArrowLeft');
   check(await p.evaluate(() => StremTV.Nav.cur.textContent === 'Sorpréndeme'), '▼ desde la pestaña llega a «Sorpréndeme»', await p.evaluate(() => StremTV.Nav.cur.textContent));
   const firstRow = await p.evaluate((top) => { const v = eval(top).querySelector('.vscroll'); return v.firstElementChild.className + ' · ' + (v.querySelector('.row-title') || {}).textContent; }, top);
   check(/^surprise · Para ti/.test(firstRow), 'el botón va encima de la primera fila', firstRow);
