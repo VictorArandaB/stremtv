@@ -420,7 +420,10 @@
     'Más recientes': 'Newest', 'Solo sin ver': 'Unwatched only', 'Todo': 'Everything',
     // sin spoilers
     'Sin spoilers (episodios sin ver: sin sinopsis ni imagen)': 'No spoilers (unwatched episodes: no synopsis or image)',
-    'Sinopsis oculta (sin spoilers)': 'Synopsis hidden (no spoilers)'
+    'Sinopsis oculta (sin spoilers)': 'Synopsis hidden (no spoilers)',
+    // sorpréndeme
+    'Sorpréndeme': 'Surprise me', 'Buscando algo para ti…': 'Finding something for you…',
+    'No he encontrado nada sin ver que recomendarte aquí. Prueba más tarde o en otra pestaña': 'I couldn’t find anything unwatched to recommend here. Try again later or in another tab'
   };
 
   function tr(s) {
@@ -2639,6 +2642,271 @@
     return function () { return Promise.resolve([]); };
   }
 
+  // ---------------------------------------------------------------- sorpréndeme
+
+  // un título para la pestaña elegido a partir de lo que has visto y te gustó («semillas»): las recomendaciones de TMDB de
+  // varias de ellas al azar (lo mejor valorado en Trakt y las series terminadas pesan más), sin nada visto ni empezado y con
+  // buena nota; si no queda nada, lo mejor valorado de tu género favorito. Sin clave de TMDB, las recomendaciones de Trakt;
+  // sin Trakt ni TMDB, uno de «Mejor valoradas/os». Semillas y candidatos se guardan mientras dure la sesión: la segunda
+  // pulsación es inmediata y no repite lo que ya ha salido
+  var Surprise = { seeds: null, linked: null, recs: {}, pools: {}, backup: {}, trakt: {}, top: {}, picked: [], busy: false };
+
+  // índice elegido al azar con probabilidad proporcional a su peso (-1 si ninguno pesa)
+  function pickWeighted(list, weight) {
+    var total = 0, ws = list.map(function (x) { var w = Math.max(0, weight(x) || 0); total += w; return w; });
+    if (!total) return -1;
+    var r = Math.random() * total;
+    for (var i = 0; i < ws.length; i++) {
+      r -= ws[i];
+      if (r < 0 && ws[i] > 0) return i;
+    }
+    for (i = ws.length - 1; i >= 0; i--) if (ws[i] > 0) return i;
+    return -1;
+  }
+
+  // semillas: { k: 'movie' | 'tv', tmdb, imdb, w: peso (0 = solo empezada), anime: true | false | undefined (no se sabe) }
+  function surpriseSeeds() {
+    var linked = Trakt.linked();
+    if (Surprise.seeds && Surprise.linked === linked) return Surprise.seeds;
+    Surprise.linked = linked;
+    var p = Surprise.seeds = (linked ? traktSeeds() : localSeeds()).catch(function (e) { if (Surprise.seeds === p) Surprise.seeds = null; throw e; });
+    return p;
+  }
+
+  // de Trakt: lo valorado (de 7 para arriba, más cuanto mejor; de 5 para abajo, fuera), las películas vistas, las series
+  // (terminada o muchos episodios = gustó) y un extra por lo visto hace poco
+  function traktSeeds() {
+    var bad = 0, soft = function (p) { return p.catch(function () { bad++; return []; }); };
+    return Promise.all([
+      soft(Trakt.call('GET', '/sync/ratings?extended=full')),
+      soft(Trakt.call('GET', '/sync/watched/movies?extended=full')),
+      soft(Trakt.watchedShows()),
+      soft(Trakt.call('GET', '/sync/history?limit=60'))
+    ]).then(function (r) {
+      if (bad === 4) throw new Error('Trakt');
+      var seeds = {}, hated = {};
+      var keyOf = function (o, k) { return o.ids.tmdb ? k + ':' + o.ids.tmdb : o.ids.imdb; };
+      var add = function (o, k, w) {
+        if (!o || !o.ids || !(o.ids.tmdb || o.ids.imdb)) return;
+        var key = keyOf(o, k);
+        var s = seeds[key] || (seeds[key] = { k: k, tmdb: o.ids.tmdb || 0, imdb: o.ids.imdb || '', w: 0 });
+        s.w += w;
+        if (o.genres) s.anime = !!s.anime || o.genres.indexOf('anime') >= 0;
+      };
+      (r[0] || []).forEach(function (it) {
+        var o = it.movie || it.show, k = it.movie ? 'movie' : 'tv', whole = it.type === 'movie' || it.type === 'show';
+        if (!o || !o.ids) return;
+        if (whole && it.rating <= 5) { hated[keyOf(o, k)] = true; return; }
+        // un episodio o una temporada bien valorados también cuentan algo para su serie
+        add(o, k, whole ? (it.rating >= 7 ? it.rating - 4 : 1) : it.rating >= 8 ? 1 : 0);
+      });
+      (r[1] || []).forEach(function (it) { add(it.movie, 'movie', it.plays > 1 ? 1.5 : 1); });
+      (r[2] || []).forEach(function (it) {
+        var sh = it.show, n = 0;
+        if (!sh) return;
+        (it.seasons || []).forEach(function (se) { if (se.number > 0) n += (se.episodes || []).length; });
+        // terminada, muchos episodios o solo probada (y quizá dejada)
+        add(sh, 'tv', sh.aired_episodes && n >= sh.aired_episodes ? 3 : n >= 5 ? 2 : 0.3);
+      });
+      var recent = {};
+      (r[3] || []).forEach(function (it) {
+        var o = it.movie || it.show, k = it.movie ? 'movie' : 'tv';
+        if (!o || !o.ids || recent[keyOf(o, k)]) return;
+        recent[keyOf(o, k)] = true;
+        add(o, k, 1);
+      });
+      return Object.keys(seeds).filter(function (k) { return !hated[k]; }).map(function (k) { return seeds[k]; })
+        .sort(function (a, b) { return b.w - a.w; }).slice(0, 80);
+    });
+  }
+
+  // sin Trakt: lo visto en esta tele (película terminada o varios episodios de una serie); lo empezado, con peso 0, solo para
+  // no recomendarlo. Se traduce a TMDB por su id de IMDb (el anime de Kitsu, a través de ARM)
+  function localSeeds() {
+    var by = {};
+    Object.keys(progress).forEach(function (id) {
+      var p = progress[id], b = by[p.metaId] || (by[p.metaId] = { id: String(p.metaId || ''), type: p.type, done: 0 });
+      if (p.done) b.done++;
+    });
+    return mapLimit(Object.keys(by).map(function (k) { return by[k]; }), 4, function (b) {
+      var kitsu = /^kitsu:(\d+)/.exec(b.id);
+      var imdb = kitsu ? armGet('ids?source=kitsu&id=' + kitsu[1]).then(function (d) { return d && d.imdb; })
+        : Promise.resolve(b.id.indexOf('tt') === 0 ? b.id : null);
+      return imdb.then(function (im) {
+        return im ? tmdbFind(im).then(function (r) {
+          if (!r.id) return null;
+          return { k: r.k, tmdb: r.id, imdb: im, anime: kitsu ? true : undefined,
+            w: !b.done ? 0 : b.type === 'movie' ? 1.5 : b.done >= 5 ? 2.5 : 1 };
+        }) : null;
+      });
+    }).then(function (seeds) { return seeds.filter(Boolean); });
+  }
+
+  function seedKey(s) { return s.k + ':' + (s.tmdb || s.imdb); }
+  // en Películas, películas; en Series, series; en Anime, lo que sea anime (sin saberlo, no vale para ninguna de las tres
+  // salvo que no sea anime seguro)
+  function seedFits(page, s) {
+    if (page === 'anime') return s.anime === true;
+    return s.anime !== true && s.k === (page === 'movies' ? 'movie' : 'tv');
+  }
+
+  // recomendaciones de TMDB de una semilla: [{ k, x }]
+  function seedRecs(s) {
+    var key = seedKey(s);
+    if (!Surprise.recs[key]) {
+      Surprise.recs[key] = (s.tmdb ? Promise.resolve({ k: s.k, id: s.tmdb }) : tmdbFind(s.imdb)).then(function (r) {
+        if (!r || !r.id) return [];
+        s.tmdb = r.id; s.k = r.k;
+        return tmdbGet('/' + r.k + '/' + r.id + '/recommendations').then(function (d) {
+          return (d.results || []).map(function (x) { return { k: r.k, x: x }; });
+        });
+      }).catch(function () { delete Surprise.recs[key]; return []; });
+    }
+    return Surprise.recs[key];
+  }
+
+  // candidato: recomendado por «n» semillas que suman «score»
+  function addCand(pool, k, x, w) {
+    if (!x || !x.id || x.adult) return;
+    var key = k + ':' + x.id;
+    var c = pool.cands[key] || (pool.cands[key] = { key: key, k: k, x: x, meta: tmdbMeta(x, k), n: 0, score: 0 });
+    c.n++;
+    c.score += w;
+  }
+
+  // ni visto ni empezado, que no haya salido ya, de la pestaña (anime solo en Anime) y con buena nota y votos suficientes
+  function candFits(page, c, mine) {
+    var x = c.x, m = c.meta;
+    if (mine[c.key] || Surprise.picked.indexOf(m.id) >= 0) return false;
+    if (page === 'anime' ? !m.anime : m.anime || (page === 'movies') !== (c.k === 'movie')) return false;
+    if (!(x.vote_average >= 6.8 && x.vote_count >= (m.anime ? 50 : 150))) return false;
+    return isUnseen(m);
+  }
+
+  // el género que más se repite en lo recomendado (sin «animación», que en Anime ya va aparte)
+  function favGenre(pool) {
+    var count = {}, best = 0, g = '';
+    Object.keys(pool.cands).forEach(function (k) {
+      var c = pool.cands[k];
+      (c.x.genre_ids || []).forEach(function (id) { if (id !== 16) count[id] = (count[id] || 0) + c.score; });
+    });
+    Object.keys(count).forEach(function (id) { if (count[id] > best) { best = count[id]; g = id; } });
+    return g;
+  }
+
+  // de reserva: lo mejor valorado y con muchos votos del género favorito (o de cualquiera, si con él no queda nada)
+  function surpriseBackup(page, pool, mine, genre) {
+    var k = page === 'movies' ? 'movie' : 'tv', anime = page === 'anime';
+    var genres = anime ? '16' + (genre ? ',' + genre : '') : genre;
+    var key = page + ':' + genres;
+    if (!Surprise.backup[key]) {
+      Surprise.backup[key] = tmdbGet('/discover/' + k + '?sort_by=vote_count.desc&vote_average.gte=7&vote_count.gte=' + (anime ? 100 : 300) +
+        (genres ? '&with_genres=' + genres : '') + (anime ? '&with_original_language=ja' : k === 'tv' ? TV_JUNK : '') +
+        '&page=' + (1 + Math.floor(Math.random() * 3))).then(function (d) {
+        (d.results || []).forEach(function (x) { addCand(pool, k, x, 0.5); });
+      }).catch(function (e) { delete Surprise.backup[key]; throw e; });
+    }
+    return Surprise.backup[key].then(function () {
+      var list = Object.keys(pool.cands).map(function (c) { return pool.cands[c]; }).filter(function (c) { return candFits(page, c, mine); });
+      var i = pickWeighted(list, function (c) { return c.x.vote_average - 6; });
+      if (i >= 0) return list[i].meta;
+      return genre ? surpriseBackup(page, pool, mine, '') : null;
+    });
+  }
+
+  function surpriseTmdb(page) {
+    var pool = Surprise.pools[page] || (Surprise.pools[page] = { used: {}, cands: {} });
+    return surpriseSeeds().catch(function () { return []; }).then(function (seeds) {
+      var mine = {};
+      seeds.forEach(function (s) { if (s.tmdb) mine[s.k + ':' + s.tmdb] = true; });
+      var ok = seeds.filter(function (s) { return s.w > 0 && seedFits(page, s); });
+      var fits = function () {
+        return Object.keys(pool.cands).map(function (k) { return pool.cands[k]; }).filter(function (c) { return candFits(page, c, mine); });
+      };
+      // con menos de 5 opciones, las recomendaciones de 3 semillas más (elegidas al azar según su peso), hasta 3 rondas
+      var grow = function (round) {
+        if (round >= 3 || fits().length >= 5) return Promise.resolve();
+        var fresh = ok.filter(function (s) { return !pool.used[seedKey(s)]; }), batch = [];
+        while (batch.length < 3 && fresh.length) batch.push(fresh.splice(Math.max(0, pickWeighted(fresh, function (s) { return s.w; })), 1)[0]);
+        if (!batch.length) return Promise.resolve();
+        batch.forEach(function (s) { pool.used[seedKey(s)] = true; });
+        return Promise.all(batch.map(seedRecs)).then(function (lists) {
+          lists.forEach(function (l, j) { l.forEach(function (r) { addCand(pool, r.k, r.x, batch[j].w); }); });
+          seeds.forEach(function (s) { if (s.tmdb) mine[s.k + ':' + s.tmdb] = true; }); // las traducidas ahora desde IMDb
+          return grow(round + 1);
+        });
+      };
+      return grow(0).then(function () {
+        var list = fits();
+        // pesa la valoración de las semillas que lo recomiendan, cuántas son y su nota
+        var i = pickWeighted(list, function (c) { return c.score * (1 + 0.5 * (c.n - 1)) * (c.x.vote_average - 6); });
+        return i >= 0 ? list[i].meta : surpriseBackup(page, pool, mine, favGenre(pool));
+      });
+    });
+  }
+
+  // lo empezado o visto en esta tele (por id de la ficha)
+  function localMetaIds() {
+    var ids = {};
+    Object.keys(progress).forEach(function (k) { ids[progress[k].metaId] = true; });
+    return ids;
+  }
+
+  // sin TMDB: las recomendaciones de Trakt, más probable cuanto más arriba
+  function surpriseTrakt(page) {
+    var anime = page === 'anime', kinds = anime ? ['shows', 'movies'] : [page === 'movies' ? 'movies' : 'shows'];
+    return Promise.all(kinds.map(function (kd) {
+      return Surprise.trakt[kd] || (Surprise.trakt[kd] = Trakt.recommendations(kd).catch(function (e) { delete Surprise.trakt[kd]; throw e; }));
+    })).then(function (x) {
+      var local = localMetaIds(), list = [];
+      x.forEach(function (metas) {
+        metas.forEach(function (m, i) {
+          if (isUnseen(m) && !local[m.id] && (anime ? m.anime : !m.anime) && Surprise.picked.indexOf(m.id) < 0) list.push({ m: m, w: 1 / (1 + i / 10) });
+        });
+      });
+      var i = pickWeighted(list, function (o) { return o.w; });
+      return i >= 0 ? list[i].m : null;
+    });
+  }
+
+  // sin Trakt ni TMDB: uno sin ver de «Mejor valoradas/os» (Cinemeta o Kitsu)
+  function surpriseTop(page) {
+    var row = PAGE_ROWS[page].filter(function (r) { return r.k === 'top'; })[0];
+    if (!Surprise.top[page]) Surprise.top[page] = getJSON(row.url).then(function (d) { return d.metas || []; }).catch(function (e) { delete Surprise.top[page]; throw e; });
+    return Surprise.top[page].then(function (metas) {
+      var local = localMetaIds();
+      var list = metas.filter(function (m) {
+        return isUnseen(m) && !local[m.id] && (page === 'anime' || !isAnimeMeta(m)) && Surprise.picked.indexOf(m.id) < 0;
+      });
+      return list.length ? list[Math.floor(Math.random() * list.length)] : null;
+    });
+  }
+
+  // elige y abre la ficha; mientras, «Buscando algo para ti…». Con TMDB, sus recomendaciones; si no hay nada, las de Trakt y
+  // después «Mejor valoradas/os»
+  function surprise(page, screen) {
+    if (Surprise.busy) return;
+    Surprise.busy = true;
+    toast(tr('Buscando algo para ti…'), 20000);
+    var tries = [];
+    if (settings.tmdbKey) tries.push(surpriseTmdb);
+    if (Trakt.linked()) tries.push(surpriseTrakt);
+    tries.push(surpriseTop);
+    var next = function (i) {
+      if (i >= tries.length) return Promise.resolve(null);
+      return tries[i](page).catch(function () { return null; }).then(function (m) { return m || next(i + 1); });
+    };
+    seenReady(true).then(function () { return next(0); }).then(function (m) {
+      Surprise.busy = false;
+      if (!isTop(screen)) return;
+      if (!m) { toast(tr('No he encontrado nada sin ver que recomendarte aquí. Prueba más tarde o en otra pestaña')); return; }
+      Surprise.picked.push(m.id);
+      if (Surprise.picked.length > 60) Surprise.picked.shift();
+      $('#toast').classList.add('hidden');
+      openMeta(m);
+    }, function () { Surprise.busy = false; });
+  }
+
   // Anime, Películas o Series: cabecera grande y las filas elegidas (Ajustes → General → Filas de …)
   function catalogScreen(page) {
     var hs = heroScreen(page), root = hs.root, vs = hs.vs, sig = '';
@@ -2648,6 +2916,11 @@
       sig = rowsKey(rows) + settings.tmdbKey;
       vs.innerHTML = '';
       scrollTop0(vs);
+      // «Sorpréndeme», encima de la primera fila
+      var bar = el('div', 'surprise'), sb = el('div', 'btn small', esc(tr('Sorpréndeme')));
+      focusable(sb, function () { surprise(page, screen); });
+      bar.appendChild(sb);
+      vs.appendChild(bar);
       rows.forEach(function (r) { if (!r.hidden) promiseRow(vs, r.title, pageRowLoader(page, r), openMeta, true); });
     }
     layout();

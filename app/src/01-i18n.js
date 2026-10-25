@@ -260,7 +260,10 @@
     'Más recientes': 'Newest', 'Solo sin ver': 'Unwatched only', 'Todo': 'Everything',
     // sin spoilers
     'Sin spoilers (episodios sin ver: sin sinopsis ni imagen)': 'No spoilers (unwatched episodes: no synopsis or image)',
-    'Sinopsis oculta (sin spoilers)': 'Synopsis hidden (no spoilers)'
+    'Sinopsis oculta (sin spoilers)': 'Synopsis hidden (no spoilers)',
+    // sorpréndeme
+    'Sorpréndeme': 'Surprise me', 'Buscando algo para ti…': 'Finding something for you…',
+    'No he encontrado nada sin ver que recomendarte aquí. Prueba más tarde o en otra pestaña': 'I couldn’t find anything unwatched to recommend here. Try again later or in another tab'
   };
 
   function tr(s) {
