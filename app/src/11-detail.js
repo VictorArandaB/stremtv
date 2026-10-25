@@ -60,14 +60,6 @@
       container.appendChild(b);
     }
 
-    function trailerButton(container) {
-      var yt = trailerId(meta);
-      if (!yt) return;
-      var b = el('div', 'btn small', tr('Tráiler'));
-      focusable(b, function () { playTrailer(yt, meta); });
-      container.appendChild(b);
-    }
-
     // películas de la misma saga (TMDB), en orden y con ✓ en las vistas
     function sagaButton(container) {
       var c = meta._tmdb && meta._tmdb.collection;
@@ -218,7 +210,6 @@
       focusable(seenB, toggleMovieSeen);
       actions.appendChild(seenB);
       watchlistButton(actions);
-      trailerButton(actions);
       sagaButton(actions);
       similarButton(actions);
       castButton(actions);
@@ -400,12 +391,11 @@
         if (!screen.closed) prefetchStreams(type, nx.v.id);
       }
       watchlistButton(top);
-      trailerButton(top);
       similarButton(top);
       castButton(top);
       var toggle = null;
       if (settings.hideWatched && seenCount) {
-        toggle = el('div', 'btn', showSeen ? tr('Ocultar vistos') : seenCount === 1 ? tr('Mostrar 1 visto') : tr('Mostrar {0} vistos', seenCount));
+        toggle = el('div', 'btn small', showSeen ? tr('Ocultar vistos') : seenCount === 1 ? tr('Mostrar 1 visto') : tr('Mostrar {0} vistos', seenCount));
         focusable(toggle, function () {
           showSeen = !showSeen;
           renderSeries();

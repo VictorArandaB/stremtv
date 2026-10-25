@@ -397,8 +397,8 @@
     'Pulsa cualquier tecla para cerrar': 'Press any key to close', 'En pausa: {0}': 'Paused: {0}',
     'Pulsa cualquier tecla para volver': 'Press any key to go back', 'Protector de pantalla con el vídeo en pausa': 'Screensaver while the video is paused',
     'A los {0} min': 'After {0} min', 'Vídeo en pausa al salir de la app: pulsa OK para seguir': 'Video paused when you left the app: press OK to continue',
-    // tráiler, saga, notas y plataformas
-    'Tráiler': 'Trailer', 'Cargando el tráiler…': 'Loading the trailer…', 'sin vídeo': 'no video', '{0} no ha podido darte el tráiler ({1})': '{0} couldn’t get you the trailer ({1})', 'Saga': 'Collection', 'En España: {0}': 'In Spain: {0}',
+    // saga, notas y plataformas
+    'Saga': 'Collection', 'En España: {0}': 'In Spain: {0}',
     'Notas de Rotten Tomatoes y Metacritic (OMDb)': 'Rotten Tomatoes and Metacritic scores (OMDb)', 'Clave de OMDb (pulsa OK para escribirla)': 'OMDb key (press OK to type it)',
     'Clave de omdbapi.com': 'omdbapi.com key', 'Sin clave: solo la nota de IMDb.': 'No key: IMDb rating only.',
     '✓ Clave válida (Cadena perpetua: Rotten Tomatoes {0} %)': '✓ Valid key (The Shawshank Redemption: Rotten Tomatoes {0} %)',
@@ -689,15 +689,13 @@
   }
 
   // título, sinopsis y géneros en español para la ficha; en la misma consulta, la saga (películas)
-  // y dónde se puede ver en España con suscripción (datos de JustWatch), y el tráiler de YouTube (en español si lo hay)
+  // y dónde se puede ver en España con suscripción (datos de JustWatch)
   function tmdbDetail(imdb) {
     return tmdbFind(imdb).then(function (r) {
       if (!r.id) return null;
-      return tmdbGet('/' + r.k + '/' + r.id + '?append_to_response=watch/providers,videos&include_video_language=es,en').then(function (d) {
+      return tmdbGet('/' + r.k + '/' + r.id + '?append_to_response=watch/providers').then(function (d) {
         var es = ((d['watch/providers'] || {}).results || {}).ES || {};
-        var vids = ((d.videos || {}).results || []).filter(function (v) { return v.site === 'YouTube' && v.type === 'Trailer'; });
-        vids.sort(function (a, b) { return (a.iso_639_1 === 'es' ? 0 : 1) - (b.iso_639_1 === 'es' ? 0 : 1); });
-        return { trailer: vids.length ? vids[0].key : '', k: r.k, id: r.id, name: d.title || d.name, overview: d.overview, genres: (d.genres || []).map(function (g) { return g.name; }),
+        return { k: r.k, id: r.id, name: d.title || d.name, overview: d.overview, genres: (d.genres || []).map(function (g) { return g.name; }),
           collection: d.belongs_to_collection ? { id: d.belongs_to_collection.id, name: d.belongs_to_collection.name } : null,
           providers: (es.flatrate || []).map(function (p) { return p.provider_name; }) };
       });
@@ -781,86 +779,6 @@
   function platformParams(id) { return '&with_watch_providers=' + id + '&watch_region=ES&with_watch_monetization_types=flatrate'; }
   // sin telediarios, programas de entrevistas ni culebrones
   var TV_JUNK = '&without_genres=10763,10767,10766';
-
-  // ---------------------------------------------------------------- tráileres (con el debrid, en el reproductor)
-
-  // la tele no reproduce YouTube dentro de la app, pero AllDebrid y Real-Debrid convierten un enlace de YouTube en el vídeo
-  // directo: el tráiler se ve en el reproductor de StremTV
-  function trailerId(meta) {
-    var t = meta._tmdb && meta._tmdb.trailer;
-    (meta.trailerStreams || []).forEach(function (s) { if (!t && s.ytId) t = s.ytId; });
-    (meta.trailers || []).forEach(function (s) { if (!t && s.source && (!s.type || s.type === 'Trailer')) t = s.source; });
-    return /^[\w-]{11}$/.test(t || '') ? t : '';
-  }
-
-  // AllDebrid: /link/unlock da el enlace o, en webs de vídeo como YouTube, las calidades disponibles; la elegida se pide a
-  // /link/streaming, que puede tardar (delayed: se pregunta cada 2 s, como mucho 30 s)
-  function allDebridGet(path) {
-    return xhr('GET', 'https://api.alldebrid.com/v4/' + path + (path.indexOf('?') >= 0 ? '&' : '?') + 'agent=stremtv',
-      { timeout: 20000, headers: { Authorization: 'Bearer ' + settings.key } }).then(strictJSON).then(function (r) {
-      if (r.status !== 'success') throw new Error((r.error && (r.error.message || r.error.code)) || 'AllDebrid');
-      return r.data;
-    });
-  }
-  // la calidad más alta que la tele reproduce bien: mp4, hasta 1080p y con sonido si se sabe
-  function bestStream(streams) {
-    var ok = streams.filter(function (s) { return (!s.ext || s.ext === 'mp4') && (parseInt(s.quality, 10) || 0) <= 1080; });
-    ok.sort(function (a, b) { return (parseInt(b.quality, 10) || 0) - (parseInt(a.quality, 10) || 0); });
-    return ok[0] || streams[0];
-  }
-  function debridTrailer(yt) {
-    var link = 'https://www.youtube.com/watch?v=' + yt;
-    if (!settings.key) return Promise.reject(new Error(tr('sin clave de debrid')));
-    if (settings.debrid === 'realdebrid') {
-      return xhr('POST', 'https://api.real-debrid.com/rest/1.0/unrestrict/link', { timeout: 20000, body: 'link=' + encodeURIComponent(link),
-        headers: { Authorization: 'Bearer ' + settings.key, 'Content-Type': 'application/x-www-form-urlencoded' } }).then(strictJSON).then(function (d) {
-        if (!d.download) throw new Error('Real-Debrid');
-        return { url: d.download, quality: d.quality || '', file: d.filename || '' };
-      });
-    }
-    return allDebridGet('link/unlock?link=' + encodeURIComponent(link)).then(function (d) {
-      if (d.link) return { url: d.link, quality: '', file: d.filename || '' };
-      var st = bestStream(d.streams || []);
-      if (!st) throw new Error(tr('sin vídeo'));
-      return allDebridGet('link/streaming?id=' + encodeURIComponent(d.id) + '&stream=' + encodeURIComponent(st.id)).then(function (x) {
-        var out = function (url) { return { url: url, quality: st.quality ? st.quality + 'p' : '', file: d.filename || '' }; };
-        if (x.link) return out(x.link);
-        if (!x.delayed) throw new Error(tr('sin vídeo'));
-        var tries = 0;
-        return (function poll() {
-          return new Promise(function (r) { setTimeout(r, 2000); }).then(function () {
-            return allDebridGet('link/delayed?id=' + encodeURIComponent(x.delayed));
-          }).then(function (dl) {
-            if (dl.status === 2 && dl.link) return out(dl.link);
-            if (dl.status === 3 || ++tries >= 15) throw new Error(tr('sin vídeo'));
-            return poll();
-          });
-        })();
-      });
-    });
-  }
-
-  var trailerBusy = false;
-  function playTrailer(yt, meta) {
-    if (trailerBusy) return;
-    trailerBusy = true;
-    var from = stack[stack.length - 1];
-    toast(tr('Cargando el tráiler…'), 20000);
-    debridTrailer(yt).then(function (v) {
-      trailerBusy = false;
-      if (!isTop(from)) return; // ha salido de la ficha mientras se pedía
-      $('#toast').classList.add('hidden');
-      logEv('tráiler', DEBRID_NAMES[settings.debrid], { id: yt, calidad: v.quality });
-      var name = (meta && meta.name) || '';
-      Player.open({ url: v.url, quality: v.quality, file: v.file, addon: 'YouTube' },
-        { trailer: true, type: 'trailer', videoId: 'trailer:' + yt, metaId: 'trailer:' + yt, name: name, poster: meta && meta.poster,
-          label: tr('Tráiler') + (name ? ' · ' + name : ''), desc: meta && meta.description });
-    }, function (e) {
-      trailerBusy = false;
-      logEv('tráiler', 'el debrid no lo da', { id: yt, error: e.message });
-      if (isTop(from)) toast(tr('{0} no ha podido darte el tráiler ({1})', DEBRID_NAMES[settings.debrid], e.message), 6000);
-    });
-  }
 
   // ---------------------------------------------------------------- notas de Rotten Tomatoes y Metacritic (OMDb)
 
@@ -3206,14 +3124,6 @@
       container.appendChild(b);
     }
 
-    function trailerButton(container) {
-      var yt = trailerId(meta);
-      if (!yt) return;
-      var b = el('div', 'btn small', tr('Tráiler'));
-      focusable(b, function () { playTrailer(yt, meta); });
-      container.appendChild(b);
-    }
-
     // películas de la misma saga (TMDB), en orden y con ✓ en las vistas
     function sagaButton(container) {
       var c = meta._tmdb && meta._tmdb.collection;
@@ -3364,7 +3274,6 @@
       focusable(seenB, toggleMovieSeen);
       actions.appendChild(seenB);
       watchlistButton(actions);
-      trailerButton(actions);
       sagaButton(actions);
       similarButton(actions);
       castButton(actions);
@@ -3546,12 +3455,11 @@
         if (!screen.closed) prefetchStreams(type, nx.v.id);
       }
       watchlistButton(top);
-      trailerButton(top);
       similarButton(top);
       castButton(top);
       var toggle = null;
       if (settings.hideWatched && seenCount) {
-        toggle = el('div', 'btn', showSeen ? tr('Ocultar vistos') : seenCount === 1 ? tr('Mostrar 1 visto') : tr('Mostrar {0} vistos', seenCount));
+        toggle = el('div', 'btn small', showSeen ? tr('Ocultar vistos') : seenCount === 1 ? tr('Mostrar 1 visto') : tr('Mostrar {0} vistos', seenCount));
         focusable(toggle, function () {
           showSeen = !showSeen;
           renderSeries();
@@ -4183,7 +4091,7 @@
         if (self.stream === stream) self.fail(msg);
       });
 
-      if (!ctx.trailer) Subs.fetchList(ctx).then(function (list) {
+      Subs.fetchList(ctx).then(function (list) {
         if (self.session !== session || settings.subLang === 'off' || self.skipAutoSubs() || Subs.embedded || Subs.manual) return;
         for (var i = 0; i < list.length; i++) {
           if (list[i].lang === settings.subLang) { Subs.auto = true; Subs.select(list[i]); return; }
@@ -5021,7 +4929,7 @@
 
     saveProgress: function () {
       var c = this.ctx;
-      if (!c || c.trailer || !this.started || !this.duration || this.time < 5) return; // un tráiler no cuenta como visto
+      if (!c || !this.started || !this.duration || this.time < 5) return;
       // visto: casi al final, en el ending (AniSkip) o ya en el aviso del siguiente episodio (últimos 40 s)
       var done = this.time / this.duration > 0.92 || this.duration - this.time <= 40 || this.inEnding();
       saveProgress({
@@ -5957,7 +5865,7 @@
 
   // ---------------------------------------------------------------- arranque
 
-  var VERSION = '0.26.0';
+  var VERSION = '0.26.1';
 
   function fitScreen() {
     var z = window.innerWidth / 1920;
