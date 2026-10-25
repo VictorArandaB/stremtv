@@ -41,7 +41,8 @@ window.__boot = { nav: (performance.timing || {}).navigationStart || 0, loader: 
     });
   }
 
-  var dev = location.port === '8090';
+  // desarrollo: el puerto 8090 o el de otra copia que pasa los tests a la vez (8190, 8290…; los acabados en 91 hacen de tele)
+  var dev = /90$/.test(location.port);
   var cachedVer = cached && cached.js ? (/var VERSION = '([\d.]+)'/.exec(cached.js) || [])[1] : '';
   if (!dev && cached && cached.js && cached.css && ver(cachedVer) >= ver(PKG_VERSION)) {
     try { inject(cached.css, cached.js); window.__boot.src = 'guardada ' + cachedVer; } catch (e) {
