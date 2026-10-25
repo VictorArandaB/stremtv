@@ -1,6 +1,6 @@
   // ---------------------------------------------------------------- arranque
 
-  var VERSION = '0.23.0';
+  var VERSION = '0.23.1';
 
   function fitScreen() {
     var z = window.innerWidth / 1920;
@@ -49,5 +49,5 @@
   else start();
 
   // exponer para depurar desde la consola
-  window.StremTV = { bootLog: function () { return load('boot', []); }, settings: settings, Player: Player, Saver: Saver, Nav: Nav, stack: stack, toast: function (m, ms) { toast(tr(m), ms); }, open: function (type, id) { push(detailScreen(type, id)); }, openMeta: openMeta, openSettings: openSettings, checkQueue: checkQueue };
+  window.StremTV = { bootLog: function () { return load('boot', []); }, settings: settings, Player: Player, Saver: Saver, Nav: Nav, Trakt: Trakt, stack: stack, toast: function (m, ms) { toast(tr(m), ms); }, open: function (type, id) { push(detailScreen(type, id)); }, openMeta: openMeta, openSettings: openSettings, checkQueue: checkQueue };
 })();

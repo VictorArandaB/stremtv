@@ -156,15 +156,13 @@
       if (c) for (var k in c.map) if (c.map[k] === tk) { var p = k.split(':'); season = p[0]; number = p[1]; break; }
       return tr('T{0}:E{1}', season, number);
     },
-    // equivalencias de las series de una fila que aún no se conocen: en segundo plano y de dos en dos (sirven la próxima vez)
+    // equivalencias de las series de una fila que aún no se conocen (de tres en tres; luego quedan guardadas un mes)
     learnEpMaps: function (imdbs) {
       var todo = imdbs.filter(function (id, i) { return id && imdbs.indexOf(id) === i && !Trakt.epMaps[id]; });
-      if (!todo.length) return;
-      setTimeout(function () {
-        mapLimit(todo, 2, function (imdb) {
-          return getJSON(CINEMETA + '/meta/series/' + imdb + '.json').then(function (r) { return Trakt.epMap(imdb, (r.meta || {}).videos); });
-        });
-      }, 20000);
+      return mapLimit(todo, 3, function (imdb) {
+        return getJSON(CINEMETA + '/meta/series/' + imdb + '.json').then(function (r) { return Trakt.epMap(imdb, (r.meta || {}).videos); })
+          .catch(function () { return null; });
+      });
     },
 
     body: function (ctx) {
@@ -246,7 +244,7 @@
             if (e.first_aired && new Date(e.first_aired) > new Date()) return null;
             // insignia: episodios emitidos que faltan por ver; «Nuevo»: emitido en las últimas 48 h
             return { id: sh.ids.imdb, type: 'series', name: sh.title, poster: metahubPoster(sh.ids.imdb),
-              label: sh.title + ' · ' + Trakt.epCode(sh.ids.imdb, e.season, e.number), left: d.aired ? d.aired - d.completed : 0,
+              ep: e, left: d.aired ? d.aired - d.completed : 0,
               isNew: !!(e.first_aired && Date.now() - new Date(e.first_aired) < 48 * 3600000) };
           }).catch(function () { return null; });
         }).then(function (list) {
@@ -258,8 +256,12 @@
       }).then(function (list) {
         // los recién emitidos primero, el resto en su orden (de la serie vista más recientemente a la más antigua)
         list = list.filter(Boolean);
-        Trakt.learnEpMaps(list.map(function (m) { return m.id; }));
-        return list.filter(function (m) { return m.isNew; }).concat(list.filter(function (m) { return !m.isNew; }));
+        // la etiqueta con la numeración de Cinemeta (la de la ficha): antes se aprenden las equivalencias que falten,
+        // como mucho 5 s (si no, sale la de Trakt y la próxima vez ya la de Cinemeta)
+        return withTimeout(Trakt.learnEpMaps(list.map(function (m) { return m.id; })), 5000).catch(function () {}).then(function () {
+          list.forEach(function (m) { m.label = m.name + ' · ' + Trakt.epCode(m.id, m.ep.season, m.ep.number); });
+          return list.filter(function (m) { return m.isNew; }).concat(list.filter(function (m) { return !m.isNew; }));
+        });
       });
       Trakt.upNextCache = { at: Date.now(), promise: promise };
       promise.catch(function () { Trakt.upNextCache = null; });

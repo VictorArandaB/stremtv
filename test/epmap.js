@@ -22,7 +22,9 @@ const check = (ok, what, got) => { console.log((ok ? '✓ ' : '✗ ') + what + (
     if (u.indexOf('/meta/series/tt9000001.json') >= 0) return json(req, { meta: { id: 'tt9000001', type: 'series', name: 'Serie de prueba', videos: videos } });
     if (u.indexOf('api.trakt.tv') >= 0) {
       if (u.indexOf('/shows/tt9000001/seasons') >= 0) return json(req, [{ number: 0, episodes: [] }, { number: 1, episodes: [1, 2, 3, 4].map((n) => ({ number: n, first_aired: day(n) })) }]);
-      if (u.indexOf('/shows/tt9000001/progress/watched') >= 0) return json(req, { aired: 4, completed: 3, seasons: [{ number: 1, episodes: [1, 2, 3, 4].map((n) => ({ number: n, completed: n <= 3 })) }], next_episode: { season: 1, number: 4 } });
+      if (u.indexOf('/sync/watched/shows') >= 0) return json(req, [{ show: { title: 'Serie de prueba', ids: { imdb: 'tt9000001', trakt: 77 }, aired_episodes: 4 }, last_watched_at: day(5),
+        seasons: [{ number: 1, episodes: [1, 2, 3].map((n) => ({ number: n })) }] }]);
+      if (/\/shows\/(tt9000001|77)\/progress\/watched/.test(u)) return json(req, { aired: 4, completed: 3, seasons: [{ number: 1, episodes: [1, 2, 3, 4].map((n) => ({ number: n, completed: n <= 3 })) }], next_episode: { season: 1, number: 4, first_aired: day(4) } });
       if (u.indexOf('/sync/history') >= 0 && req.method() === 'POST') { history.push(req.postData()); return json(req, {}, 201); }
       return json(req, []);
     }
@@ -50,6 +52,11 @@ const check = (ok, what, got) => { console.log((ok ? '✓ ' : '✗ ') + what + (
   await p.evaluate(() => { const e = new KeyboardEvent('keydown', { bubbles: true }); Object.defineProperty(e, 'keyCode', { get: () => 404 }); document.dispatchEvent(e); });
   await sleep(800);
   check(/"seasons":\[\{"number":1,"episodes":\[\{"number":4\}\]\}\]/.test(history[0] || ''), 'marcar visto el T2:E2 manda a Trakt el 1x4', history[0]);
+
+  // «Siguientes episodios» con la numeración de Cinemeta, aunque la equivalencia aún no estuviera guardada
+  const up = await p.evaluate(() => { localStorage.removeItem('stv.epmaps'); StremTV.Trakt.epMaps = {}; StremTV.Trakt.upNextCache = null;
+    return StremTV.Trakt.upNext().then((l) => l.map((m) => m.label).join(' | ')); });
+  check(up === 'Serie de prueba · T2:E2', 'Siguientes episodios dice T2:E2 (Trakt: 1x4)', up);
 
   console.log('ERRORES:', errs.length ? errs.join(' | ') : 'ninguno');
   await b.close();
