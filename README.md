@@ -1,6 +1,6 @@
 # StremTV
 
-Cliente ligero tipo Stremio para **teles Samsung Tizen 3+ (2017 en adelante)**, pensado para instalarse como módulo de [TizenBrew](https://github.com/reisxd/TizenBrew).
+Cliente ligero tipo Stremio para **teles Samsung Tizen 3+ (2017 en adelante)**. Se instala como **app propia firmada** en modo desarrollador (ver [Instalación](#instalación)) y usa el reproductor nativo **AVPlay** para abrir MKV, HEVC y AC3.
 
 Escrito en ES5 y CSS sin funciones modernas para que funcione en el motor web de Tizen 3 (Chromium ~47), donde la web oficial de Stremio no carga (necesita WebAssembly).
 
@@ -58,21 +58,46 @@ Escrito en ES5 y CSS sin funciones modernas para que funcione en el motor web de
 - **Tu año en StremTV** (Ajustes, y en Inicio en diciembre y enero): horas, películas, episodios y series terminadas del año, tus series más vistas y tus películas mejor puntuadas, géneros, el mes y el día de la semana con más tele, la racha más larga y el día de maratón. Con Trakt, de todo su historial del año (se guarda: el año en curso se rehace a diario); sin Trakt, de lo visto en esta tele. Años anteriores con ◀ ▶.
 - **Trakt**: vinculación con código, scrobble automático (visto al pasar del 80 %), «Continuar», tu lista, recomendaciones y episodios vistos. El anime se registra usando su equivalencia en IMDb.
 
-## Instalar en TizenBrew
-Módulos → Añadir módulo GitHub → `<usuario>/stremtv`
+## Instalación
 
-Después, en **Ajustes → Fuentes y debrid** (se abre solo mientras no haya ningún addon de fuentes):
-1. En **Addons**, pega la URL del manifest del addon de fuentes que uses (el mismo que en Stremio).
-2. Si es un addon con debrid, elige el servicio y escribe tu clave API:
-- Real-Debrid: https://real-debrid.com/apitoken
-- AllDebrid: https://alldebrid.com/apikeys
+StremTV se instala como **app propia firmada** en una Samsung Tizen en **modo desarrollador**. No se instala por TizenBrew: necesita el privilegio `avplay` del `config.xml` (que TizenBrew no concede) para reproducir MKV con el reproductor nativo.
 
-La clave solo se guarda en la tele.
+**Necesitas:**
+- Una Samsung Smart TV con **Tizen 3.0 o superior**.
+- **Tizen Studio** (aporta `sdb`, el gestor de certificados y el empaquetador) o, como mínimo, el `sdb` de los Tizen tools.
+- Un **certificado de autor** propio (Tizen Studio → *Certificate Manager*). El certificado del autor no se publica en este repositorio.
 
-### Trakt
-1. Crea una app en https://trakt.tv/oauth/applications/new (nombre libre, Redirect URI `http://localhost`).
-2. En Ajustes → Trakt escribe el Client ID (el Client Secret solo si tu app es antigua y lo tiene) y pulsa «Vincular con Trakt».
-3. Entra en trakt.tv/activate e introduce el código que aparece en la tele.
+**Pasos:**
+1. **Activa el modo desarrollador en la tele:** en *Aplicaciones (Apps)* teclea `12345`, activa *Developer mode* y escribe en *Host PC IP* la IP del ordenador desde el que vas a instalar. **Reinicia la tele** (solo aplica esa IP al reiniciar).
+2. **Empaqueta y firma** la carpeta `app/` como un `.wgt` con tu certificado (Tizen Studio, o `tizen package -t wgt`). El repo incluye `build-wgt.sh` como ayuda del autor, pero depende de un certificado y del CLI de Tizen bajo `tools/`, que **no** están en Git.
+3. **Instala** el paquete: `sdb connect <IP_de_la_tele>` y `sdb install StremTV.wgt` (o desde el *Device Manager* de Tizen Studio).
+4. Abre **StremTV** desde la lista de aplicaciones de la tele.
+
+## Configuración
+
+Al abrir StremTV por primera vez, **Ajustes → Fuentes y debrid** se abre solo (aún sin ningún addon de fuentes). Todas las claves se guardan **solo en la tele** (y, si activas la copia, en tu Gist privado de GitHub).
+
+### Fuentes y debrid (imprescindible para reproducir)
+1. En **Addons**, pega la URL del *manifest* del addon de fuentes que uses (el mismo que en Stremio; por ejemplo Torrentio).
+2. Si el addon admite debrid, elige el servicio y escribe tu clave:
+   - **Real-Debrid**: https://real-debrid.com/apitoken
+   - **AllDebrid**: https://alldebrid.com/apikeys
+
+### Cuentas (Ajustes → Cuentas) — opcionales; cada una desbloquea funciones
+| Servicio | Para qué sirve | Dónde se saca (gratis) |
+|---|---|---|
+| **Trakt** | Scrobble automático, Continuar, tu lista, recomendaciones, calendario y «Tu año». Además, su **Client ID** (sin vincular) habilita las listas **IMDb Top 250**. | trakt.tv/oauth/applications/new · Redirect URI `http://localhost` |
+| **TMDB** | Títulos y sinopsis en **español**, filas por plataforma, recomendaciones (Sorpréndeme, Más como esto), reparto, saga, dónde ver y Recién llegado. Sin clave: todo en inglés y menos filas. | themoviedb.org → Ajustes → API |
+| **OMDb** | Notas de **Rotten Tomatoes** y **Metacritic** junto a la de IMDb. | omdbapi.com → API Key (plan FREE, 1000/día) |
+| **GitHub** (token con permiso `gist`) | **Copia de seguridad** diaria y restaurar, y la **cola** y **búsqueda desde el móvil**. | github.com/settings/tokens/new (marca solo `gist`) |
+
+**Vincular Trakt:** en *Ajustes → Cuentas → Trakt* escribe el **Client ID** (el *Client Secret* solo si tu app de Trakt es antigua y lo tiene), pulsa **«Vincular con Trakt»**, entra en trakt.tv/activate e introduce el código que aparece en la tele.
+
+## Actualizaciones
+
+Una vez instalada, StremTV **se actualiza sola**: al arrancar comprueba el último commit de `main` en GitHub y descarga `app.js`/`style.css` (vía jsDelivr) para aplicarlos en el **siguiente** arranque. Para la mayoría de cambios **no hace falta reinstalar**.
+
+Solo hay que **volver a empaquetar e instalar el `.wgt`** cuando cambian `boot.js`, `index.html` o `config.xml` (el cargador, el HTML base o los permisos/CSP), porque esos archivos no se autoactualizan.
 
 ## Mando
 | Tecla | Navegación | Reproductor |
