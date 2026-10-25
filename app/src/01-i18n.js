@@ -263,7 +263,9 @@
     'Sinopsis oculta (sin spoilers)': 'Synopsis hidden (no spoilers)',
     // sorpréndeme
     'Sorpréndeme': 'Surprise me', 'Buscando algo para ti…': 'Finding something for you…',
-    'No he encontrado nada sin ver que recomendarte aquí. Prueba más tarde o en otra pestaña': 'I couldn’t find anything unwatched to recommend here. Try again later or in another tab'
+    'No he encontrado nada sin ver que recomendarte aquí. Prueba más tarde o en otra pestaña': 'I couldn’t find anything unwatched to recommend here. Try again later or in another tab',
+    // buscar desde el móvil
+    'Escanea con el móvil para escribir desde él': 'Scan with your phone to type from it'
   };
 
   function tr(s) {

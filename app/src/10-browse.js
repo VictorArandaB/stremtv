@@ -294,6 +294,98 @@
     return { el: root };
   }
 
+  // ---------------------------------------------------------------- buscar desde el móvil
+
+  // Escribir con el mando es lento: Buscar enseña un QR con docs/buscar.html (GitHub Pages de este repo) y, detrás del #,
+  // un tema secreto de ntfy.sh (servicio público y gratuito, sin cuenta). Lo que se envía desde el móvil llega por ntfy y
+  // se busca en la tele. El # no llega al servidor de la página, así que el tema solo lo saben la tele y el móvil.
+  // Solo se escucha mientras Buscar está a la vista; lo enviado antes de abrirla no cuenta
+  var PHONE_PAGE = 'https://victorarandab.github.io/stremtv/buscar.html';
+  var NTFY = 'https://ntfy.sh';
+
+  // tema de ntfy de esta tele: 24 letras y cifras al azar, creado la primera vez. No va en la copia de seguridad: es
+  // de esta tele (otra con la misma copia recibiría también sus búsquedas) y basta con volver a escanear el QR
+  function phoneTopic() {
+    var t = load('phonetopic', '');
+    if (/^[a-z0-9]{24}$/.test(t)) return t;
+    var abc = 'abcdefghijklmnopqrstuvwxyz0123456789', rnd = null;
+    try { rnd = new Uint8Array(24); window.crypto.getRandomValues(rnd); } catch (e) { rnd = null; }
+    t = '';
+    for (var i = 0; i < 24; i++) t += abc.charAt((rnd ? rnd[i] : Math.floor(Math.random() * 256)) % abc.length);
+    save('phonetopic', t);
+    return t;
+  }
+  function phoneUrl() { return PHONE_PAGE + '#' + phoneTopic(); }
+
+  // Escucha el tema con una conexión que se queda abierta: ntfy manda cada mensaje en una línea JSON en cuanto llega
+  // (y un «keepalive» cada 45 s), y onprogress lo va leyendo de responseText (por eso no se usa xhr(), que espera al
+  // final). La primera línea («open») trae la hora del servidor: lo anterior a ella no cuenta. Si la conexión se cierra
+  // o se queda 2 min callada, se vuelve a abrir pidiendo lo enviado desde el último mensaje (o desde aquella hora),
+  // así no se pierde nada entre medias; con errores, cada vez se espera más (hasta 1 min). Una sola petición abierta
+  // gasta mucho menos del límite de ntfy para quien no tiene cuenta que preguntar cada pocos segundos.
+  // onText(texto) por cada mensaje nuevo; devuelve la función que la para
+  function phoneListen(topic, onText) {
+    var x = null, stopped = false, t0 = 0, last = '', seen = {}, fails = 0, retry = null, quiet = null;
+    function connect() {
+      if (stopped) return;
+      var since = last || (t0 ? String(t0) : ''), pos = 0;
+      var req = x = new XMLHttpRequest();
+      req.open('GET', NTFY + '/' + topic + '/json' + (since ? '?since=' + since : ''), true);
+      // las líneas completas que hayan llegado desde la última vez
+      var read = function () {
+        if (req !== x || req.status !== 200) return; // un error (429, 5xx…) también trae JSON: no es un mensaje
+        var txt = req.responseText || '', end = txt.lastIndexOf('\n');
+        if (end < pos) return;
+        var lines = txt.slice(pos, end).split('\n');
+        pos = end + 1;
+        lines.forEach(function (l) {
+          var m = looseJSON(l);
+          if (!m) return;
+          fails = 0;
+          if (m.event === 'open' && !t0) t0 = m.time || 0;
+          if (m.event !== 'message' || !m.id || seen[m.id]) return;
+          seen[m.id] = true;
+          last = m.id;
+          if (t0 && m.time < t0) return; // de antes de abrir Buscar
+          if (typeof m.message === 'string') onText(m.message);
+        });
+      };
+      var again = function (ms) {
+        if (req !== x) return;
+        x = null;
+        clearTimeout(quiet);
+        if (!stopped) retry = setTimeout(connect, ms);
+      };
+      var awake = function () {
+        clearTimeout(quiet);
+        quiet = setTimeout(function () { try { req.abort(); } catch (e) { /* ya cerrada */ } again(0); }, 120000);
+      };
+      req.onprogress = function () { awake(); read(); };
+      req.onload = function () {
+        read();
+        // cerrada por el servidor (o 429 por pasarse del límite): volver a abrirla
+        if (req.status === 200) again(2000);
+        else again(req.status === 429 ? 60000 : Math.min(60000, 5000 * Math.pow(2, fails++)));
+      };
+      req.onerror = req.ontimeout = function () { again(Math.min(60000, 5000 * Math.pow(2, fails++))); };
+      req.send();
+      awake();
+    }
+    connect();
+    return function () {
+      stopped = true;
+      clearTimeout(retry);
+      clearTimeout(quiet);
+      var req = x;
+      x = null;
+      if (req) try { req.abort(); } catch (e) { /* ya cerrada */ }
+    };
+  }
+
+  // la escucha de la pantalla de Buscar abierta: se para con la app en segundo plano y vuelve al regresar
+  var phoneSync = null;
+  document.addEventListener('visibilitychange', function () { if (phoneSync) phoneSync(); });
+
   // ---------------------------------------------------------------- pantalla: búsqueda
 
   function searchScreen() {
@@ -322,10 +414,22 @@
       }, 800);
     });
     box.appendChild(input);
-    vs.appendChild(box);
-    vs.appendChild(el('div', 'hint', tr('Pulsa OK para escribir y confirma con «Hecho».')));
+    // arriba: el cuadro, la ayuda y las búsquedas recientes, con el QR para escribir desde el móvil a la derecha
+    var topRow = el('div', 'search-top'), main = el('div', 'search-main');
+    topRow.appendChild(main);
+    main.appendChild(box);
+    main.appendChild(el('div', 'hint', tr('Pulsa OK para escribir y confirma con «Hecho».')));
     var recent = el('div');
-    vs.appendChild(recent);
+    main.appendChild(recent);
+    var qr = el('div', 'phone-qr');
+    try {
+      var cv = qrCanvas(phoneUrl(), 300);
+      qr.appendChild(cv);
+      qr.style.width = cv.width + 'px'; // el texto, del ancho del QR
+    } catch (e) { logEv('error', 'QR: ' + e); }
+    qr.appendChild(el('div', 'phone-qr-text', esc(tr('Escanea con el móvil para escribir desde él'))));
+    topRow.appendChild(qr);
+    vs.appendChild(topRow);
     var results = el('div');
     vs.appendChild(results);
     // sin nada escrito, explorar con filtros
@@ -400,5 +504,27 @@
       });
     }
 
-    return { el: root, initialFocus: function () { return input; } };
+    // lo que llega del móvil se escribe en el cuadro y se busca, con el foco en el cuadro (los resultados, arriba)
+    function fromPhone(q) {
+      q = trim(String(q).replace(/\s+/g, ' ')).slice(0, 200);
+      if (!q) return;
+      if (document.activeElement === input) input.blur(); // cierra el teclado de la tele si estaba abierto
+      clearTimeout(liveTimer);
+      input.value = q;
+      remember(q);
+      run(q);
+      if (Nav.root === root) Nav.focus(input);
+    }
+
+    // se escucha mientras Buscar se ve: no tapada por otra pantalla, ni cerrada, ni la app en segundo plano
+    var screen = { el: root, initialFocus: function () { return input; } }, stopListen = null;
+    function sync() {
+      var on = !screen.closed && root.style.display !== 'none' && !document.hidden;
+      if (on && !stopListen) stopListen = phoneListen(phoneTopic(), fromPhone);
+      if (!on && stopListen) { stopListen(); stopListen = null; }
+    }
+    screen.onShow = screen.onResume = screen.onHide = sync;
+    screen.onClose = function () { sync(); if (phoneSync === sync) phoneSync = null; };
+    phoneSync = sync;
+    return screen;
   }
