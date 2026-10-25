@@ -417,7 +417,13 @@
     'Estrenos en digital': 'New on digital', 'En cines': 'In theaters', 'En {0}': 'On {0}',
     // explorar (en Buscar)
     'Años {0}': '{0}s', 'Antes de {0}': 'Before {0}', 'Nota mínima': 'Minimum rating', 'Cualquiera': 'Any', 'Plataforma': 'Platform',
-    'Más recientes': 'Newest', 'Solo sin ver': 'Unwatched only', 'Todo': 'Everything'
+    'Más recientes': 'Newest', 'Solo sin ver': 'Unwatched only', 'Todo': 'Everything',
+    // calendario
+    'Calendario': 'Calendar', 'Calendario completo ›': 'Full calendar ›', 'Calendario de tus series ›': 'Your shows’ calendar ›',
+    'Tus series y las películas de tu lista de Trakt, de hace 3 días a 30 días vista': 'Your shows and the movies on your Trakt list, from 3 days ago to 30 days ahead',
+    'El calendario sale de Trakt: vincúlalo en Ajustes → Cuentas.': 'The calendar comes from Trakt: link it in Settings → Accounts.',
+    'Nada en tu calendario en estas semanas': 'Nothing on your calendar in these weeks',
+    'En DVD': 'On DVD', 'En digital': 'On digital', 'Serie nueva': 'New show', 'Estreno': 'Premiere'
   };
 
   function tr(s) {
@@ -948,6 +954,13 @@
     });
   }
 
+  // «2026-10-25» del día de hoy más «off» días, en la hora de la tele (para los calendarios de Trakt)
+  function localDay(off) {
+    var d = new Date(Date.now() + off * 86400000);
+    var pad = function (n) { return (n < 10 ? '0' : '') + n; };
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+  }
+
   function metahubPoster(imdb) { return 'https://images.metahub.space/poster/small/' + imdb + '/img'; }
 
   var Trakt = {
@@ -1071,11 +1084,16 @@
         return map;
       });
     },
+    // [temporada, episodio] de Cinemeta de un episodio que da Trakt (los mismos si no se conoce la equivalencia)
+    epCine: function (imdb, season, number) {
+      var c = Trakt.epMaps[imdb], tk = season + ':' + number;
+      if (c) for (var k in c.map) if (c.map[k] === tk) { var p = k.split(':'); return [+p[0], +p[1]]; }
+      return [+season, +number];
+    },
     // «T1:E3» de un episodio que da Trakt, con la numeración de Cinemeta si se conoce la equivalencia
     epCode: function (imdb, season, number) {
-      var c = Trakt.epMaps[imdb], tk = season + ':' + number;
-      if (c) for (var k in c.map) if (c.map[k] === tk) { var p = k.split(':'); season = p[0]; number = p[1]; break; }
-      return tr('T{0}:E{1}', season, number);
+      var c = Trakt.epCine(imdb, season, number);
+      return tr('T{0}:E{1}', c[0], c[1]);
     },
     // episodio de Trakt que según Cinemeta aún no se ha emitido (Trakt a veces da por emitida una temporada anunciada)
     epFuture: function (imdb, season, number) {
@@ -1293,16 +1311,78 @@
       return promise;
     },
 
-    // episodios de tus series de hace dos días a una semana vista
+    // episodios de tus series de hace dos días a una semana vista, con la numeración de Cinemeta (como «Siguientes episodios»,
+    // antes se aprenden las equivalencias que falten, como mucho 5 s)
     calendar: function () {
-      var d = new Date(Date.now() - 2 * 86400000);
-      var pad = function (n) { return (n < 10 ? '0' : '') + n; };
-      var start = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
-      return Trakt.call('GET', '/calendars/my/shows/' + start + '/10').then(function (items) {
-        return (items || []).filter(function (it) { return it.show && it.show.ids && it.show.ids.imdb && it.episode; }).map(function (it) {
+      return Trakt.call('GET', '/calendars/my/shows/' + localDay(-2) + '/10').then(function (items) {
+        items = (items || []).filter(function (it) { return it.show && it.show.ids && it.show.ids.imdb && it.episode; });
+        return withTimeout(Trakt.learnEpMaps(items.map(function (it) { return it.show.ids.imdb; })), 5000).catch(function () {}).then(function () {
+          return items.map(function (it) {
+            var imdb = it.show.ids.imdb;
+            return { id: imdb, type: 'series', name: it.show.title, poster: metahubPoster(imdb),
+              label: dayLabel(new Date(it.first_aired)) + ' · ' + it.show.title + ' ' + Trakt.epCode(imdb, it.episode.season, it.episode.number) };
+          });
+        });
+      });
+    },
+
+    // calendario completo (pantalla Calendario): episodios de tus series y películas de tu lista que se estrenan en cines,
+    // en DVD o en digital, de hace 3 días a 30 días vista (Trakt da como mucho 33 días por consulta). Los estrenos de
+    // temporada y las series nuevas ya vienen en el de series (son sus episodios 1): no hace falta pedirlos aparte.
+    // Cada entrada es una carátula con at (fecha), allDay (película: solo el día), kind ('ep', 'cinema', 'dvd', 'digital'),
+    // ep (numeración de Trakt), cine (la de Cinemeta) y seen (visto en Trakt o en la tele)
+    fullCalendar: function () {
+      var span = '/' + localDay(-3) + '/33';
+      // las de películas, si fallan, no impiden ver las series
+      var opt = function (path) { return Trakt.call('GET', path).catch(function () { return []; }); };
+      return Promise.all([
+        Trakt.call('GET', '/calendars/my/shows' + span),
+        opt('/calendars/my/movies' + span),
+        opt('/calendars/my/dvd' + span),
+        opt('/calendars/my/streaming' + span)
+      ]).then(function (r) {
+        var out = [], dup = {};
+        (r[0] || []).forEach(function (it) {
+          if (!it.show || !it.show.ids || !it.show.ids.imdb || !it.episode || !it.first_aired) return;
           var imdb = it.show.ids.imdb;
-          return { id: imdb, type: 'series', name: it.show.title, poster: metahubPoster(imdb),
-            label: dayLabel(new Date(it.first_aired)) + ' · ' + it.show.title + ' ' + Trakt.epCode(imdb, it.episode.season, it.episode.number) };
+          out.push({ id: imdb, type: 'series', name: it.show.title, poster: metahubPoster(imdb), at: new Date(it.first_aired), kind: 'ep',
+            traktId: it.show.ids.trakt, ep: { season: it.episode.season, number: it.episode.number } });
+        });
+        ['cinema', 'dvd', 'digital'].forEach(function (kind, i) {
+          (r[i + 1] || []).forEach(function (it) {
+            var o = it.movie, d = /^(\d{4})-(\d\d)-(\d\d)/.exec(it.released || '');
+            if (!o || !o.ids || !o.ids.imdb || !d) return;
+            // la fecha de estreno es un día, sin hora: ese día en la tele
+            var at = new Date(+d[1], +d[2] - 1, +d[3]), k = o.ids.imdb + '|' + at.getTime();
+            if (dup[k]) return;
+            dup[k] = true;
+            out.push({ id: o.ids.imdb, type: 'movie', name: o.title, poster: metahubPoster(o.ids.imdb), at: at, allDay: true, kind: kind });
+          });
+        });
+        var eps = out.filter(function (m) { return m.kind === 'ep'; });
+        // la numeración de Cinemeta (como en «Siguientes episodios», como mucho 5 s) y lo visto: series en Trakt (con su
+        // numeración) o en la tele (con la de Cinemeta), películas en Trakt o en la tele
+        return Promise.all([
+          withTimeout(Trakt.learnEpMaps(eps.map(function (m) { return m.id; })), 5000).catch(function () {}),
+          seenReady(true),
+          eps.length ? Trakt.watchedShows().catch(function () { return []; }) : []
+        ]).then(function (x) {
+          var watched = {};
+          (x[2] || []).forEach(function (it) {
+            var ids = it.show && it.show.ids;
+            if (!ids) return;
+            var set = {};
+            (it.seasons || []).forEach(function (se) { (se.episodes || []).forEach(function (e) { set[se.number + ':' + e.number] = true; }); });
+            if (ids.trakt) watched['t' + ids.trakt] = set;
+            if (ids.imdb) watched[ids.imdb] = set;
+          });
+          out.forEach(function (m) {
+            if (m.kind !== 'ep') { m.seen = isSeenMeta(m); return; }
+            m.cine = Trakt.epCine(m.id, m.ep.season, m.ep.number);
+            var set = watched['t' + m.traktId] || watched[m.id] || {}, local = progress[m.id + ':' + m.cine[0] + ':' + m.cine[1]];
+            m.seen = !!(set[m.ep.season + ':' + m.ep.number] || (local && local.done));
+          });
+          return out.sort(function (a, b) { return a.at - b.at; });
         });
       });
     },
@@ -2023,7 +2103,15 @@
     tmdbFind(c._imdb).then(function (r) { if (r.n) c.lastChild.textContent = r.n; }).catch(function () { c._named = false; });
   }
 
-  function posterRow(title, metas, onPick, extras) {
+  // casilla final de una fila que lleva a otra pantalla (more: { label, onPick }), del tamaño de una carátula
+  function moreTile(more) {
+    var c = el('div', 'card more');
+    c.appendChild(el('div', 'poster', '<div class="more-label">' + esc(more.label) + '</div>'));
+    c.appendChild(el('div', 'name'));
+    return focusable(c, more.onPick);
+  }
+
+  function posterRow(title, metas, onPick, extras, more) {
     var row = el('div', 'row');
     row.appendChild(el('div', 'row-title', esc(title)));
     var sc = el('div', 'hscroll');
@@ -2035,14 +2123,16 @@
       cards.push(c);
       sc.appendChild(c);
     });
+    if (more) sc.appendChild(moreTile(more));
     loadImages(cards, 8);
     row.appendChild(sc);
     return row;
   }
 
   // fila que se rellena cuando llega la promesa (metas con .pct/.label/.isNew/.left opcionales). Si en vez de la promesa se da
-  // una función que la crea, la fila que falla por la red se vuelve a pedir sola cuando vuelve la conexión
-  function promiseRow(container, title, promise, onPick, hideIfEmpty, max) {
+  // una función que la crea, la fila que falla por la red se vuelve a pedir sola cuando vuelve la conexión.
+  // more: casilla final que lleva a otra pantalla (ver moreTile), solo si la fila tiene algo
+  function promiseRow(container, title, promise, onPick, hideIfEmpty, max, more) {
     var row = el('div', 'row');
     row.appendChild(el('div', 'row-title', esc(title)));
     row.appendChild(skeleton());
@@ -2056,7 +2146,7 @@
         if (!metas.length && hideIfEmpty) { container.removeChild(row); return; }
         var hadFocus = Nav.cur && row.contains(Nav.cur);
         var fresh = metas.length
-          ? posterRow(title, metas, onPick, metas.map(function (m) { return m.pct || m.label || m.isNew || m.left ? { pct: m.pct, label: m.label, isNew: m.isNew, left: m.left } : null; }))
+          ? posterRow(title, metas, onPick, metas.map(function (m) { return m.pct || m.label || m.isNew || m.left ? { pct: m.pct, label: m.label, isNew: m.isNew, left: m.left } : null; }), more)
           : el('div', 'row', '<div class="row-title">' + esc(title) + '</div><div class="empty">' + tr('Sin resultados') + '</div>');
         container.replaceChild(fresh, row);
         if (hadFocus) Nav.setRoot(Nav.root);
@@ -2494,7 +2584,8 @@
           return r[0].filter(function (m) { return !local[m.id] && !above[m.id]; });
         });
       }, openMeta, true, 100);
-      if (slot('week')) promiseRow(slot('week'), tr('Esta semana en tus series'), function () { return Trakt.calendar(); }, openMeta, true);
+      if (slot('week')) promiseRow(slot('week'), tr('Esta semana en tus series'), function () { return Trakt.calendar(); }, openMeta, true, 40,
+        { label: tr('Calendario completo ›'), onPick: function () { push(calendarScreen()); } });
       var wl = shared(function () { return Trakt.loadWatchlist(); });
       var wlOf = function (type) { return function () { return wl().then(function (m) { return m.filter(function (x) { return x.type === type; }); }); }; };
       if (slot('wlMovies')) promiseRow(slot('wlMovies'), tr('Mi lista: películas'), wlOf('movie'), openMeta, true, 100);
@@ -2644,6 +2735,13 @@
       sig = rowsKey(rows) + settings.tmdbKey;
       vs.innerHTML = '';
       scrollTop0(vs);
+      // en Series, el calendario de tus series (también si en Inicio no sale «Esta semana en tus series»)
+      if (page === 'series') {
+        var cal = el('div', 'cal-entry'), b = el('div', 'btn small', esc(tr('Calendario de tus series ›')));
+        focusable(b, function () { push(calendarScreen()); });
+        cal.appendChild(b);
+        vs.appendChild(cal);
+      }
       rows.forEach(function (r) { if (!r.hidden) promiseRow(vs, r.title, pageRowLoader(page, r), openMeta, true); });
     }
     layout();
@@ -2654,6 +2752,86 @@
       screen.lastFocus = null;
       if (root._hero) root._hero.cur = null;
     };
+    return screen;
+  }
+
+  // ---------------------------------------------------------------- pantalla: calendario
+
+  // «Hoy · domingo, 25 de octubre», «Mañana · …», «Ayer · …» o, más allá, «Jueves, 29 de octubre»
+  function calDayTitle(d) {
+    var rel = dayLabel(d), long;
+    try { long = d.toLocaleDateString(settings.lang === 'en' ? 'en-GB' : 'es-ES', { weekday: 'long', day: 'numeric', month: 'long' }); } catch (e) { long = fmtDate(d); }
+    long = long.charAt(0).toUpperCase() + long.slice(1);
+    return rel === tr('Hoy') || rel === tr('Mañana') || rel === tr('Ayer') ? rel + ' · ' + long : long;
+  }
+
+  // lo que dice la tarjeta: «Serie · T2:E3 · 21:00» (numeración de Cinemeta y hora de la tele) o «Película · En cines»
+  var CAL_KINDS = { cinema: 'En cines', dvd: 'En DVD', digital: 'En digital' };
+  function calLabel(m) {
+    if (m.kind !== 'ep') return m.name + ' · ' + tr(CAL_KINDS[m.kind]);
+    return m.name + ' · ' + tr('T{0}:E{1}', m.cine[0], m.cine[1]) + ' · ' + clockText(m.at);
+  }
+
+  // tus series y películas de Trakt día a día, de hace 3 días a 30 días vista: una fila por día (los pasados, atenuados y
+  // con ✓ en lo visto) y el foco en hoy o el primer día que viene. Las carátulas se piden según se llega a cada fila
+  function calendarScreen() {
+    var root = el('div', 'screen cal');
+    var vs = el('div', 'vscroll');
+    root.appendChild(vs);
+    vs.appendChild(el('div', 'cal-title', esc(tr('Calendario'))));
+    vs.appendChild(el('div', 'cal-sub', esc(tr('Tus series y las películas de tu lista de Trakt, de hace 3 días a 30 días vista'))));
+    var screen = { el: root };
+    var status = el('div', 'empty', esc(tr('Cargando…')));
+    vs.appendChild(status);
+    if (!Trakt.linked()) {
+      status.textContent = tr('El calendario sale de Trakt: vincúlalo en Ajustes → Cuentas.');
+      var b = el('div', 'btn primary', esc(tr('Vincular con Trakt')));
+      b.style.marginLeft = '80px';
+      focusable(b, function () { openSettings('accounts'); });
+      vs.appendChild(b);
+      return screen;
+    }
+    Trakt.fullCalendar().then(alive(screen, function (list) {
+      var today = new Date(); today.setHours(0, 0, 0, 0);
+      var from = today.getTime() - 3 * 86400000, to = today.getTime() + 31 * 86400000;
+      var days = [], byDay = {};
+      list.forEach(function (m) {
+        var d = new Date(m.at.getTime()); d.setHours(0, 0, 0, 0);
+        var t = d.getTime();
+        if (t < from || t >= to) return;
+        if (!byDay[t]) days.push(byDay[t] = { t: t, d: d, items: [] });
+        byDay[t].items.push(m);
+      });
+      vs.removeChild(status);
+      if (!days.length) { vs.appendChild(el('div', 'empty', esc(tr('Nada en tu calendario en estas semanas')))); return; }
+      var rows = [], focusRow = -1;
+      days.forEach(function (day, r) {
+        var past = day.t < today.getTime();
+        if (!past && focusRow < 0) focusRow = r;
+        var row = el('div', 'row cal-day' + (past ? ' past' : ''));
+        row.appendChild(el('div', 'row-title', esc(calDayTitle(day.d))));
+        var sc = el('div', 'hscroll');
+        sc.style.position = 'relative';
+        var cards = [];
+        day.items.forEach(function (m, i) {
+          var c = card(m, function () { openMeta(m); }, { label: calLabel(m) });
+          var p = c.firstChild;
+          if (m.seen) p.appendChild(el('div', 'mark', '✓'));
+          // estreno de temporada o serie nueva (sus episodios 1, con la numeración de Cinemeta)
+          if (m.kind === 'ep' && m.cine[1] === 1) p.appendChild(el('div', 'new', esc(m.cine[0] === 1 ? tr('Serie nueva') : tr('Estreno'))));
+          // al llegar a una fila, sus carátulas y las primeras de la siguiente
+          c._onfocus = function () { loadImages(cards, i + 9); if (rows[r + 1]) loadImages(rows[r + 1], 8); };
+          cards.push(c);
+          sc.appendChild(c);
+        });
+        rows.push(cards);
+        row.appendChild(sc);
+        vs.appendChild(row);
+      });
+      if (focusRow < 0) focusRow = rows.length - 1;
+      for (var r = Math.max(0, focusRow - 1); r <= focusRow + 1 && r < rows.length; r++) loadImages(rows[r], 8);
+      if (Nav.root === root) Nav.setRoot(root, rows[focusRow][0]);
+    }), alive(screen, function (e) { status.textContent = tr('No se pudo cargar ({0})', e.message); }));
     return screen;
   }
 

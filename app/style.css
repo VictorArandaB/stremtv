@@ -333,3 +333,22 @@ html, body { width: 1920px; height: 1080px; overflow: hidden; background: #0d0f1
 #saver .sv-meta .star { color: #ffd84a; font-weight: bold; }
 #saver .sv-desc { font-size: 26px; line-height: 38px; color: #ccd; max-height: 114px; overflow: hidden; text-shadow: 0 1px 6px rgba(0,0,0,0.8); }
 #saver.sv-idle .sv-help { display: block; font-size: 22px; color: #99a; margin-top: 18px; }
+
+/* Calendario: una fila por día con carátulas algo más pequeñas (caben más días), los días pasados atenuados */
+.cal-title { padding: 50px 80px 0 80px; font-size: 44px; font-weight: bold; }
+.cal-sub { padding: 8px 80px 16px 80px; font-size: 24px; color: #99a; }
+.cal .row { margin: 0 0 16px 0; }
+.cal .row-title { font-size: 28px; padding-bottom: 4px; }
+.cal .card { width: 180px; margin-right: 24px; }
+.cal .card .poster { width: 180px; height: 270px; }
+.cal .card .noimg { top: 90px; font-size: 22px; }
+.cal .card .name { font-size: 20px; line-height: 25px; height: 50px; }
+.cal-day.past .row-title { color: #889; }
+.cal-day.past .card .poster { opacity: 0.45; }
+.cal-day.past .card.focused .poster { opacity: 1; }
+/* casilla final de una fila que lleva a otra pantalla («Calendario completo ›») */
+.card.more .poster { background: #1c2030; }
+.card.more .more-label { position: absolute; left: 14px; right: 14px; top: 50%; -webkit-transform: translateY(-50%); transform: translateY(-50%);
+  text-align: center; font-size: 28px; font-weight: bold; color: #c8cad6; }
+.card.more.focused .more-label { color: #fff; }
+.cal-entry { margin: 10px 0 20px 80px; }
