@@ -238,7 +238,8 @@
   // y las demás en Inicio.
   // settings.homeRows / animeRows / moviesRows / seriesRows: { order: [claves], hidden: { clave: true | false } }; sin dato, oculta si «off»
   // (u «offIfTrakt» con Trakt vinculado).
-  // trakt: solo con Trakt vinculado; local: solo sin él; tmdb: solo con clave de TMDB
+  // trakt: solo con Trakt vinculado; local: solo sin él; tmdb: solo con clave de TMDB; traktKey: con el Client ID de Trakt
+  // (aunque la cuenta no esté vinculada); max: cuántas carátulas como mucho (40 si no se dice)
   var PAGE_ROWS = {
     home: [
       { k: 'cont', name: 'Continuar viendo' },
@@ -259,7 +260,11 @@
       { k: 'airing', name: 'En emisión', tmdb: true },
       { k: 'pop', name: 'Populares', url: CINEMETA + '/catalog/series/top.json' },
       { k: 'new', name: 'Estrenos', tmdb: true },
-      { k: 'top', name: 'Mejor valoradas', url: CINEMETA + '/catalog/series/imdbRating.json' }
+      { k: 'top', name: 'Mejor valoradas', url: CINEMETA + '/catalog/series/imdbRating.json' },
+      // listas famosas y premios (más abajo, «listas famosas y premios»)
+      { k: 'imdbTop', name: 'IMDb Top 250 series', top: 'imdb-top-rated-tv-shows', traktKey: true, max: 250 },
+      { k: 'emmy', name: 'Emmy', award: 'emmy' },
+      { k: 'globes', name: 'Globos de Oro', award: 'globesTv', off: true }
     ],
     // el anime va en su pestaña: Películas y Series no lo muestran
     anime: [
@@ -276,7 +281,13 @@
       { k: 'new', name: 'Estrenos en digital', tmdb: true },
       { k: 'cinema', name: 'En cines', tmdb: true },
       { k: 'pop', name: 'Populares', url: CINEMETA + '/catalog/movie/top.json' },
-      { k: 'top', name: 'Mejor valoradas', url: CINEMETA + '/catalog/movie/imdbRating.json' }
+      { k: 'top', name: 'Mejor valoradas', url: CINEMETA + '/catalog/movie/imdbRating.json' },
+      { k: 'imdbTop', name: 'IMDb Top 250', top: 'imdb-top-rated-movies', traktKey: true, max: 250 },
+      { k: 'oscar', name: 'Óscar', award: 'oscar' },
+      { k: 'goya', name: 'Goya', award: 'goya' },
+      { k: 'globes', name: 'Globos de Oro', award: 'globes', off: true },
+      { k: 'palme', name: 'Palma de Oro (Cannes)', wins: 'Q179808', off: true },
+      { k: 'oscarWins', name: 'Ganadoras del Óscar', wins: 'Q102427', season: 'oscar', off: true }
     ]
   };
   // una fila por plataforma en Series y Películas
@@ -293,7 +304,7 @@
   // las filas que tocan ahora en una pestaña (de cada addon, como mucho 4) en el orden elegido; las nuevas, al final
   function pageRows(page) {
     var linked = Trakt.linked(), tmdb = !!settings.tmdbKey, perAddon = {};
-    var all = PAGE_ROWS[page].filter(function (r) { return !(r.trakt && !linked) && !(r.local && linked) && !(r.tmdb && !tmdb); })
+    var all = PAGE_ROWS[page].filter(function (r) { return !(r.trakt && !linked) && !(r.local && linked) && !(r.tmdb && !tmdb) && !(r.traktKey && !trakt.clientId); })
       .map(function (r) { return extend({ title: tr(r.name, r.arg) }, r); });
     addonCatalogs(false).forEach(function (c) {
       var t = c.catalog.type, to = t === 'movie' ? 'movies' : t === 'series' ? 'series' : t === 'anime' ? 'anime' : 'home';
@@ -478,6 +489,204 @@
     push(detailScreen('movie', p.metaId));
   }
 
+  // ---------------------------------------------------------------- listas famosas y premios (Películas y Series)
+
+  // Se ponen al día solas cada año, sin tocar el código:
+  // - Premios de la última edición (Óscar, Globos de Oro, Goya, Emmy): la página de la edición en la Wikipedia en inglés
+  //   («98th Academy Awards»). Todas usan la misma plantilla: en la casilla de cada categoría (con el enlace al artículo de la
+  //   categoría) va la ganadora en negrita y debajo las demás nominadas («** …»); antes de la gala, todas las nominadas al mismo
+  //   nivel y sin negrita. El número de edición sale del año (98.ª de los Óscar = 2026) y se piden a la vez la del año que viene,
+  //   la de este y la del anterior: vale la más reciente que ya tenga nominadas (las del año que viene existen antes de tiempo,
+  //   pero vacías). Si un premio se saltara un año, habría que corregir su «first».
+  //   Los ids de IMDb (y el título en español) salen de Wikidata. Wikidata sola no vale para las nominadas: le faltan muchas
+  //   de los últimos años (en 2026 tenía 3 de las 10 nominadas a mejor película; «Cónclave» no tiene ninguna nominación),
+  //   pero las ganadoras sí las tiene bien.
+  // - Historial de ganadoras (Palma de Oro, Óscar a mejor película): Wikidata («premio recibido» con su fecha).
+  // - IMDb Top 250 (películas y series): la lista pública de Trakt que la copia y la mantiene al día (usuario «justin»), pedida
+  //   con el Client ID de Trakt de Ajustes, sin necesidad de vincular la cuenta. IMDb no tiene API abierta, Wikidata no guarda
+  //   la lista y «Mejor valoradas» de Cinemeta no es lo mismo. Si Trakt quitara la lista, la fila desaparece sin más.
+  // Lo descargado se guarda («lists»): los premios se miran cada día en su temporada (diciembre-marzo; julio-septiembre los Emmy)
+  // y cada semana el resto del año; las Top 250, cada semana. Si falla la descarga, vale lo guardado
+  var WIKI = 'https://en.wikipedia.org/w/api.php?format=json&formatversion=2&origin=*';
+  var SPARQL = 'https://query.wikidata.org/sparql?format=json&query=';
+  // page: nombre de la página sin el número; first: año de la primera edición; cats: artículos de las categorías (los que enlaza
+  // la casilla); season: meses (0-11) de nominaciones y gala
+  var AWARDS = {
+    oscar: { page: 'Academy Awards', first: 1929, cats: ['Academy Award for Best Picture'], season: [11, 0, 1, 2] },
+    globes: { page: 'Golden Globe Awards', first: 1944, season: [11, 0, 1, 2],
+      cats: ['Golden Globe Award for Best Motion Picture – Drama', 'Golden Globe Award for Best Motion Picture – Musical or Comedy'] },
+    globesTv: { page: 'Golden Globe Awards', first: 1944, season: [11, 0, 1, 2],
+      cats: ['Golden Globe Award for Best Television Series – Drama', 'Golden Globe Award for Best Television Series – Musical or Comedy'] },
+    goya: { page: 'Goya Awards', first: 1987, cats: ['Goya Award for Best Film'], season: [11, 0, 1, 2] },
+    emmy: { page: 'Primetime Emmy Awards', first: 1949, season: [6, 7, 8],
+      cats: ['Primetime Emmy Award for Outstanding Drama Series', 'Primetime Emmy Award for Outstanding Comedy Series'] }
+  };
+  var lists = load('lists', {}), listPending = {};
+
+  // lo guardado si aún vale; si no, lo pide (una sola vez aunque lo pidan dos filas). Si la descarga falla o viene vacía
+  // (la Wikipedia cambió de formato, Trakt quitó la lista), vale lo guardado y se vuelve a probar al día siguiente
+  function cachedList(key, maxAge, fetch) {
+    var c = lists[key];
+    if (c && Date.now() - c.ts < maxAge) return Promise.resolve(c);
+    if (!listPending[key]) {
+      var keep = function () { c.ts = Date.now() - Math.max(0, maxAge - 86400000); save('lists', lists); return c; };
+      listPending[key] = fetch().then(function (d) {
+        delete listPending[key];
+        if (!d.items.length && c && c.items.length) return keep();
+        d.ts = Date.now();
+        lists[key] = d;
+        save('lists', lists);
+        return d;
+      }, function (e) {
+        delete listPending[key];
+        if (!c) throw e;
+        return keep();
+      });
+    }
+    return listPending[key];
+  }
+  // un día en la temporada del premio y una semana el resto del año
+  function awardAge(season) { return season && season.indexOf(new Date().getMonth()) >= 0 ? 86400000 : 7 * 86400000; }
+
+  function ordinal(n) {
+    var t = n % 100, u = n % 10;
+    return n + (t > 10 && t < 14 ? 'th' : u === 1 ? 'st' : u === 2 ? 'nd' : u === 3 ? 'rd' : 'th');
+  }
+
+  // nominadas de una categoría en el wikitexto de la página de la edición: [{ t: artículo, n: título, win }] (la ganadora en
+  // negrita). La categoría puede salir enlazada antes en el texto: vale la primera vez que lleva una lista debajo
+  function awardEntries(wt, cat) {
+    var pos = 0;
+    for (;;) {
+      var a = wt.indexOf('[[' + cat + '|', pos), b = wt.indexOf('[[' + cat + ']]', pos);
+      var i = a < 0 ? b : b < 0 ? a : Math.min(a, b);
+      if (i < 0) return [];
+      pos = i + 2;
+      // la lista acaba en la casilla siguiente («|…», «|-», «|}») o en un apartado nuevo
+      var lines = wt.slice(i, i + 8000).split('\n'), out = [];
+      for (var j = 1; j < lines.length && !/^[|!=]/.test(lines[j]); j++) {
+        var m = /^\*+\s*(.*)/.exec(lines[j]), lk = m && /\[\[([^\]|#]+)(?:\|([^\]]+))?\]\]/.exec(m[1]);
+        if (!lk) continue;
+        out.push({ t: lk[1], n: (lk[2] || lk[1].replace(/\s*\([^)]*\)$/, '')).replace(/'{2,}/g, ''), win: m[1].slice(0, lk.index).indexOf("'''") >= 0 });
+      }
+      if (out.length) return out;
+    }
+  }
+
+  // la última edición con nominadas: { year (el de la gala), items } con las ganadoras delante
+  function awardEdition(a) {
+    var y = new Date().getFullYear(), years = [y + 1, y, y - 1];
+    var titles = years.map(function (yy) { return ordinal(yy - a.first + 1) + ' ' + a.page; });
+    return getJSON(WIKI + '&action=query&prop=revisions&rvprop=content&rvslots=main&redirects=1&titles=' + encodeURIComponent(titles.join('|'))).then(function (d) {
+      var q = d.query || {}, to = {}, text = {};
+      (q.normalized || []).concat(q.redirects || []).forEach(function (r) { to[r.from] = r.to; });
+      (q.pages || []).forEach(function (pg) {
+        var rv = pg.revisions && pg.revisions[0];
+        if (rv) text[pg.title] = rv.slots ? rv.slots.main.content : rv.content;
+      });
+      for (var i = 0; i < years.length; i++) {
+        var t = titles[i];
+        for (var n = 0; n < 3 && to[t]; n++) t = to[t];
+        var wt = text[t] || '', all = [], seenT = {};
+        a.cats.forEach(function (c) { all = all.concat(awardEntries(wt, c)); });
+        all = all.filter(function (e) { if (seenT[e.t]) return false; seenT[e.t] = true; return true; });
+        if (all.length >= 2) {
+          return { year: years[i], items: all.filter(function (e) { return e.win; }).concat(all.filter(function (e) { return !e.win; })) };
+        }
+      }
+      return { year: 0, items: [] };
+    });
+  }
+
+  // id de IMDb, título en español y año de los artículos de la Wikipedia (su elemento de Wikidata); sin id de IMDb, fuera
+  function wikiImdb(items) {
+    items = items.slice(0, 50);
+    if (!items.length) return Promise.resolve([]);
+    return getJSON(WIKI + '&action=query&prop=pageprops&ppprop=wikibase_item&redirects=1&titles=' +
+      encodeURIComponent(items.map(function (e) { return e.t; }).join('|'))).then(function (d) {
+      var q = d.query || {}, to = {}, qid = {};
+      (q.normalized || []).concat(q.redirects || []).forEach(function (r) { to[r.from] = r.to; });
+      (q.pages || []).forEach(function (pg) { if (pg.pageprops && pg.pageprops.wikibase_item) qid[pg.title] = pg.pageprops.wikibase_item; });
+      items.forEach(function (e) {
+        var t = e.t;
+        for (var n = 0; n < 3 && to[t]; n++) t = to[t];
+        e.q = qid[t];
+      });
+      var ids = items.filter(function (e) { return e.q; }).map(function (e) { return 'wd:' + e.q; });
+      if (!ids.length) return [];
+      return getJSON(SPARQL + encodeURIComponent('SELECT ?item (SAMPLE(?i) AS ?imdb) (SAMPLE(?l) AS ?es) (MIN(YEAR(?d)) AS ?y) WHERE { VALUES ?item { ' +
+        ids.join(' ') + ' } ?item wdt:P345 ?i . OPTIONAL { ?item rdfs:label ?l FILTER(LANG(?l) = "es") } OPTIONAL { ?item wdt:P577 ?d } } GROUP BY ?item')).then(function (r) {
+        var byQ = {};
+        ((r.results || {}).bindings || []).forEach(function (b) {
+          byQ[b.item.value.replace(/^.*\//, '')] = { id: b.imdb.value, es: b.es ? b.es.value : '', y: b.y ? +b.y.value : 0 };
+        });
+        return items.filter(function (e) { return byQ[e.q] && /^tt\d+$/.test(byQ[e.q].id); }).map(function (e) {
+          var w = byQ[e.q];
+          return { id: w.id, n: e.n, es: w.es, y: w.y, win: e.win };
+        });
+      });
+    });
+  }
+
+  // las etiquetas de Wikidata a veces llevan la aclaración de la Wikipedia: «Aún estoy aquí (película de 2024)»
+  function cleanLabel(s) { return String(s || '').replace(/\s*\((película|serie|serie de televisión|telefilme)[^)]*\)$/, ''); }
+  // carátulas de una lista guardada; «badge»: Ganadora o el año del premio
+  function listMetas(items, type) {
+    var en = settings.lang === 'en';
+    return items.map(function (it) {
+      return { id: it.id, type: type, name: (!en && cleanLabel(it.es)) || it.n, poster: metahubPoster(it.id), releaseInfo: it.y ? String(it.y) : '',
+        badge: it.win ? tr('Ganadora') : it.yr ? String(it.yr) : '' };
+    });
+  }
+
+  // fila de la última edición de un premio: «Óscar 2026» (la ganadora delante, marcada) o, antes de la gala, «Óscar 2027: nominadas»
+  function awardRow(r) {
+    var a = AWARDS[r.award];
+    return cachedList('award:' + r.award, awardAge(a.season), function () {
+      return awardEdition(a).then(function (ed) {
+        return wikiImdb(ed.items).then(function (items) { return { year: ed.year, items: items }; });
+      });
+    }).then(function (d) {
+      var metas = listMetas(d.items, r.award === 'emmy' || r.award === 'globesTv' ? 'series' : 'movie');
+      var won = d.items.some(function (it) { return it.win; });
+      metas.title = d.year ? tr(won ? '{0} {1}' : '{0} {1}: nominadas', tr(r.name), d.year) : tr(r.name);
+      return metas;
+    });
+  }
+
+  // ganadoras de un premio, de la más reciente a la más antigua, con el año en la carátula
+  function winsRow(r) {
+    return cachedList('wins:' + r.wins, awardAge(r.season && AWARDS[r.season].season), function () {
+      return getJSON(SPARQL + encodeURIComponent('SELECT ?item ?imdb ?y ?es ?en WHERE { ?item p:P166 ?st . ?st ps:P166 wd:' + r.wins +
+        ' ; pq:P585 ?d . BIND(YEAR(?d) AS ?y) ?item wdt:P345 ?imdb . FILTER(STRSTARTS(?imdb, "tt")) OPTIONAL { ?item rdfs:label ?es FILTER(LANG(?es) = "es") }' +
+        ' OPTIONAL { ?item rdfs:label ?en FILTER(LANG(?en) = "en") } } ORDER BY DESC(?y) LIMIT 80')).then(function (res) {
+        var seenId = {}, items = [];
+        ((res.results || {}).bindings || []).forEach(function (b) {
+          var id = b.imdb.value;
+          if (seenId[id] || !/^tt\d+$/.test(id)) return;
+          seenId[id] = true;
+          items.push({ id: id, n: b.en ? b.en.value : id, es: b.es ? b.es.value : '', yr: +b.y.value });
+        });
+        return { items: items.slice(0, 40) };
+      });
+    }).then(function (d) { return listMetas(d.items, 'movie'); });
+  }
+
+  // IMDb Top 250 de la lista de Trakt (en su orden)
+  function topList(slug, k) {
+    var kind = k === 'movie' ? 'movies' : 'shows';
+    return cachedList('top:' + slug, 7 * 86400000, function () {
+      return traktReq('GET', '/users/justin/lists/' + slug + '/items/' + kind, null, false).then(function (list) {
+        var items = (list || []).filter(function (o) { var x = o.movie || o.show; return x && x.ids && x.ids.imdb; })
+          .sort(function (a, b) { return (a.rank || 0) - (b.rank || 0); }).map(function (o) {
+            var x = o.movie || o.show;
+            return { id: x.ids.imdb, n: x.title, y: x.year || 0 };
+          });
+        return { items: items };
+      });
+    }).then(function (d) { return listMetas(d.items, k === 'movie' ? 'movie' : 'series'); });
+  }
+
   // ---------------------------------------------------------------- pantallas: anime, películas y series
 
   // lo que carga cada fila (función: si falla por la red, la fila se vuelve a pedir sola al volver)
@@ -498,6 +707,10 @@
       return function () { return seen(getJSON(c.addon.url + '/catalog/' + c.catalog.type + '/' + c.catalog.id + '.json').then(function (d) { return d.metas; })); };
     }
     if (r.url) return function () { return seen(getJSON(r.url).then(function (d) { return d.metas; })); };
+    // listas famosas y premios: la Top 250 sin lo visto (si se oculta lo visto); los premios, enteros (✓ en lo visto)
+    if (r.top) return function () { return seen(topList(r.top, k)); };
+    if (r.award) return function () { return awardRow(r); };
+    if (r.wins) return function () { return winsRow(r); };
     if (r.platform) {
       return function () {
         return seen(platformId(k, r.platform).then(function (id) {
@@ -808,7 +1021,7 @@
       focusable(sb, function () { surprise(page, screen); });
       bar.appendChild(sb);
       vs.appendChild(bar);
-      rows.forEach(function (r) { if (!r.hidden) promiseRow(vs, r.title, pageRowLoader(page, r), openMeta, true); });
+      rows.forEach(function (r) { if (!r.hidden) promiseRow(vs, r.title, pageRowLoader(page, r), openMeta, true, r.max); });
     }
     layout();
     screen.onShow = function () { primeHero(vs); };

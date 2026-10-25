@@ -265,7 +265,11 @@
     'Sorpréndeme': 'Surprise me', 'Buscando algo para ti…': 'Finding something for you…',
     'No he encontrado nada sin ver que recomendarte aquí. Prueba más tarde o en otra pestaña': 'I couldn’t find anything unwatched to recommend here. Try again later or in another tab',
     // buscar desde el móvil
-    'Escanea con el móvil para escribir desde él': 'Scan with your phone to type from it'
+    'Escanea con el móvil para escribir desde él': 'Scan with your phone to type from it',
+    // listas y premios
+    'IMDb Top 250 series': 'IMDb Top 250 shows', 'Óscar': 'Oscars', 'Goya': 'Goya Awards', 'Globos de Oro': 'Golden Globes', 'Emmy': 'Emmys',
+    'Palma de Oro (Cannes)': 'Palme d’Or (Cannes)', 'Ganadoras del Óscar': 'Best Picture Oscar winners', 'Ganadora': 'Winner',
+    '{0} {1}: nominadas': '{0} {1}: nominees'
   };
 
   function tr(s) {
