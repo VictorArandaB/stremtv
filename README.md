@@ -49,6 +49,7 @@ Escrito en ES5 y CSS sin funciones modernas para que funcione en el motor web de
 - **Notas de Rotten Tomatoes y Metacritic** junto a la de IMDb con una clave gratuita de OMDb (Ajustes → Cuentas) y **dónde verla en España** con suscripción (TMDB/JustWatch).
 - **Filas a tu gusto** (Ajustes → General → Filas de Inicio / Anime / Películas / Series): subir, bajar u ocultar cada fila, también las de los addons.
 - **Series que Trakt numera distinto** (Mashle, The Apothecary Diaries: en Trakt una sola temporada larga): los episodios se emparejan por fecha de emisión, así que salen como vistos, las filas dicen el episodio correcto y lo que ves se registra en Trakt con su número.
+- **Tu año en StremTV** (Ajustes, y en Inicio en diciembre y enero): horas, películas, episodios y series terminadas del año, tus series más vistas y tus películas mejor puntuadas, géneros, el mes y el día de la semana con más tele, la racha más larga y el día de maratón. Con Trakt, de todo su historial del año (se guarda: el año en curso se rehace a diario); sin Trakt, de lo visto en esta tele. Años anteriores con ◀ ▶.
 - **Trakt**: vinculación con código, scrobble automático (visto al pasar del 80 %), «Continuar», tu lista, recomendaciones y episodios vistos. El anime se registra usando su equivalencia en IMDb.
 
 ## Instalar en TizenBrew

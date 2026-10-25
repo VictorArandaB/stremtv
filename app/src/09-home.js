@@ -238,10 +238,11 @@
   // y las demás en Inicio.
   // settings.homeRows / animeRows / moviesRows / seriesRows: { order: [claves], hidden: { clave: true | false } }; sin dato, oculta si «off»
   // (u «offIfTrakt» con Trakt vinculado).
-  // trakt: solo con Trakt vinculado; local: solo sin él; tmdb: solo con clave de TMDB
+  // trakt: solo con Trakt vinculado; local: solo sin él; tmdb: solo con clave de TMDB; season: sin dato, visible solo en diciembre y enero
   var PAGE_ROWS = {
     home: [
       { k: 'cont', name: 'Continuar viendo' },
+      { k: 'wrapped', name: 'Tu año en StremTV', season: true }, // recuadro que abre el resumen del año
       { k: 'mylist', name: 'Mi lista', local: true }, // sin Trakt (con Trakt, su lista va en dos filas)
       { k: 'traktCont', name: 'Continuar (Trakt)', trakt: true },
       { k: 'upnext', name: 'Siguientes episodios', trakt: true },
@@ -304,7 +305,7 @@
     var pref = settings[ROWS_SETTING[page]] || {}, order = pref.order || [], hidden = pref.hidden || {};
     return all.map(function (r, i) {
       var p = order.indexOf(r.k);
-      r.hidden = hidden[r.k] === undefined ? !!(r.off || (r.offIfTrakt && linked)) : !!hidden[r.k];
+      r.hidden = hidden[r.k] === undefined ? !!(r.off || (r.offIfTrakt && linked) || (r.season && !wrappedSeason())) : !!hidden[r.k];
       return { r: r, p: p < 0 ? 1000 + i : p };
     }).sort(function (a, b) { return a.p - b.p; }).map(function (x) { return x.r; });
   }
@@ -443,6 +444,7 @@
         vs.appendChild(slots[r.k]);
       });
       renderWarnings();
+      if (slot('wrapped')) yearTile(slot('wrapped'));
       renderLocal();
       traktLoaded = histLoaded = 0;
       renderTrakt();
@@ -467,6 +469,7 @@
         return;
       }
       renderWarnings(); renderLocal(); renderTrakt(); renderHistory();
+      if (slots.wrapped && slots.wrapped._paint) slots.wrapped._paint(); // lo recién calculado en su pantalla
       // si se acaba de poner la clave de TMDB, traducir las tarjetas que ya se ven
       Array.prototype.forEach.call(root.querySelectorAll('.card'), function (c) { if (c._loaded || !c._img) nameCard(c); });
     };

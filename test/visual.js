@@ -98,7 +98,7 @@ const check = (ok, what) => { console.log((ok ? 'OK  ' : 'MAL ') + what); if (!o
 
   // ajustes con iconos
   await ev(() => StremTV.openSettings('')); await sleep(800);
-  check(await ev(() => document.querySelectorAll('.opt .ico svg').length === 7), 'iconos en Ajustes');
+  check(await ev(() => document.querySelectorAll('.opt .ico svg').length === 8), 'iconos en Ajustes (7 categorías y Tu año)');
   await p.screenshot({ path: OUT + '/108-settings.png' });
   console.log('ERRORES:', errs.length ? errs : 'ninguno');
   await b.close();
