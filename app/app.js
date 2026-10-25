@@ -417,7 +417,10 @@
     'Estrenos en digital': 'New on digital', 'En cines': 'In theaters', 'En {0}': 'On {0}',
     // explorar (en Buscar)
     'Años {0}': '{0}s', 'Antes de {0}': 'Before {0}', 'Nota mínima': 'Minimum rating', 'Cualquiera': 'Any', 'Plataforma': 'Platform',
-    'Más recientes': 'Newest', 'Solo sin ver': 'Unwatched only', 'Todo': 'Everything'
+    'Más recientes': 'Newest', 'Solo sin ver': 'Unwatched only', 'Todo': 'Everything',
+    // sin spoilers
+    'Sin spoilers (episodios sin ver: sin sinopsis ni imagen)': 'No spoilers (unwatched episodes: no synopsis or image)',
+    'Sinopsis oculta (sin spoilers)': 'Synopsis hidden (no spoilers)'
   };
 
   function tr(s) {
@@ -461,7 +464,8 @@
     debrid: 'realdebrid', key: '', onlyCached: true, maxQ: 'all',
     preferEs: true, compatFirst: true, hideWatched: true, maxRate: 'auto', measuredMbps: 0, measuredAt: 0,
     subLang: 'spa', subSize: 'normal', autoNext: true, audioLang: 'spa', lang: 'es', quickPlay: true, subBg: true, tmdbKey: '', autoSkip: false, subColor: 'white', subPos: 'low', saver: 3,
-    idleSaver: 10, saverShow: 'mix', saverEvery: 20, omdbKey: '', homeRows: null, animeRows: null, moviesRows: null, seriesRows: null
+    idleSaver: 10, saverShow: 'mix', saverEvery: 20, omdbKey: '', homeRows: null, animeRows: null, moviesRows: null, seriesRows: null,
+    noSpoilers: false
   };
   var settings = extend(extend({}, DEFAULTS), load('settings', {}));
   function saveSettings() { save('settings', settings); }
@@ -3064,6 +3068,9 @@
 
   // ---------------------------------------------------------------- pantalla: detalle
 
+  // ojo tachado para la miniatura de un episodio sin ver con «Sin spoilers» (trazos de 24×24)
+  var NOSPOIL_ICON = '<svg viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7c2 0 3.7.7 5.1 1.6M22 12s-3.6 7-10 7c-2 0-3.7-.7-5.1-1.6M9.9 9.9a3 3 0 0 0 4.2 4.2M3 3l18 18"/></svg>';
+
   function detailScreen(type, id) {
     var root = el('div', 'screen');
     var bd = el('div', 'backdrop');
@@ -3379,7 +3386,8 @@
         startAt: p && !p.done ? p.t : 0,
         startPct: p ? 0 : resumePct(imdbOf() + ':' + traktKey(v)),
         runtime: parseRuntime(v.runtime) || parseRuntime(meta.runtime),
-        desc: v.overview || v.description || meta.description || '',
+        // sin spoilers: en el INFO del vídeo, la sinopsis de la serie en vez de la del episodio sin ver
+        desc: (!spoilerFree(v) && (v.overview || v.description)) || meta.description || '',
         next: function () { var n = nextEpisode(v); return n ? epCtx(n) : null; }
       });
     }
@@ -3424,6 +3432,9 @@
       var p = progress[v.id];
       return !!((p && p.done) || traktSeen[traktKey(v)]);
     }
+
+    // «Sin spoilers» (Ajustes → General): de un episodio sin ver no se enseña ni la sinopsis ni la imagen
+    function spoilerFree(v) { return settings.noSpoilers && !isSeenEp(v); }
 
     function hidingSeen() { return settings.hideWatched && !showSeen; }
 
@@ -3562,9 +3573,11 @@
         var tp = p ? 0 : resumePct(imdbOf() + ':' + traktKey(v));
         var seen = isSeenEp(v);
         var row = el('div', 'ep' + (seen ? ' seen' : ''));
-        var th = el('div', 'thumb');
+        var hide = spoilerFree(v);
+        // sin spoilers: la imagen ni se pide; en su lugar, el fondo liso con un ojo tachado (un blur sería lento en la tele)
+        var th = el('div', 'thumb' + (hide ? ' nospoil' : ''), hide ? NOSPOIL_ICON : '');
         if (seen) th.appendChild(el('div', 'mark', '✓'));
-        if (v.thumbnail) th.style.backgroundImage = 'url("' + v.thumbnail + '")';
+        if (v.thumbnail && !hide) th.style.backgroundImage = 'url("' + v.thumbnail + '")';
         if ((p && p.d) || tp) {
           var bar = el('div', 'pbar');
           bar.style.cssText = 'position:absolute;left:0;bottom:0;height:8px;background:#8a7dff;width:' + (tp || (p.done ? 100 : Math.round(p.t / p.d * 100))) + '%';
@@ -3582,7 +3595,8 @@
         else if (tp) sub.push(tr('Continuar desde el {0} % (Trakt)', tp));
         txt.appendChild(el('div', 'ep-sub', esc(sub.join(' · '))));
         var ov = v.overview || v.description || '';
-        if (ov) txt.appendChild(el('div', 'ep-ov', esc(ov)));
+        if (ov && hide) txt.appendChild(el('div', 'ep-ov nospoil', esc(tr('Sinopsis oculta (sin spoilers)'))));
+        else if (ov) txt.appendChild(el('div', 'ep-ov', esc(ov)));
         row.appendChild(txt);
         focusable(row, function () { push(streamsScreen(extend(epCtx(v), { autoPlay: settings.quickPlay }))); });
         row._ep = v;
@@ -5711,6 +5725,9 @@
       });
 
       opt('Ocultar lo que ya he visto (Trakt y esta app)', function () { return yesNo(settings.hideWatched); }, function () { settings.hideWatched = !settings.hideWatched; Seen.at = 0; });
+
+      // sin spoilers: de los episodios sin ver, ni sinopsis ni imagen (ficha e INFO del vídeo); el título se queda
+      opt('Sin spoilers (episodios sin ver: sin sinopsis ni imagen)', function () { return yesNo(settings.noSpoilers); }, function () { settings.noSpoilers = !settings.noSpoilers; });
 
       ['home', 'anime', 'movies', 'series'].forEach(function (page) {
         opt(tr('Filas de {0}', tr(PAGE_NAMES[page])), function () { return tr('Ordenar u ocultar ›'); }, function () { push(rowsScreen(page)); });
