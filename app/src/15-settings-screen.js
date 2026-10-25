@@ -435,7 +435,7 @@
 
       opt('Ocultar lo que ya he visto (Trakt y esta app)', function () { return yesNo(settings.hideWatched); }, function () { settings.hideWatched = !settings.hideWatched; Seen.at = 0; });
 
-      ['home', 'series', 'movies'].forEach(function (page) {
+      ['home', 'anime', 'movies', 'series'].forEach(function (page) {
         opt(tr('Filas de {0}', tr(PAGE_NAMES[page])), function () { return tr('Ordenar u ocultar ›'); }, function () { push(rowsScreen(page)); });
       });
     };

@@ -44,7 +44,7 @@ const ADDONS = JSON.stringify([{ url: 'https://torrentio.strem.fun', manifest: {
 
   // ---- se cae la red: la pestaña Anime y una ficha fallan, sale el aviso
   net = 'down';
-  await key('ArrowRight', 3); await key('Enter'); // Anime
+  await key('ArrowRight'); await key('Enter'); // Anime
   check(await waitFor(() => document.querySelectorAll('.screen .row .empty').length >= 4, 5000), 'filas de Anime con error sin red');
   check(await waitFor(() => { const n = document.querySelector('#netbox'); return n && !n.classList.contains('hidden'); }, 5000), 'aviso «Sin conexión» a la vista');
   await ev(() => StremTV.open('movie', 'tt0111161'));

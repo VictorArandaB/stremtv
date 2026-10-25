@@ -112,39 +112,55 @@
     },
 
     // Trakt y Cinemeta pueden numerar distinto los episodios de una serie (Mashle: en Trakt una T1 de 24, en Cinemeta T1 y T2
-    // de 12). Se emparejan por fecha de emisión: imdb → { ts, n: episodios en Cinemeta, map: { 'T:E de Cinemeta': 'T:E de Trakt' } };
-    // map vacío si coinciden. Se rehace al mes o si Cinemeta tiene otro número de episodios
+    // de 12). Se emparejan por fecha de emisión y los que Cinemeta aún no tiene fechados, por orden tras el anterior:
+    // imdb → { ts, n: episodios en Cinemeta, map: { 'T:E de Cinemeta': 'T:E de Trakt' }, future: ['T:E de Trakt'] (sin emitir
+    // según Cinemeta) }; map vacío si coinciden. Se rehace a la semana (Trakt añade temporadas) o si Cinemeta cambia
     epMaps: load('epmaps', {}),
     epMap: function (imdb, videos) {
       var eps = (videos || []).filter(function (v) { return v.season > 0 && v.episode > 0; })
         .sort(function (a, b) { return a.season - b.season || a.episode - b.episode; });
       var c = Trakt.epMaps[imdb];
-      if (c && c.n === eps.length && Date.now() - c.ts < 30 * 86400000) return Promise.resolve(c.map);
+      if (c && c.future && c.n === eps.length && Date.now() - c.ts < 7 * 86400000) return Promise.resolve(c.map); // sin future: de la 0.23
       return Trakt.call('GET', '/shows/' + imdb + '/seasons?extended=episodes,full').then(function (seasons) {
-        var aired = {}, byDay = {}, map = {};
+        var aired = {}, byDay = {}, map = {}, order = [], future = [];
         (seasons || []).forEach(function (se) {
           if (!se.number) return;
           (se.episodes || []).forEach(function (e) {
             var k = se.number + ':' + e.number;
             aired[k] = e.first_aired || '';
+            order.push({ s: se.number, e: e.number, k: k });
             if (e.first_aired) (byDay[e.first_aired.slice(0, 10)] = byDay[e.first_aired.slice(0, 10)] || []).push(k);
           });
         });
         var near = function (a, b) { return !a || !b || Math.abs(new Date(a) - new Date(b)) < 2 * 86400000; };
         var same = eps.every(function (v) { var k = v.season + ':' + v.episode; return aired.hasOwnProperty(k) && near(aired[k], v.released); });
-        if (!same) eps.forEach(function (v) {
-          if (!v.released) return;
-          var t = new Date(v.released).getTime(), bucket = null;
-          // el mismo día o el de al lado (las fechas de una y otra pueden ir en otra zona horaria)
-          [0, -1, 1].some(function (off) {
-            var b = byDay[new Date(t + off * 86400000).toISOString().slice(0, 10)];
-            if (b && b.length) { bucket = b; return true; }
-            return false;
+        if (!same) {
+          order.sort(function (a, b) { return a.s - b.s || a.e - b.e; });
+          var used = {}, prev = -1, now = Date.now();
+          var pos = {};
+          order.forEach(function (o, i) { pos[o.k] = i; });
+          eps.forEach(function (v) {
+            var tk = null;
+            if (v.released) {
+              var t = new Date(v.released).getTime(), bucket = null;
+              // el mismo día o el de al lado (las fechas de una y otra pueden ir en otra zona horaria)
+              [0, -1, 1].some(function (off) {
+                var b = byDay[new Date(t + off * 86400000).toISOString().slice(0, 10)];
+                if (b && b.length) { bucket = b; return true; }
+                return false;
+              });
+              tk = bucket && bucket.shift();
+            }
+            // sin fecha (o sin pareja): el siguiente de Trakt tras el anterior emparejado
+            if (!tk && prev >= 0) for (var i = prev + 1; i < order.length; i++) if (!used[order[i].k]) { tk = order[i].k; break; }
+            if (!tk) return;
+            used[tk] = true;
+            prev = pos[tk];
+            if (tk !== v.season + ':' + v.episode) map[v.season + ':' + v.episode] = tk;
+            if (!v.released || new Date(v.released).getTime() > now) future.push(tk);
           });
-          var tk = bucket && bucket.shift();
-          if (tk && tk !== v.season + ':' + v.episode) map[v.season + ':' + v.episode] = tk;
-        });
-        Trakt.epMaps[imdb] = { ts: Date.now(), n: eps.length, map: map };
+        }
+        Trakt.epMaps[imdb] = { ts: Date.now(), n: eps.length, map: map, future: future };
         capByTs(Trakt.epMaps, 300);
         save('epmaps', Trakt.epMaps);
         return map;
@@ -156,9 +172,14 @@
       if (c) for (var k in c.map) if (c.map[k] === tk) { var p = k.split(':'); season = p[0]; number = p[1]; break; }
       return tr('T{0}:E{1}', season, number);
     },
-    // equivalencias de las series de una fila que aún no se conocen (de tres en tres; luego quedan guardadas un mes)
+    // episodio de Trakt que según Cinemeta aún no se ha emitido (Trakt a veces da por emitida una temporada anunciada)
+    epFuture: function (imdb, season, number) {
+      var c = Trakt.epMaps[imdb];
+      return !!(c && c.future && c.future.indexOf(season + ':' + number) >= 0);
+    },
+    // equivalencias de las series de una fila que aún no se conocen o tienen más de una semana (de tres en tres)
     learnEpMaps: function (imdbs) {
-      var todo = imdbs.filter(function (id, i) { return id && imdbs.indexOf(id) === i && !Trakt.epMaps[id]; });
+      var todo = imdbs.filter(function (id, i) { var c = Trakt.epMaps[id]; return id && imdbs.indexOf(id) === i && !(c && c.future && Date.now() - c.ts < 7 * 86400000); });
       return mapLimit(todo, 3, function (imdb) {
         return getJSON(CINEMETA + '/meta/series/' + imdb + '.json').then(function (r) { return Trakt.epMap(imdb, (r.meta || {}).videos); })
           .catch(function () { return null; });
@@ -198,7 +219,7 @@
     // Se guarda 10 minutos (o hasta terminar de ver algo): son muchas consultas
     upNextCache: null,
     // el progreso de cada serie (id de Trakt -> lw, ae, at, d), guardado en la tele: solo se vuelve a pedir si se ha visto algo
-    // de ella (last_watched_at), si se ha emitido otro episodio (aired_episodes), si el pendiente que faltaba ya ha salido o tras un día
+    // de ella (last_watched_at) o ha cambiado su historial (last_updated_at: p. ej. marcados con la fecha de emisión), si se ha emitido otro episodio (aired_episodes), si el pendiente que faltaba ya ha salido o tras un día
     progressCache: load('upnext', {}),
     // la lista completa de series vistas es la respuesta más pesada de Trakt: Seen y Siguientes episodios comparten la descarga
     watchedShows: function () {
@@ -231,12 +252,12 @@
         return mapLimit(shows, 6, function (it) {
           var sh = it.show, c = cache[sh.ids.trakt];
           keep[sh.ids.trakt] = true;
-          var pending = c && c.d && c.d.next_episode && c.d.next_episode.first_aired, fresh = c && c.lw === it.last_watched_at &&
+          var pending = c && c.d && c.d.next_episode && c.d.next_episode.first_aired, lw = it.last_watched_at + '|' + (it.last_updated_at || ''), fresh = c && c.lw === lw &&
             c.ae === sh.aired_episodes && now - c.at < 86400000 && !(pending && c.d.aired <= c.d.completed && new Date(pending) <= new Date());
           return (fresh ? Promise.resolve(c.d) : Trakt.call('GET', '/shows/' + sh.ids.trakt + '/progress/watched?hidden=false&specials=false&count_specials=false&extended=full').then(function (d) {
             d = d ? { aired: d.aired, completed: d.completed, next_episode: d.next_episode &&
               { season: d.next_episode.season, number: d.next_episode.number, first_aired: d.next_episode.first_aired } } : null;
-            cache[sh.ids.trakt] = { lw: it.last_watched_at, ae: sh.aired_episodes, at: now, d: d };
+            cache[sh.ids.trakt] = { lw: lw, ae: sh.aired_episodes, at: now, d: d };
             return d;
           })).then(function (d) {
             var e = d && d.next_episode;
@@ -259,6 +280,8 @@
         // la etiqueta con la numeración de Cinemeta (la de la ficha): antes se aprenden las equivalencias que falten,
         // como mucho 5 s (si no, sale la de Trakt y la próxima vez ya la de Cinemeta)
         return withTimeout(Trakt.learnEpMaps(list.map(function (m) { return m.id; })), 5000).catch(function () {}).then(function () {
+          // lo que Trakt da por emitido y Cinemeta aún no: ni en la fila ni en los pendientes
+          list = list.filter(function (m) { return !Trakt.epFuture(m.id, m.ep.season, m.ep.number); });
           list.forEach(function (m) { m.label = m.name + ' · ' + Trakt.epCode(m.id, m.ep.season, m.ep.number); });
           return list.filter(function (m) { return m.isNew; }).concat(list.filter(function (m) { return !m.isNew; }));
         });
@@ -379,9 +402,10 @@
     },
 
     recommendations: function (kind) {
-      return Trakt.call('GET', '/recommendations/' + kind + '?limit=60&ignore_collected=true').then(function (items) {
+      return Trakt.call('GET', '/recommendations/' + kind + '?limit=60&ignore_collected=true&extended=full').then(function (items) {
         return (items || []).filter(function (o) { return o.ids && o.ids.imdb; }).map(function (o) {
-          return { id: o.ids.imdb, type: kind === 'movies' ? 'movie' : 'series', name: o.title, poster: metahubPoster(o.ids.imdb) };
+          return { id: o.ids.imdb, type: kind === 'movies' ? 'movie' : 'series', name: o.title, poster: metahubPoster(o.ids.imdb),
+            anime: (o.genres || []).indexOf('anime') >= 0 };
         });
       });
     },

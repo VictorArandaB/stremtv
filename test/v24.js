@@ -12,14 +12,17 @@ const check = (ok, what, got) => { console.log((ok ? '✓ ' : '✗ ') + what + (
   await p.setRequestInterception(true);
   const hdr = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*', 'Access-Control-Allow-Methods': '*' };
   const json = (req, o) => req.respond({ status: 200, headers: hdr, contentType: 'application/json', body: JSON.stringify(o) });
-  const res = (names, base) => ({ page: 1, total_pages: 3, results: names.map((n, i) => ({ id: base + i, name: n, title: n, overview: 'Sinopsis ' + n, first_air_date: '2024-01-01', release_date: '2024-01-01', vote_average: 8, vote_count: 900 })) });
+  // un nombre o { name, anime: true } (animación japonesa)
+  const res = (names, base) => ({ page: 1, total_pages: 3, results: names.map((n, i) => Object.assign({ id: base + i, name: n.name || n, title: n.name || n, overview: 'Sinopsis', first_air_date: '2024-01-01', release_date: '2024-01-01', vote_average: 8, vote_count: 900 },
+    n.anime ? { genre_ids: [16], original_language: 'ja' } : { genre_ids: [18], original_language: 'en' }, n.media ? { media_type: n.media } : {})) });
   const discover = [];
   p.on('request', (req) => {
     const u = req.url();
     if (req.method() === 'OPTIONS') return req.respond({ status: 204, headers: hdr });
     if (u.indexOf('api.themoviedb.org') >= 0) {
-      if (/\/watch\/providers\/(tv|movie)/.test(u)) return json(req, { results: [{ provider_id: 8, provider_name: 'Netflix' }, { provider_id: 1899, provider_name: 'Max' }, { provider_id: 2, provider_name: 'Apple TV' }] });
-      if (/\/trending\/tv\/week/.test(u)) return json(req, res(['Tendencia uno'], 100));
+      if (/\/watch\/providers\/(tv|movie)/.test(u)) return json(req, { results: [{ provider_id: 8, provider_name: 'Netflix' }, { provider_id: 1899, provider_name: 'Max' }, { provider_id: 2, provider_name: 'Apple TV' }, { provider_id: 283, provider_name: 'Crunchyroll' }] });
+      if (/\/trending\/tv\/week/.test(u)) return json(req, res(['Tendencia uno', { name: 'Anime en tendencia', anime: true }], 100));
+      if (/\/search\/multi/.test(u)) return json(req, res([{ name: 'Peli', media: 'movie' }, { name: 'Serie', media: 'tv' }, { name: 'Anime buscado', media: 'tv', anime: true }], 400));
       if (/\/discover\//.test(u)) {
         discover.push(decodeURIComponent(u));
         if (/with_watch_providers=8/.test(u) && !/vote_average\.gte/.test(u)) return json(req, res(['Serie Netflix'], 200));
@@ -30,13 +33,16 @@ const check = (ok, what, got) => { console.log((ok ? '✓ ' : '✗ ') + what + (
       return json(req, { results: [] });
     }
     if (u.indexOf('api.trakt.tv') >= 0) {
-      if (u.indexOf('/recommendations/shows') >= 0) return json(req, [{ title: 'Rec vista', ids: { imdb: 'tt0000001', tmdb: 1 } }, { title: 'Rec empezada', ids: { imdb: 'tt0000002', tmdb: 5 } }, { title: 'Rec nueva', ids: { imdb: 'tt0000003', tmdb: 3 } }]);
+      if (u.indexOf('/recommendations/shows') >= 0) return json(req, [{ title: 'Rec vista', ids: { imdb: 'tt0000001', tmdb: 1 } }, { title: 'Rec empezada', ids: { imdb: 'tt0000002', tmdb: 5 } }, { title: 'Rec nueva', ids: { imdb: 'tt0000003', tmdb: 3 } },
+        { title: 'Rec anime', ids: { imdb: 'tt0000004', tmdb: 4 }, genres: ['anime', 'action'] }]);
       if (u.indexOf('/sync/watched/shows') >= 0) return json(req, [
         { show: { title: 'Rec vista', ids: { imdb: 'tt0000001', tmdb: 1, trakt: 1 }, aired_episodes: 1 }, last_watched_at: '2024-01-01', seasons: [{ number: 1, episodes: [{ number: 1 }] }] },
         { show: { title: 'Rec empezada', ids: { imdb: 'tt0000002', tmdb: 5, trakt: 2 }, aired_episodes: 5 }, last_watched_at: '2024-01-01', seasons: [{ number: 1, episodes: [{ number: 1 }] }] }]);
       return json(req, []);
     }
-    if (u.indexOf('/catalog/') >= 0 && u.indexOf('v3-cinemeta') >= 0) return json(req, { metas: [{ id: 'tt0111161', type: /movie/.test(u) ? 'movie' : 'series', name: 'Cinemeta', poster: '' }] });
+    if (u.indexOf('/catalog/') >= 0 && u.indexOf('v3-cinemeta') >= 0) return json(req, { metas: [{ id: 'tt0111161', type: /movie/.test(u) ? 'movie' : 'series', name: 'Cinemeta', poster: '' },
+      { id: 'tt0111162', type: /movie/.test(u) ? 'movie' : 'series', name: 'Cinemeta anime', genres: ['Animation', 'Action'], country: 'Japan', poster: '' }] });
+    if (u.indexOf('anime-kitsu.strem.fun/catalog/') >= 0) return json(req, { metas: [{ id: /search=/.test(u) ? 'kitsu:2' : 'kitsu:1', type: 'anime', name: /search=/.test(u) ? 'Kitsu búsqueda' : 'Kitsu', poster: '' }] });
     if (u.indexOf('/meta/') >= 0) return json(req, { meta: {} });
     req.continue();
   });
@@ -60,7 +66,7 @@ const check = (ok, what, got) => { console.log((ok ? '✓ ' : '✗ ') + what + (
   await p.reload({ waitUntil: 'networkidle2' }); await sleep(1500);
 
   const tabs = await p.evaluate(() => Array.from(document.querySelectorAll('.tab')).map((x) => x.textContent).join(' '));
-  check(tabs === 'Inicio Series Películas Anime Buscar Ajustes', 'pestañas', tabs);
+  check(tabs === 'Inicio Anime Películas Series Buscar Ajustes', 'pestañas', tabs);
   const home = (await rows()).join(' | ');
   check(!/populares|mejor valoradas|Recomendadas/i.test(home), 'Inicio sin populares ni recomendadas (con Trakt)', home);
 
@@ -69,10 +75,20 @@ const check = (ok, what, got) => { console.log((ok ? '✓ ' : '✗ ') + what + (
   const sr = await rows();
   const titles = sr.map((r) => r.split(':')[0]).join(' | ');
   check(titles === 'Para ti | Tendencia esta semana | En emisión | Populares | Estrenos | Mejor valoradas | En Netflix | En HBO Max', 'filas de Series (sin las plataformas que no hay ni las ocultas)', titles);
-  check(sr[0] === 'Para ti: Rec nueva', '«Para ti» sin lo visto ni lo empezado', sr[0]);
+  check(sr[0] === 'Para ti: Rec nueva', '«Para ti» sin lo visto ni lo empezado (ni anime)', sr[0]);
+  check(sr[1] === 'Tendencia esta semana: Tendencia uno' && sr[3] === 'Populares: Cinemeta', 'Series sin anime (TMDB y Cinemeta)', sr[1] + ' · ' + sr[3]);
   check(sr.indexOf('En Netflix: Serie Netflix') >= 0 && /with_watch_providers=8&watch_region=ES&with_watch_monetization_types=flatrate/.test(discover.join(' ')), 'fila de Netflix (TMDB, con suscripción en España)');
   check(await p.evaluate(() => StremTV.Nav.cur.textContent === 'Series' && StremTV.Nav.cur.classList.contains('active')), 'el foco empieza en la pestaña Series');
   await p.screenshot({ path: OUT + '/240-series.png' });
+
+  // --- Anime: las mismas filas que Series (Kitsu y TMDB) y Crunchyroll
+  await tab('Anime'); await sleep(1500);
+  const ar = await rows();
+  const at = ar.map((r) => r.split(':')[0]).join(' | ');
+  check(at === 'Para ti | Tendencia esta semana | En emisión | Populares | Estrenos | Mejor valorados | En Netflix | En Crunchyroll', 'filas de Anime', at);
+  check(ar[0] === 'Para ti: Rec anime', '«Para ti» de Anime: solo anime', ar[0]);
+  check(/\/discover\/tv\?first_air_date[^ ]*with_genres=16&with_original_language=ja/.test(discover.join(' ')), 'estrenos de anime en TMDB');
+  await p.screenshot({ path: OUT + '/242-anime.png' });
 
   // --- de Series a Inicio: el foco en «Inicio», no en la pestaña que se pulsó para salir de Inicio
   await tab('Inicio');
@@ -99,6 +115,9 @@ const check = (ok, what, got) => { console.log((ok ? '✓ ' : '✗ ') + what + (
   };
   const filterRows = await p.evaluate((top) => Array.from(eval(top).querySelectorAll('.chips-row .row-title')).map((x) => x.textContent).join(' | '), top);
   check(/Tipo \| Género \| Año \| Nota mínima \| Plataforma \| Orden \| Mostrar/.test(filterRows), 'filtros de explorar en Buscar', filterRows);
+  await pick('Tipo', 'Anime');
+  await pick('Género', 'Ciencia ficción y fantasía');
+  check(/\/discover\/tv\?.*with_original_language=ja&with_genres=16,10765/.test(discover[discover.length - 1]), 'explorar anime: animación japonesa y el género', discover[discover.length - 1]);
   await pick('Tipo', 'Series');
   check(await p.evaluate(() => StremTV.Nav.cur.textContent === 'Series'), 'al cambiar de tipo, el foco sigue en el botón');
   await pick('Género', 'Ciencia ficción y fantasía');
@@ -118,6 +137,8 @@ const check = (ok, what, got) => { console.log((ok ? '✓ ' : '✗ ') + what + (
   const shown = () => p.evaluate((top) => eval(top).querySelector('.chips-row .row-title') && Array.from(eval(top).querySelectorAll('.chips-row')).some((r) => r.offsetHeight > 0 && /Tipo/.test(r.textContent)), top);
   await p.evaluate((top) => { const i = eval(top).querySelector('input'); i.value = 'matrix'; i._ondone('matrix'); }, top); await sleep(500);
   check(!(await shown()), 'con texto, sin filtros');
+  const found = (await rows()).filter((r) => !/^(Tipo|Género|Año|Nota mínima|Plataforma|Orden|Mostrar|Búsquedas recientes):/.test(r)).join(' | ');
+  check(found === 'Anime: Kitsu búsqueda | Películas: Peli | Series: Serie', 'resultados en Anime, Películas y Series por separado', found);
   await p.evaluate((top) => { const i = eval(top).querySelector('input'); i.value = ''; i.dispatchEvent(new Event('input')); }, top); await sleep(500);
   check(await shown(), 'al borrar, vuelven los filtros');
 

@@ -86,7 +86,14 @@
       poster: x.poster_path ? 'https://image.tmdb.org/t/p/w185' + x.poster_path : '',
       background: x.backdrop_path ? 'https://image.tmdb.org/t/p/w1280' + x.backdrop_path : '',
       description: x.overview || '', releaseInfo: date.slice(0, 4),
-      imdbRating: x.vote_count >= 50 && x.vote_average ? x.vote_average.toFixed(1) : '' };
+      imdbRating: x.vote_count >= 50 && x.vote_average ? x.vote_average.toFixed(1) : '',
+      anime: (x.genre_ids || []).indexOf(16) >= 0 && (x.original_language === 'ja' || (x.origin_country || []).indexOf('JP') >= 0) };
+  }
+  // animación japonesa: lo marca TMDB (tmdbMeta) o Trakt (género «anime»); de Cinemeta, por el género y el país
+  function isAnimeMeta(m) {
+    if (m.anime !== undefined) return !!m.anime;
+    var g = m.genres || m.genre || [];
+    return g.indexOf('Animation') >= 0 && /^Japan/.test(m.country || '');
   }
   // una página de resultados de TMDB como carátulas, con si hay más páginas
   function tmdbPage(path, k) {
@@ -108,7 +115,8 @@
     { k: 'apple', name: 'Apple TV+', ids: [350], m: ['appletvplus'] },
     { k: 'movistar', name: 'Movistar Plus+', ids: [149], m: ['movistarplusplus', 'movistarplus'] },
     { k: 'skyshowtime', name: 'SkyShowtime', ids: [1773], m: ['skyshowtime'], off: true },
-    { k: 'filmin', name: 'Filmin', ids: [63], m: ['filmin'], off: true }
+    { k: 'filmin', name: 'Filmin', ids: [63], m: ['filmin'], off: true },
+    { k: 'crunchyroll', name: 'Crunchyroll', ids: [283], m: ['crunchyroll'], anime: true }
   ];
   var providerLists = {};
   function platformId(k, pl) {

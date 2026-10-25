@@ -48,8 +48,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   await key('Escape'); await sleep(400);
   await p.evaluate(() => StremTV.Nav.focus(Array.from(document.querySelectorAll('.tab')).filter((x) => x.textContent === 'Buscar')[0])); await key('Enter'); await sleep(500);
   await p.evaluate(() => { const i = document.querySelector('.search-box input'); i.focus(); i.value = 'la casa de papel'; }); await key('Enter'); await sleep(2500);
-  console.log('búsqueda:', await p.evaluate(() => { const r = Array.from(document.querySelectorAll('.row')).filter((x) => /TMDB/.test(x.textContent))[0]; return r ? Array.from(r.querySelectorAll('.card .name')).map((x) => x.textContent).join() : 'NO'; }));
-  await p.evaluate(() => { const r = Array.from(document.querySelectorAll('.row')).filter((x) => /TMDB/.test(x.textContent))[0]; StremTV.Nav.focus(r.querySelector('.card')); }); await key('Enter'); await sleep(7000);
+  console.log('búsqueda:', await p.evaluate(() => { const r = Array.from(document.querySelectorAll('.row')).filter((x) => x.querySelector('.row-title') && x.querySelector('.row-title').textContent === 'Series' && x.offsetHeight)[0]; return r ? Array.from(r.querySelectorAll('.card .name')).map((x) => x.textContent).join() : 'NO'; }));
+  await p.evaluate(() => { const r = Array.from(document.querySelectorAll('.row')).filter((x) => x.querySelector('.row-title') && x.querySelector('.row-title').textContent === 'Series' && x.offsetHeight)[0]; StremTV.Nav.focus(r.querySelector('.card')); }); await key('Enter'); await sleep(7000);
   console.log('abre por IMDb:', await p.evaluate(() => { const d = document.querySelectorAll('.detail'); return d.length ? d[d.length - 1].innerText.slice(0, 80) : 'sin ficha'; }));
   // app en inglés: no se usa TMDB
   await p.evaluate(() => { StremTV.settings.lang = 'en'; }); const before = calls.length;

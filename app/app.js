@@ -462,7 +462,7 @@
     debrid: 'realdebrid', key: '', onlyCached: true, maxQ: 'all',
     preferEs: true, compatFirst: true, hideWatched: true, maxRate: 'auto', measuredMbps: 0, measuredAt: 0,
     subLang: 'spa', subSize: 'normal', autoNext: true, audioLang: 'spa', lang: 'es', quickPlay: true, subBg: true, tmdbKey: '', autoSkip: false, subColor: 'white', subPos: 'low', saver: 3,
-    idleSaver: 10, saverShow: 'mix', saverEvery: 20, omdbKey: '', homeRows: null, seriesRows: null, moviesRows: null
+    idleSaver: 10, saverShow: 'mix', saverEvery: 20, omdbKey: '', homeRows: null, animeRows: null, moviesRows: null, seriesRows: null
   };
   var settings = extend(extend({}, DEFAULTS), load('settings', {}));
   function saveSettings() { save('settings', settings); }
@@ -728,7 +728,14 @@
       poster: x.poster_path ? 'https://image.tmdb.org/t/p/w185' + x.poster_path : '',
       background: x.backdrop_path ? 'https://image.tmdb.org/t/p/w1280' + x.backdrop_path : '',
       description: x.overview || '', releaseInfo: date.slice(0, 4),
-      imdbRating: x.vote_count >= 50 && x.vote_average ? x.vote_average.toFixed(1) : '' };
+      imdbRating: x.vote_count >= 50 && x.vote_average ? x.vote_average.toFixed(1) : '',
+      anime: (x.genre_ids || []).indexOf(16) >= 0 && (x.original_language === 'ja' || (x.origin_country || []).indexOf('JP') >= 0) };
+  }
+  // animación japonesa: lo marca TMDB (tmdbMeta) o Trakt (género «anime»); de Cinemeta, por el género y el país
+  function isAnimeMeta(m) {
+    if (m.anime !== undefined) return !!m.anime;
+    var g = m.genres || m.genre || [];
+    return g.indexOf('Animation') >= 0 && /^Japan/.test(m.country || '');
   }
   // una página de resultados de TMDB como carátulas, con si hay más páginas
   function tmdbPage(path, k) {
@@ -750,7 +757,8 @@
     { k: 'apple', name: 'Apple TV+', ids: [350], m: ['appletvplus'] },
     { k: 'movistar', name: 'Movistar Plus+', ids: [149], m: ['movistarplusplus', 'movistarplus'] },
     { k: 'skyshowtime', name: 'SkyShowtime', ids: [1773], m: ['skyshowtime'], off: true },
-    { k: 'filmin', name: 'Filmin', ids: [63], m: ['filmin'], off: true }
+    { k: 'filmin', name: 'Filmin', ids: [63], m: ['filmin'], off: true },
+    { k: 'crunchyroll', name: 'Crunchyroll', ids: [283], m: ['crunchyroll'], anime: true }
   ];
   var providerLists = {};
   function platformId(k, pl) {
@@ -1032,39 +1040,55 @@
     },
 
     // Trakt y Cinemeta pueden numerar distinto los episodios de una serie (Mashle: en Trakt una T1 de 24, en Cinemeta T1 y T2
-    // de 12). Se emparejan por fecha de emisión: imdb → { ts, n: episodios en Cinemeta, map: { 'T:E de Cinemeta': 'T:E de Trakt' } };
-    // map vacío si coinciden. Se rehace al mes o si Cinemeta tiene otro número de episodios
+    // de 12). Se emparejan por fecha de emisión y los que Cinemeta aún no tiene fechados, por orden tras el anterior:
+    // imdb → { ts, n: episodios en Cinemeta, map: { 'T:E de Cinemeta': 'T:E de Trakt' }, future: ['T:E de Trakt'] (sin emitir
+    // según Cinemeta) }; map vacío si coinciden. Se rehace a la semana (Trakt añade temporadas) o si Cinemeta cambia
     epMaps: load('epmaps', {}),
     epMap: function (imdb, videos) {
       var eps = (videos || []).filter(function (v) { return v.season > 0 && v.episode > 0; })
         .sort(function (a, b) { return a.season - b.season || a.episode - b.episode; });
       var c = Trakt.epMaps[imdb];
-      if (c && c.n === eps.length && Date.now() - c.ts < 30 * 86400000) return Promise.resolve(c.map);
+      if (c && c.future && c.n === eps.length && Date.now() - c.ts < 7 * 86400000) return Promise.resolve(c.map); // sin future: de la 0.23
       return Trakt.call('GET', '/shows/' + imdb + '/seasons?extended=episodes,full').then(function (seasons) {
-        var aired = {}, byDay = {}, map = {};
+        var aired = {}, byDay = {}, map = {}, order = [], future = [];
         (seasons || []).forEach(function (se) {
           if (!se.number) return;
           (se.episodes || []).forEach(function (e) {
             var k = se.number + ':' + e.number;
             aired[k] = e.first_aired || '';
+            order.push({ s: se.number, e: e.number, k: k });
             if (e.first_aired) (byDay[e.first_aired.slice(0, 10)] = byDay[e.first_aired.slice(0, 10)] || []).push(k);
           });
         });
         var near = function (a, b) { return !a || !b || Math.abs(new Date(a) - new Date(b)) < 2 * 86400000; };
         var same = eps.every(function (v) { var k = v.season + ':' + v.episode; return aired.hasOwnProperty(k) && near(aired[k], v.released); });
-        if (!same) eps.forEach(function (v) {
-          if (!v.released) return;
-          var t = new Date(v.released).getTime(), bucket = null;
-          // el mismo día o el de al lado (las fechas de una y otra pueden ir en otra zona horaria)
-          [0, -1, 1].some(function (off) {
-            var b = byDay[new Date(t + off * 86400000).toISOString().slice(0, 10)];
-            if (b && b.length) { bucket = b; return true; }
-            return false;
+        if (!same) {
+          order.sort(function (a, b) { return a.s - b.s || a.e - b.e; });
+          var used = {}, prev = -1, now = Date.now();
+          var pos = {};
+          order.forEach(function (o, i) { pos[o.k] = i; });
+          eps.forEach(function (v) {
+            var tk = null;
+            if (v.released) {
+              var t = new Date(v.released).getTime(), bucket = null;
+              // el mismo día o el de al lado (las fechas de una y otra pueden ir en otra zona horaria)
+              [0, -1, 1].some(function (off) {
+                var b = byDay[new Date(t + off * 86400000).toISOString().slice(0, 10)];
+                if (b && b.length) { bucket = b; return true; }
+                return false;
+              });
+              tk = bucket && bucket.shift();
+            }
+            // sin fecha (o sin pareja): el siguiente de Trakt tras el anterior emparejado
+            if (!tk && prev >= 0) for (var i = prev + 1; i < order.length; i++) if (!used[order[i].k]) { tk = order[i].k; break; }
+            if (!tk) return;
+            used[tk] = true;
+            prev = pos[tk];
+            if (tk !== v.season + ':' + v.episode) map[v.season + ':' + v.episode] = tk;
+            if (!v.released || new Date(v.released).getTime() > now) future.push(tk);
           });
-          var tk = bucket && bucket.shift();
-          if (tk && tk !== v.season + ':' + v.episode) map[v.season + ':' + v.episode] = tk;
-        });
-        Trakt.epMaps[imdb] = { ts: Date.now(), n: eps.length, map: map };
+        }
+        Trakt.epMaps[imdb] = { ts: Date.now(), n: eps.length, map: map, future: future };
         capByTs(Trakt.epMaps, 300);
         save('epmaps', Trakt.epMaps);
         return map;
@@ -1076,9 +1100,14 @@
       if (c) for (var k in c.map) if (c.map[k] === tk) { var p = k.split(':'); season = p[0]; number = p[1]; break; }
       return tr('T{0}:E{1}', season, number);
     },
-    // equivalencias de las series de una fila que aún no se conocen (de tres en tres; luego quedan guardadas un mes)
+    // episodio de Trakt que según Cinemeta aún no se ha emitido (Trakt a veces da por emitida una temporada anunciada)
+    epFuture: function (imdb, season, number) {
+      var c = Trakt.epMaps[imdb];
+      return !!(c && c.future && c.future.indexOf(season + ':' + number) >= 0);
+    },
+    // equivalencias de las series de una fila que aún no se conocen o tienen más de una semana (de tres en tres)
     learnEpMaps: function (imdbs) {
-      var todo = imdbs.filter(function (id, i) { return id && imdbs.indexOf(id) === i && !Trakt.epMaps[id]; });
+      var todo = imdbs.filter(function (id, i) { var c = Trakt.epMaps[id]; return id && imdbs.indexOf(id) === i && !(c && c.future && Date.now() - c.ts < 7 * 86400000); });
       return mapLimit(todo, 3, function (imdb) {
         return getJSON(CINEMETA + '/meta/series/' + imdb + '.json').then(function (r) { return Trakt.epMap(imdb, (r.meta || {}).videos); })
           .catch(function () { return null; });
@@ -1118,7 +1147,7 @@
     // Se guarda 10 minutos (o hasta terminar de ver algo): son muchas consultas
     upNextCache: null,
     // el progreso de cada serie (id de Trakt -> lw, ae, at, d), guardado en la tele: solo se vuelve a pedir si se ha visto algo
-    // de ella (last_watched_at), si se ha emitido otro episodio (aired_episodes), si el pendiente que faltaba ya ha salido o tras un día
+    // de ella (last_watched_at) o ha cambiado su historial (last_updated_at: p. ej. marcados con la fecha de emisión), si se ha emitido otro episodio (aired_episodes), si el pendiente que faltaba ya ha salido o tras un día
     progressCache: load('upnext', {}),
     // la lista completa de series vistas es la respuesta más pesada de Trakt: Seen y Siguientes episodios comparten la descarga
     watchedShows: function () {
@@ -1151,12 +1180,12 @@
         return mapLimit(shows, 6, function (it) {
           var sh = it.show, c = cache[sh.ids.trakt];
           keep[sh.ids.trakt] = true;
-          var pending = c && c.d && c.d.next_episode && c.d.next_episode.first_aired, fresh = c && c.lw === it.last_watched_at &&
+          var pending = c && c.d && c.d.next_episode && c.d.next_episode.first_aired, lw = it.last_watched_at + '|' + (it.last_updated_at || ''), fresh = c && c.lw === lw &&
             c.ae === sh.aired_episodes && now - c.at < 86400000 && !(pending && c.d.aired <= c.d.completed && new Date(pending) <= new Date());
           return (fresh ? Promise.resolve(c.d) : Trakt.call('GET', '/shows/' + sh.ids.trakt + '/progress/watched?hidden=false&specials=false&count_specials=false&extended=full').then(function (d) {
             d = d ? { aired: d.aired, completed: d.completed, next_episode: d.next_episode &&
               { season: d.next_episode.season, number: d.next_episode.number, first_aired: d.next_episode.first_aired } } : null;
-            cache[sh.ids.trakt] = { lw: it.last_watched_at, ae: sh.aired_episodes, at: now, d: d };
+            cache[sh.ids.trakt] = { lw: lw, ae: sh.aired_episodes, at: now, d: d };
             return d;
           })).then(function (d) {
             var e = d && d.next_episode;
@@ -1179,6 +1208,8 @@
         // la etiqueta con la numeración de Cinemeta (la de la ficha): antes se aprenden las equivalencias que falten,
         // como mucho 5 s (si no, sale la de Trakt y la próxima vez ya la de Cinemeta)
         return withTimeout(Trakt.learnEpMaps(list.map(function (m) { return m.id; })), 5000).catch(function () {}).then(function () {
+          // lo que Trakt da por emitido y Cinemeta aún no: ni en la fila ni en los pendientes
+          list = list.filter(function (m) { return !Trakt.epFuture(m.id, m.ep.season, m.ep.number); });
           list.forEach(function (m) { m.label = m.name + ' · ' + Trakt.epCode(m.id, m.ep.season, m.ep.number); });
           return list.filter(function (m) { return m.isNew; }).concat(list.filter(function (m) { return !m.isNew; }));
         });
@@ -1299,9 +1330,10 @@
     },
 
     recommendations: function (kind) {
-      return Trakt.call('GET', '/recommendations/' + kind + '?limit=60&ignore_collected=true').then(function (items) {
+      return Trakt.call('GET', '/recommendations/' + kind + '?limit=60&ignore_collected=true&extended=full').then(function (items) {
         return (items || []).filter(function (o) { return o.ids && o.ids.imdb; }).map(function (o) {
-          return { id: o.ids.imdb, type: kind === 'movies' ? 'movie' : 'series', name: o.title, poster: metahubPoster(o.ids.imdb) };
+          return { id: o.ids.imdb, type: kind === 'movies' ? 'movie' : 'series', name: o.title, poster: metahubPoster(o.ids.imdb),
+            anime: (o.genres || []).indexOf('anime') >= 0 };
         });
       });
     },
@@ -2115,7 +2147,7 @@
   document.addEventListener('visibilitychange', function () { if (!document.hidden) clockCheck('volver a la app'); });
   document.addEventListener('keydown', function () { if (Date.now() - clockTick > 15000) clockCheck('tecla'); }, true);
 
-  var TABS = [['home', 'Inicio'], ['series', 'Series'], ['movies', 'Películas'], ['anime', 'Anime'], ['search', 'Buscar'], ['settings', 'Ajustes']];
+  var TABS = [['home', 'Inicio'], ['anime', 'Anime'], ['movies', 'Películas'], ['series', 'Series'], ['search', 'Buscar'], ['settings', 'Ajustes']];
   function header(active) {
     var h = el('div', 'header');
     h.appendChild(el('div', 'logo', 'StremTV'));
@@ -2136,8 +2168,7 @@
     }
     if (k === 'home') return;
     if (k === 'search') push(searchScreen());
-    else if (k === 'anime') push(animeScreen());
-    else if (k === 'series' || k === 'movies') push(catalogScreen(k));
+    else if (k === 'anime' || k === 'series' || k === 'movies') push(catalogScreen(k));
     else if (k === 'settings') openSettings();
   }
   function activeTab(root) { return function () { return root.querySelector('.tab.active'); }; }
@@ -2331,8 +2362,9 @@
   }
 
   // filas de Inicio, Series y Películas que se pueden ordenar u ocultar (Ajustes → General → Filas de …). Las de los addons van
-  // detrás, con la clave «addon:url|tipo|id»: las de películas en Películas, las de series en Series y las demás en Inicio.
-  // settings.homeRows / seriesRows / moviesRows: { order: [claves], hidden: { clave: true | false } }; sin dato, oculta si «off»
+  // detrás, con la clave «addon:url|tipo|id»: las de películas en Películas, las de series en Series, las de anime en Anime
+  // y las demás en Inicio.
+  // settings.homeRows / animeRows / moviesRows / seriesRows: { order: [claves], hidden: { clave: true | false } }; sin dato, oculta si «off»
   // (u «offIfTrakt» con Trakt vinculado).
   // trakt: solo con Trakt vinculado; local: solo sin él; tmdb: solo con clave de TMDB
   var PAGE_ROWS = {
@@ -2357,6 +2389,15 @@
       { k: 'new', name: 'Estrenos', tmdb: true },
       { k: 'top', name: 'Mejor valoradas', url: CINEMETA + '/catalog/series/imdbRating.json' }
     ],
+    // el anime va en su pestaña: Películas y Series no lo muestran
+    anime: [
+      { k: 'forYou', name: 'Para ti', trakt: true },
+      { k: 'trending', name: 'Tendencia esta semana', url: ANIME + '/catalog/anime/kitsu-anime-trending.json' },
+      { k: 'airing', name: 'En emisión', url: ANIME + '/catalog/anime/kitsu-anime-airing.json' },
+      { k: 'pop', name: 'Populares', url: ANIME + '/catalog/anime/kitsu-anime-popular.json' },
+      { k: 'new', name: 'Estrenos', tmdb: true },
+      { k: 'top', name: 'Mejor valorados', url: ANIME + '/catalog/anime/kitsu-anime-rating.json' }
+    ],
     movies: [
       { k: 'forYou', name: 'Para ti', trakt: true },
       { k: 'trending', name: 'Tendencia esta semana', tmdb: true },
@@ -2368,11 +2409,14 @@
   };
   // una fila por plataforma en Series y Películas
   PLATFORMS.forEach(function (pl) {
-    PAGE_ROWS.series.push({ k: 'prov:' + pl.k, name: 'En {0}', arg: pl.name, tmdb: true, off: pl.off, platform: pl });
-    PAGE_ROWS.movies.push({ k: 'prov:' + pl.k, name: 'En {0}', arg: pl.name, tmdb: true, off: pl.off, platform: pl });
+    ['movies', 'series', 'anime'].forEach(function (page) {
+      if (pl.anime && page !== 'anime') return; // Crunchyroll, solo en Anime
+      var off = page === 'anime' ? !pl.anime && pl.k !== 'netflix' && pl.k !== 'prime' : pl.off;
+      PAGE_ROWS[page].push({ k: 'prov:' + pl.k, name: 'En {0}', arg: pl.name, tmdb: true, off: off, platform: pl });
+    });
   });
-  var ROWS_SETTING = { home: 'homeRows', series: 'seriesRows', movies: 'moviesRows' };
-  var PAGE_NAMES = { home: 'Inicio', series: 'Series', movies: 'Películas' };
+  var ROWS_SETTING = { home: 'homeRows', anime: 'animeRows', movies: 'moviesRows', series: 'seriesRows' };
+  var PAGE_NAMES = { home: 'Inicio', anime: 'Anime', movies: 'Películas', series: 'Series' };
 
   // las filas que tocan ahora en una pestaña (de cada addon, como mucho 4) en el orden elegido; las nuevas, al final
   function pageRows(page) {
@@ -2380,7 +2424,7 @@
     var all = PAGE_ROWS[page].filter(function (r) { return !(r.trakt && !linked) && !(r.local && linked) && !(r.tmdb && !tmdb); })
       .map(function (r) { return extend({ title: tr(r.name, r.arg) }, r); });
     addonCatalogs(false).forEach(function (c) {
-      var t = c.catalog.type, to = t === 'movie' ? 'movies' : t === 'series' ? 'series' : 'home';
+      var t = c.catalog.type, to = t === 'movie' ? 'movies' : t === 'series' ? 'series' : t === 'anime' ? 'anime' : 'home';
       if (to !== page) return;
       var n = perAddon[c.addon.url] = (perAddon[c.addon.url] || 0) + 1;
       if (n <= 4) all.push({ k: 'addon:' + c.addon.url + '|' + t + '|' + c.catalog.id, title: c.title, catalog: c });
@@ -2562,23 +2606,20 @@
     push(detailScreen('movie', p.metaId));
   }
 
-  // ---------------------------------------------------------------- pantalla: anime
-
-  function animeScreen() {
-    var hs = heroScreen('anime'), root = hs.root, vs = hs.vs;
-    asyncRow(vs, tr('En emisión esta temporada'), ANIME + '/catalog/anime/kitsu-anime-airing.json', openMeta);
-    asyncRow(vs, tr('Tendencias'), ANIME + '/catalog/anime/kitsu-anime-trending.json', openMeta);
-    asyncRow(vs, tr('Más populares'), ANIME + '/catalog/anime/kitsu-anime-popular.json', openMeta);
-    asyncRow(vs, tr('Mejor valorados'), ANIME + '/catalog/anime/kitsu-anime-rating.json', openMeta);
-    return { el: root, initialFocus: activeTab(root) };
-  }
-
-  // ---------------------------------------------------------------- pantallas: series y películas
+  // ---------------------------------------------------------------- pantallas: anime, películas y series
 
   // lo que carga cada fila (función: si falla por la red, la fila se vuelve a pedir sola al volver)
+  // anime: animación japonesa (TMDB y Cinemeta) o con el género «anime» de Trakt
+  var TMDB_ANIME = '&with_genres=16&with_original_language=ja';
   function pageRowLoader(page, r) {
-    var k = page === 'movies' ? 'movie' : 'tv', now = Date.now(), today = isoDay(now);
-    var seen = function (list) { return Promise.all([list, seenReady()]).then(function (x) { return filterSeen(x[0] || []); }); };
+    var k = page === 'movies' ? 'movie' : 'tv', now = Date.now(), today = isoDay(now), anime = page === 'anime';
+    // en Películas y Series, sin anime (para eso está su pestaña)
+    var seen = function (list) {
+      return Promise.all([list, seenReady()]).then(function (x) {
+        var metas = filterSeen(x[0] || []);
+        return page === 'home' || anime ? metas : metas.filter(function (m) { return !isAnimeMeta(m); });
+      });
+    };
     var tmdb = function (path) { return function () { return seen(tmdbList(path, k)); }; };
     if (r.catalog) {
       var c = r.catalog;
@@ -2588,27 +2629,35 @@
     if (r.platform) {
       return function () {
         return seen(platformId(k, r.platform).then(function (id) {
-          return id ? tmdbList('/discover/' + k + '?sort_by=popularity.desc' + platformParams(id) + (k === 'tv' ? TV_JUNK : ''), k) : [];
+          return id ? tmdbList('/discover/' + k + '?sort_by=popularity.desc' + platformParams(id) + (anime ? TMDB_ANIME : k === 'tv' ? TV_JUNK : ''), k) : [];
         }));
       };
     }
     switch (r.k) {
-      // recomendaciones de Trakt sin nada visto ni empezado (aunque no se oculte lo visto)
+      // recomendaciones de Trakt sin nada visto ni empezado (aunque no se oculte lo visto); en Anime, las de series y
+      // películas que son anime, y en Películas y Series, las que no
       case 'forYou': return function () {
-        return Promise.all([Trakt.recommendations(page === 'movies' ? 'movies' : 'shows'), seenReady(true)]).then(function (x) { return x[0].filter(isUnseen); });
+        var kinds = anime ? ['shows', 'movies'] : [page === 'movies' ? 'movies' : 'shows'];
+        return Promise.all(kinds.map(function (kd) { return Trakt.recommendations(kd); }).concat([seenReady(true)])).then(function (x) {
+          var all = [];
+          kinds.forEach(function (kd, i) { all = all.concat(x[i]); });
+          return all.filter(function (m) { return isUnseen(m) && (anime ? m.anime : !m.anime); });
+        });
       };
       case 'trending': return tmdb('/trending/' + k + '/week');
       case 'airing': return tmdb('/discover/tv?air_date.gte=' + isoDay(now - 7 * 86400000) + '&air_date.lte=' + today + '&sort_by=popularity.desc&vote_count.gte=50' + TV_JUNK);
-      case 'new': return k === 'tv'
-        ? tmdb('/discover/tv?first_air_date.gte=' + isoDay(now - 120 * 86400000) + '&first_air_date.lte=' + today + '&sort_by=popularity.desc&vote_count.gte=10' + TV_JUNK)
-        // estrenadas en digital (alquiler, compra o plataforma) en España en los últimos 4 meses
-        : tmdb('/discover/movie?region=ES&with_release_type=4%7C5&release_date.gte=' + isoDay(now - 120 * 86400000) + '&release_date.lte=' + today + '&sort_by=popularity.desc&vote_count.gte=10');
+      case 'new':
+        if (anime) return tmdb('/discover/tv?first_air_date.gte=' + isoDay(now - 120 * 86400000) + '&first_air_date.lte=' + today + '&sort_by=popularity.desc' + TMDB_ANIME);
+        return k === 'tv'
+          ? tmdb('/discover/tv?first_air_date.gte=' + isoDay(now - 120 * 86400000) + '&first_air_date.lte=' + today + '&sort_by=popularity.desc&vote_count.gte=10' + TV_JUNK)
+          // estrenadas en digital (alquiler, compra o plataforma) en España en los últimos 4 meses
+          : tmdb('/discover/movie?region=ES&with_release_type=4%7C5&release_date.gte=' + isoDay(now - 120 * 86400000) + '&release_date.lte=' + today + '&sort_by=popularity.desc&vote_count.gte=10');
       case 'cinema': return tmdb('/movie/now_playing?region=ES');
     }
     return function () { return Promise.resolve([]); };
   }
 
-  // Series o Películas: cabecera grande y las filas elegidas (Ajustes → General → Filas de …)
+  // Anime, Películas o Series: cabecera grande y las filas elegidas (Ajustes → General → Filas de …)
   function catalogScreen(page) {
     var hs = heroScreen(page), root = hs.root, vs = hs.vs, sig = '';
     var screen = { el: root, initialFocus: activeTab(root) };
@@ -2648,9 +2697,15 @@
   };
   var GENRES_TV_ES = { Action: 'Acción y aventura', 'Sci-Fi': 'Ciencia ficción y fantasía', War: 'Bélica y política' };
   var GENRES_TV_EN = { Action: 'Action & Adventure', 'Sci-Fi': 'Sci-Fi & Fantasy', War: 'War & Politics' };
+  // anime sin clave de TMDB: géneros de Kitsu
+  var KITSU_GENRES = ['Action', 'Adventure', 'Comedy', 'Drama', 'Sci-Fi', 'Fantasy', 'Romance', 'Slice of Life', 'Mystery', 'Horror',
+    'Psychological', 'Sports', 'Mecha', 'Supernatural', 'School', 'Music'];
+  var KITSU_ES = { 'Slice of Life': 'Recuentos de la vida', Psychological: 'Psicológico', Sports: 'Deportes', Mecha: 'Mecha',
+    Supernatural: 'Sobrenatural', School: 'Escolar', Music: 'Música' };
 
-  // Buscar sin escribir nada: explorar con filtros. Con clave de TMDB, todos (tipo, género, año o década, nota mínima,
-  // plataforma, orden y solo sin ver); sin ella, los catálogos de Cinemeta (un año suelto, sin plataforma ni estrenos)
+  // Buscar sin escribir nada: explorar con filtros. Películas, series y anime por separado (el anime no sale en las otras dos).
+  // Con clave de TMDB, todos los filtros (tipo, género, año o década, nota mínima, plataforma, orden y solo sin ver);
+  // sin ella, los catálogos de Cinemeta (un año suelto, sin plataforma ni estrenos) y de Kitsu para el anime (sin año)
   function discoverFilters(wrap) {
     var f = extend({ type: 'movie', genre: '', year: '', rating: '', platform: '', sort: 'pop', unseen: false }, load('explore', {}));
     if (f.sort === 'top') f.sort = 'pop'; // filtros guardados por la versión anterior
@@ -2663,22 +2718,24 @@
     var tmdb = !!settings.tmdbKey, cur = new Date().getFullYear();
 
     function opts() {
-      var k = f.type === 'movie' ? 'movie' : 'tv', en = settings.lang === 'en';
-      var genres = tmdb ? GENRES.filter(function (g) { return TMDB_GENRES[k][g]; }) : GENRES;
+      var k = f.type === 'movie' ? 'movie' : 'tv', en = settings.lang === 'en', kitsu = !tmdb && f.type === 'anime';
+      var genres = kitsu ? KITSU_GENRES : tmdb ? GENRES.filter(function (g) { return TMDB_GENRES[k][g] && !(f.type === 'anime' && g === 'Animation'); }) : GENRES;
       var years = [''];
-      if (tmdb) {
+      if (kitsu) years = null;
+      else if (tmdb) {
         years.push('Y' + cur, 'Y' + (cur - 1), 'Y' + (cur - 2));
         for (var d = Math.floor(cur / 10) * 10; d >= 1980; d -= 10) years.push('D' + d);
         years.push('B1980');
       } else for (var y = cur; y >= 1987; y--) years.push('Y' + y);
       return [
-        [tr('Tipo'), 'type', ['movie', 'series'], function (v) { return v === 'movie' ? tr('Películas') : tr('Series'); }],
+        [tr('Tipo'), 'type', ['movie', 'series', 'anime'], function (v) { return v === 'movie' ? tr('Películas') : v === 'series' ? tr('Series') : tr('Anime'); }],
         [tr('Género'), 'genre', [''].concat(genres), function (v) {
           if (!v) return tr('Todos');
+          if (kitsu) return en ? v : KITSU_ES[v] || GENRES_ES[v] || v;
           if (tmdb && k === 'tv' && (en ? GENRES_TV_EN : GENRES_TV_ES)[v]) return (en ? GENRES_TV_EN : GENRES_TV_ES)[v];
           return en ? v : GENRES_ES[v] || v;
         }],
-        [tr('Año'), 'year', years, function (v) {
+        years && [tr('Año'), 'year', years, function (v) {
           if (!v) return tr('Todos');
           var n = +v.slice(1);
           if (v[0] === 'D') return n >= 2000 ? tr('Años {0}', n) : tr('Años {0}', String(n).slice(2));
@@ -2698,8 +2755,9 @@
 
     function paint(focusKey) {
       filters.innerHTML = '';
-      var target = null;
-      opts().forEach(function (o) {
+      var target = null, list = opts();
+      if (!list.some(function (o) { return o[1] === 'year'; })) f.year = '';
+      list.forEach(function (o) {
         var key = o[1];
         if (o[2].indexOf(f[key]) < 0) f[key] = o[2][0]; // ya no vale (otro tipo u otro modo)
         var row = el('div', 'row chips-row');
@@ -2749,12 +2807,20 @@
       if (lte) p += '&' + field + '.lte=' + lte;
       if (votes) p += '&vote_count.gte=' + votes;
       if (f.rating) p += '&vote_average.gte=' + f.rating;
-      if (f.genre) p += '&with_genres=' + TMDB_GENRES[k][f.genre];
+      // anime: animación japonesa (y el género elegido, a la vez)
+      if (f.type === 'anime') p += '&with_original_language=ja&with_genres=16' + (f.genre ? ',' + TMDB_GENRES.tv[f.genre] : '');
+      else if (f.genre) p += '&with_genres=' + TMDB_GENRES[k][f.genre];
       if (k === 'tv') p += TV_JUNK;
       if (!f.platform) return Promise.resolve(p);
       return platformId(k, PLATFORMS.filter(function (x) { return x.k === f.platform; })[0]).then(function (id) { return p + platformParams(id || 0); });
     }
     // Cinemeta no combina género y año: con año se pide el catálogo del año y el género se filtra aquí
+    function kitsuUrl() {
+      var extra = [];
+      if (f.genre) extra.push('genre=' + encodeURIComponent(f.genre));
+      if (fetched) extra.push('skip=' + fetched);
+      return ANIME + '/catalog/anime/kitsu-anime-' + (f.sort === 'rated' ? 'rating' : 'popular') + (extra.length ? '/' + extra.join('&') : '') + '.json';
+    }
     function cinemetaUrl() {
       var extra = [], y = f.year.slice(1);
       if (y) extra.push('genre=' + y);
@@ -2768,11 +2834,11 @@
         page++;
         return tmdbUrl(page).then(function (u) { return tmdbPage(u, f.type === 'movie' ? 'movie' : 'tv'); });
       }
-      return getJSON(cinemetaUrl()).then(function (d) {
+      return getJSON(f.type === 'anime' ? kitsuUrl() : cinemetaUrl()).then(function (d) {
         var raw = d.metas || [];
         fetched += raw.length;
         var metas = raw;
-        if (f.year && f.genre) metas = metas.filter(function (m) { return (m.genre || m.genres || []).indexOf(f.genre) >= 0; });
+        if (f.year && f.genre && f.type !== 'anime') metas = metas.filter(function (m) { return (m.genre || m.genres || []).indexOf(f.genre) >= 0; });
         if (f.rating) metas = metas.filter(function (m) { return parseFloat(m.imdbRating) >= +f.rating; });
         if (f.year && f.sort === 'rated') metas.sort(function (a, b) { return (parseFloat(b.imdbRating) || 0) - (parseFloat(a.imdbRating) || 0); });
         return { metas: metas, more: raw.length >= 20 };
@@ -2801,6 +2867,7 @@
         loading = false;
         results.removeChild(status);
         var metas = f.unseen ? r[0].metas.filter(isUnseen) : filterSeen(r[0].metas);
+        if (f.type !== 'anime') metas = metas.filter(function (m) { return !isAnimeMeta(m); }); // el anime, en su tipo
         metas.forEach(function (m) {
           var i = cards.length;
           var c = card(m, function () { openMeta(m); });
@@ -2989,17 +3056,26 @@
       explore.style.display = q ? 'none' : '';
       if (!q) return;
       var enc = encodeURIComponent(q);
-      if (tmdbOn()) {
-        promiseRow(results, tr('Resultados en español (TMDB)'), tmdbGet('/search/multi?include_adult=false&query=' + enc).then(function (d) {
-          return (d.results || []).filter(function (x) { return x.media_type === 'movie' || x.media_type === 'tv'; }).map(function (x) {
-            return { id: 'tmdb:' + x.media_type + ':' + x.id, type: x.media_type === 'movie' ? 'movie' : 'series', name: x.title || x.name,
-              poster: x.poster_path ? 'https://image.tmdb.org/t/p/w185' + x.poster_path : '' };
-          });
-        }), pick, true);
-      }
-      asyncRow(results, tr('Películas'), CINEMETA + '/catalog/movie/top/search=' + enc + '.json', pick);
-      asyncRow(results, tr('Series'), CINEMETA + '/catalog/series/top/search=' + enc + '.json', pick);
+      // anime, películas y series por separado (como las pestañas): el anime solo en su fila. Con TMDB, películas y series
+      // salen de su búsqueda (en español); el anime, de Kitsu
+      var noAnime = function (url) {
+        return function () { return Promise.all([getJSON(url), seenReady()]).then(function (r) { return filterSeen(r[0].metas || []).filter(function (m) { return !isAnimeMeta(m); }); }); };
+      };
       asyncRow(results, tr('Anime'), ANIME + '/catalog/anime/kitsu-anime-list/search=' + enc + '.json', pick);
+      if (tmdbOn()) {
+        var multi = shared(function () {
+          return Promise.all([tmdbGet('/search/multi?include_adult=false&query=' + enc), seenReady()]).then(function (r) {
+            return filterSeen((r[0].results || []).filter(function (x) { return x.media_type === 'movie' || x.media_type === 'tv'; })
+              .map(function (x) { return tmdbMeta(x, x.media_type); })).filter(function (m) { return !m.anime; });
+          });
+        });
+        var ofType = function (t) { return function () { return multi().then(function (l) { return l.filter(function (m) { return m.type === t; }); }); }; };
+        promiseRow(results, tr('Películas'), ofType('movie'), pick);
+        promiseRow(results, tr('Series'), ofType('series'), pick);
+      } else {
+        promiseRow(results, tr('Películas'), noAnime(CINEMETA + '/catalog/movie/top/search=' + enc + '.json'), pick);
+        promiseRow(results, tr('Series'), noAnime(CINEMETA + '/catalog/series/top/search=' + enc + '.json'), pick);
+      }
       addonCatalogs(true).forEach(function (c) {
         asyncRow(results, c.title, c.addon.url + '/catalog/' + c.catalog.type + '/' + c.catalog.id + '/search=' + enc + '.json', pick);
       });
@@ -5647,7 +5723,7 @@
 
       opt('Ocultar lo que ya he visto (Trakt y esta app)', function () { return yesNo(settings.hideWatched); }, function () { settings.hideWatched = !settings.hideWatched; Seen.at = 0; });
 
-      ['home', 'series', 'movies'].forEach(function (page) {
+      ['home', 'anime', 'movies', 'series'].forEach(function (page) {
         opt(tr('Filas de {0}', tr(PAGE_NAMES[page])), function () { return tr('Ordenar u ocultar ›'); }, function () { push(rowsScreen(page)); });
       });
     };
@@ -5800,7 +5876,7 @@
 
   // ---------------------------------------------------------------- arranque
 
-  var VERSION = '0.24.0';
+  var VERSION = '0.25.0';
 
   function fitScreen() {
     var z = window.innerWidth / 1920;

@@ -19,7 +19,7 @@
   document.addEventListener('visibilitychange', function () { if (!document.hidden) clockCheck('volver a la app'); });
   document.addEventListener('keydown', function () { if (Date.now() - clockTick > 15000) clockCheck('tecla'); }, true);
 
-  var TABS = [['home', 'Inicio'], ['series', 'Series'], ['movies', 'Películas'], ['anime', 'Anime'], ['search', 'Buscar'], ['settings', 'Ajustes']];
+  var TABS = [['home', 'Inicio'], ['anime', 'Anime'], ['movies', 'Películas'], ['series', 'Series'], ['search', 'Buscar'], ['settings', 'Ajustes']];
   function header(active) {
     var h = el('div', 'header');
     h.appendChild(el('div', 'logo', 'StremTV'));
@@ -40,8 +40,7 @@
     }
     if (k === 'home') return;
     if (k === 'search') push(searchScreen());
-    else if (k === 'anime') push(animeScreen());
-    else if (k === 'series' || k === 'movies') push(catalogScreen(k));
+    else if (k === 'anime' || k === 'series' || k === 'movies') push(catalogScreen(k));
     else if (k === 'settings') openSettings();
   }
   function activeTab(root) { return function () { return root.querySelector('.tab.active'); }; }
@@ -235,8 +234,9 @@
   }
 
   // filas de Inicio, Series y Películas que se pueden ordenar u ocultar (Ajustes → General → Filas de …). Las de los addons van
-  // detrás, con la clave «addon:url|tipo|id»: las de películas en Películas, las de series en Series y las demás en Inicio.
-  // settings.homeRows / seriesRows / moviesRows: { order: [claves], hidden: { clave: true | false } }; sin dato, oculta si «off»
+  // detrás, con la clave «addon:url|tipo|id»: las de películas en Películas, las de series en Series, las de anime en Anime
+  // y las demás en Inicio.
+  // settings.homeRows / animeRows / moviesRows / seriesRows: { order: [claves], hidden: { clave: true | false } }; sin dato, oculta si «off»
   // (u «offIfTrakt» con Trakt vinculado).
   // trakt: solo con Trakt vinculado; local: solo sin él; tmdb: solo con clave de TMDB
   var PAGE_ROWS = {
@@ -261,6 +261,15 @@
       { k: 'new', name: 'Estrenos', tmdb: true },
       { k: 'top', name: 'Mejor valoradas', url: CINEMETA + '/catalog/series/imdbRating.json' }
     ],
+    // el anime va en su pestaña: Películas y Series no lo muestran
+    anime: [
+      { k: 'forYou', name: 'Para ti', trakt: true },
+      { k: 'trending', name: 'Tendencia esta semana', url: ANIME + '/catalog/anime/kitsu-anime-trending.json' },
+      { k: 'airing', name: 'En emisión', url: ANIME + '/catalog/anime/kitsu-anime-airing.json' },
+      { k: 'pop', name: 'Populares', url: ANIME + '/catalog/anime/kitsu-anime-popular.json' },
+      { k: 'new', name: 'Estrenos', tmdb: true },
+      { k: 'top', name: 'Mejor valorados', url: ANIME + '/catalog/anime/kitsu-anime-rating.json' }
+    ],
     movies: [
       { k: 'forYou', name: 'Para ti', trakt: true },
       { k: 'trending', name: 'Tendencia esta semana', tmdb: true },
@@ -272,11 +281,14 @@
   };
   // una fila por plataforma en Series y Películas
   PLATFORMS.forEach(function (pl) {
-    PAGE_ROWS.series.push({ k: 'prov:' + pl.k, name: 'En {0}', arg: pl.name, tmdb: true, off: pl.off, platform: pl });
-    PAGE_ROWS.movies.push({ k: 'prov:' + pl.k, name: 'En {0}', arg: pl.name, tmdb: true, off: pl.off, platform: pl });
+    ['movies', 'series', 'anime'].forEach(function (page) {
+      if (pl.anime && page !== 'anime') return; // Crunchyroll, solo en Anime
+      var off = page === 'anime' ? !pl.anime && pl.k !== 'netflix' && pl.k !== 'prime' : pl.off;
+      PAGE_ROWS[page].push({ k: 'prov:' + pl.k, name: 'En {0}', arg: pl.name, tmdb: true, off: off, platform: pl });
+    });
   });
-  var ROWS_SETTING = { home: 'homeRows', series: 'seriesRows', movies: 'moviesRows' };
-  var PAGE_NAMES = { home: 'Inicio', series: 'Series', movies: 'Películas' };
+  var ROWS_SETTING = { home: 'homeRows', anime: 'animeRows', movies: 'moviesRows', series: 'seriesRows' };
+  var PAGE_NAMES = { home: 'Inicio', anime: 'Anime', movies: 'Películas', series: 'Series' };
 
   // las filas que tocan ahora en una pestaña (de cada addon, como mucho 4) en el orden elegido; las nuevas, al final
   function pageRows(page) {
@@ -284,7 +296,7 @@
     var all = PAGE_ROWS[page].filter(function (r) { return !(r.trakt && !linked) && !(r.local && linked) && !(r.tmdb && !tmdb); })
       .map(function (r) { return extend({ title: tr(r.name, r.arg) }, r); });
     addonCatalogs(false).forEach(function (c) {
-      var t = c.catalog.type, to = t === 'movie' ? 'movies' : t === 'series' ? 'series' : 'home';
+      var t = c.catalog.type, to = t === 'movie' ? 'movies' : t === 'series' ? 'series' : t === 'anime' ? 'anime' : 'home';
       if (to !== page) return;
       var n = perAddon[c.addon.url] = (perAddon[c.addon.url] || 0) + 1;
       if (n <= 4) all.push({ k: 'addon:' + c.addon.url + '|' + t + '|' + c.catalog.id, title: c.title, catalog: c });
@@ -466,23 +478,20 @@
     push(detailScreen('movie', p.metaId));
   }
 
-  // ---------------------------------------------------------------- pantalla: anime
-
-  function animeScreen() {
-    var hs = heroScreen('anime'), root = hs.root, vs = hs.vs;
-    asyncRow(vs, tr('En emisión esta temporada'), ANIME + '/catalog/anime/kitsu-anime-airing.json', openMeta);
-    asyncRow(vs, tr('Tendencias'), ANIME + '/catalog/anime/kitsu-anime-trending.json', openMeta);
-    asyncRow(vs, tr('Más populares'), ANIME + '/catalog/anime/kitsu-anime-popular.json', openMeta);
-    asyncRow(vs, tr('Mejor valorados'), ANIME + '/catalog/anime/kitsu-anime-rating.json', openMeta);
-    return { el: root, initialFocus: activeTab(root) };
-  }
-
-  // ---------------------------------------------------------------- pantallas: series y películas
+  // ---------------------------------------------------------------- pantallas: anime, películas y series
 
   // lo que carga cada fila (función: si falla por la red, la fila se vuelve a pedir sola al volver)
+  // anime: animación japonesa (TMDB y Cinemeta) o con el género «anime» de Trakt
+  var TMDB_ANIME = '&with_genres=16&with_original_language=ja';
   function pageRowLoader(page, r) {
-    var k = page === 'movies' ? 'movie' : 'tv', now = Date.now(), today = isoDay(now);
-    var seen = function (list) { return Promise.all([list, seenReady()]).then(function (x) { return filterSeen(x[0] || []); }); };
+    var k = page === 'movies' ? 'movie' : 'tv', now = Date.now(), today = isoDay(now), anime = page === 'anime';
+    // en Películas y Series, sin anime (para eso está su pestaña)
+    var seen = function (list) {
+      return Promise.all([list, seenReady()]).then(function (x) {
+        var metas = filterSeen(x[0] || []);
+        return page === 'home' || anime ? metas : metas.filter(function (m) { return !isAnimeMeta(m); });
+      });
+    };
     var tmdb = function (path) { return function () { return seen(tmdbList(path, k)); }; };
     if (r.catalog) {
       var c = r.catalog;
@@ -492,27 +501,35 @@
     if (r.platform) {
       return function () {
         return seen(platformId(k, r.platform).then(function (id) {
-          return id ? tmdbList('/discover/' + k + '?sort_by=popularity.desc' + platformParams(id) + (k === 'tv' ? TV_JUNK : ''), k) : [];
+          return id ? tmdbList('/discover/' + k + '?sort_by=popularity.desc' + platformParams(id) + (anime ? TMDB_ANIME : k === 'tv' ? TV_JUNK : ''), k) : [];
         }));
       };
     }
     switch (r.k) {
-      // recomendaciones de Trakt sin nada visto ni empezado (aunque no se oculte lo visto)
+      // recomendaciones de Trakt sin nada visto ni empezado (aunque no se oculte lo visto); en Anime, las de series y
+      // películas que son anime, y en Películas y Series, las que no
       case 'forYou': return function () {
-        return Promise.all([Trakt.recommendations(page === 'movies' ? 'movies' : 'shows'), seenReady(true)]).then(function (x) { return x[0].filter(isUnseen); });
+        var kinds = anime ? ['shows', 'movies'] : [page === 'movies' ? 'movies' : 'shows'];
+        return Promise.all(kinds.map(function (kd) { return Trakt.recommendations(kd); }).concat([seenReady(true)])).then(function (x) {
+          var all = [];
+          kinds.forEach(function (kd, i) { all = all.concat(x[i]); });
+          return all.filter(function (m) { return isUnseen(m) && (anime ? m.anime : !m.anime); });
+        });
       };
       case 'trending': return tmdb('/trending/' + k + '/week');
       case 'airing': return tmdb('/discover/tv?air_date.gte=' + isoDay(now - 7 * 86400000) + '&air_date.lte=' + today + '&sort_by=popularity.desc&vote_count.gte=50' + TV_JUNK);
-      case 'new': return k === 'tv'
-        ? tmdb('/discover/tv?first_air_date.gte=' + isoDay(now - 120 * 86400000) + '&first_air_date.lte=' + today + '&sort_by=popularity.desc&vote_count.gte=10' + TV_JUNK)
-        // estrenadas en digital (alquiler, compra o plataforma) en España en los últimos 4 meses
-        : tmdb('/discover/movie?region=ES&with_release_type=4%7C5&release_date.gte=' + isoDay(now - 120 * 86400000) + '&release_date.lte=' + today + '&sort_by=popularity.desc&vote_count.gte=10');
+      case 'new':
+        if (anime) return tmdb('/discover/tv?first_air_date.gte=' + isoDay(now - 120 * 86400000) + '&first_air_date.lte=' + today + '&sort_by=popularity.desc' + TMDB_ANIME);
+        return k === 'tv'
+          ? tmdb('/discover/tv?first_air_date.gte=' + isoDay(now - 120 * 86400000) + '&first_air_date.lte=' + today + '&sort_by=popularity.desc&vote_count.gte=10' + TV_JUNK)
+          // estrenadas en digital (alquiler, compra o plataforma) en España en los últimos 4 meses
+          : tmdb('/discover/movie?region=ES&with_release_type=4%7C5&release_date.gte=' + isoDay(now - 120 * 86400000) + '&release_date.lte=' + today + '&sort_by=popularity.desc&vote_count.gte=10');
       case 'cinema': return tmdb('/movie/now_playing?region=ES');
     }
     return function () { return Promise.resolve([]); };
   }
 
-  // Series o Películas: cabecera grande y las filas elegidas (Ajustes → General → Filas de …)
+  // Anime, Películas o Series: cabecera grande y las filas elegidas (Ajustes → General → Filas de …)
   function catalogScreen(page) {
     var hs = heroScreen(page), root = hs.root, vs = hs.vs, sig = '';
     var screen = { el: root, initialFocus: activeTab(root) };

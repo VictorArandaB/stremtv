@@ -16,12 +16,21 @@ const check = (ok, what, got) => { console.log((ok ? '✓ ' : '✗ ') + what + (
   // Cinemeta: T1 y T2 de 2 episodios; Trakt: una T1 de 4, con las mismas fechas
   const videos = [[1, 1, 1], [1, 2, 2], [2, 1, 3], [2, 2, 4]].map((x) => ({ id: 'tt9000001:' + x[0] + ':' + x[1], season: x[0], episode: x[1], name: 'Ep ' + x[0] + 'x' + x[1], released: day(x[2]) }));
   const history = [];
+  let withAnnounced = false;
+  // como Mashle ahora: Trakt suma una T2 que da por emitida y que en Cinemeta es la T3, aún sin fecha
+  const videos2 = [[1, 1, 1], [1, 2, 2], [2, 1, 3], [2, 2, 4]].map((x) => ({ id: 'tt9000002:' + x[0] + ':' + x[1], season: x[0], episode: x[1], released: day(x[2]) }))
+    .concat([{ id: 'tt9000002:3:1', season: 3, episode: 1 }]);
   p.on('request', (req) => {
     const u = req.url();
     if (req.method() === 'OPTIONS') return req.respond({ status: 204, headers: hdr });
+    if (u.indexOf('/meta/series/tt9000002.json') >= 0) return json(req, { meta: { id: 'tt9000002', type: 'series', name: 'Serie anunciada', videos: videos2 } });
     if (u.indexOf('/meta/series/tt9000001.json') >= 0) return json(req, { meta: { id: 'tt9000001', type: 'series', name: 'Serie de prueba', videos: videos } });
     if (u.indexOf('api.trakt.tv') >= 0) {
       if (u.indexOf('/shows/tt9000001/seasons') >= 0) return json(req, [{ number: 0, episodes: [] }, { number: 1, episodes: [1, 2, 3, 4].map((n) => ({ number: n, first_aired: day(n) })) }]);
+      if (u.indexOf('/shows/tt9000002/seasons') >= 0) return json(req, [{ number: 1, episodes: [1, 2, 3, 4].map((n) => ({ number: n, first_aired: day(n) })) }, { number: 2, episodes: [1, 2].map((n) => ({ number: n, first_aired: day(6) })) }]);
+      if (/\/shows\/(tt9000002|78)\/progress\/watched/.test(u)) return json(req, { aired: 6, completed: 4, seasons: [], next_episode: { season: 2, number: 1, first_aired: day(6) } });
+      if (u.indexOf('/sync/watched/shows') >= 0 && withAnnounced) return json(req, [{ show: { title: 'Serie anunciada', ids: { imdb: 'tt9000002', trakt: 78 }, aired_episodes: 6 }, last_watched_at: day(5),
+        seasons: [{ number: 1, episodes: [1, 2, 3, 4].map((n) => ({ number: n })) }] }]);
       if (u.indexOf('/sync/watched/shows') >= 0) return json(req, [{ show: { title: 'Serie de prueba', ids: { imdb: 'tt9000001', trakt: 77 }, aired_episodes: 4 }, last_watched_at: day(5),
         seasons: [{ number: 1, episodes: [1, 2, 3].map((n) => ({ number: n })) }] }]);
       if (/\/shows\/(tt9000001|77)\/progress\/watched/.test(u)) return json(req, { aired: 4, completed: 3, seasons: [{ number: 1, episodes: [1, 2, 3, 4].map((n) => ({ number: n, completed: n <= 3 })) }], next_episode: { season: 1, number: 4, first_aired: day(4) } });
@@ -57,6 +66,13 @@ const check = (ok, what, got) => { console.log((ok ? '✓ ' : '✗ ') + what + (
   const up = await p.evaluate(() => { localStorage.removeItem('stv.epmaps'); StremTV.Trakt.epMaps = {}; StremTV.Trakt.upNextCache = null;
     return StremTV.Trakt.upNext().then((l) => l.map((m) => m.label).join(' | ')); });
   check(up === 'Serie de prueba · T2:E2', 'Siguientes episodios dice T2:E2 (Trakt: 1x4)', up);
+
+  // la temporada que Trakt da por emitida y Cinemeta no: ni en «Siguientes episodios» ni como pendiente; equivalencia por orden
+  const up2 = await p.evaluate(() => { StremTV.Trakt.upNextCache = null; StremTV.Trakt.watchedCache = null;
+    return StremTV.Trakt.upNext().then((l) => l.map((m) => m.label).join(' | ')); }, withAnnounced = true);
+  check(up2 === '', 'lo no emitido según Cinemeta no sale en Siguientes episodios', up2);
+  const map2 = await p.evaluate(() => JSON.stringify(JSON.parse(localStorage.getItem('stv.epmaps'))['tt9000002']));
+  check(/"3:1":"2:1"/.test(map2) && /"future":\["2:1"\]/.test(map2), 'su T3:E1 es la T2:E1 de Trakt, aún sin emitir', map2);
 
   console.log('ERRORES:', errs.length ? errs.join(' | ') : 'ninguno');
   await b.close();
