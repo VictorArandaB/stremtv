@@ -257,7 +257,10 @@
     'Estrenos en digital': 'New on digital', 'En cines': 'In theaters', 'En {0}': 'On {0}',
     // explorar (en Buscar)
     'Años {0}': '{0}s', 'Antes de {0}': 'Before {0}', 'Nota mínima': 'Minimum rating', 'Cualquiera': 'Any', 'Plataforma': 'Platform',
-    'Más recientes': 'Newest', 'Solo sin ver': 'Unwatched only', 'Todo': 'Everything'
+    'Más recientes': 'Newest', 'Solo sin ver': 'Unwatched only', 'Todo': 'Everything',
+    // sorpréndeme
+    'Sorpréndeme': 'Surprise me', 'Buscando algo para ti…': 'Finding something for you…',
+    'No he encontrado nada sin ver que recomendarte aquí. Prueba más tarde o en otra pestaña': 'I couldn’t find anything unwatched to recommend here. Try again later or in another tab'
   };
 
   function tr(s) {
