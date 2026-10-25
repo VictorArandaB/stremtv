@@ -62,6 +62,16 @@ const check = (ok, what, got) => { console.log((ok ? '✓ ' : '✗ ') + what + (
   await sleep(800);
   check(/"seasons":\[\{"number":1,"episodes":\[\{"number":4\}\]\}\]/.test(history[0] || ''), 'marcar visto el T2:E2 manda a Trakt el 1x4', history[0]);
 
+  // visto en la tele con la numeración vieja (Trakt no lo tiene): al abrir la ficha se le manda como 1x4, con la fecha en que se vio
+  await p.evaluate(() => { const pr = JSON.parse(localStorage.getItem('stv.progress') || '{}');
+    pr['tt9000001:2:2'] = { metaId: 'tt9000001', type: 'series', name: 'Serie de prueba', t: 1400, d: 1440, done: true, ts: Date.parse('2026-10-22T14:00:00Z') };
+    localStorage.setItem('stv.progress', JSON.stringify(pr)); });
+  await p.reload({ waitUntil: 'networkidle2' }); await sleep(1000);
+  const before = history.length;
+  await p.evaluate(() => StremTV.open('series', 'tt9000001')); await sleep(3000);
+  const sent = history.slice(before).join(' ');
+  check(/"number":1,"episodes":\[\{"number":4,"watched_at":"2026-10-22T14:00:00.000Z"\}\]/.test(sent), 'lo visto en la tele que Trakt no tiene se le manda con su número', sent);
+
   // «Siguientes episodios» con la numeración de Cinemeta, aunque la equivalencia aún no estuviera guardada
   const up = await p.evaluate(() => { localStorage.removeItem('stv.epmaps'); StremTV.Trakt.epMaps = {}; StremTV.Trakt.upNextCache = null;
     return StremTV.Trakt.upNext().then((l) => l.map((m) => m.label).join(' | ')); });

@@ -329,6 +329,26 @@
       });
     }
 
+    // vistos en la tele que Trakt no tiene, de una serie que numera distinto: antes de la 0.23 se le mandaban con la numeración
+    // de Cinemeta (Mashle T2:E1 en vez de 1x13) y Trakt los descartaba. Se le mandan con la suya y la fecha en que se vieron
+    function sendMissingSeen() {
+      var s = seasonsOf(), missing = [];
+      s.nums.forEach(function (n) {
+        if (n !== 0) s.map[n].forEach(function (v) {
+          var p = progress[v.id], ck = (v.imdbSeason !== undefined ? v.imdbSeason : v.season) + ':' + (v.imdbEpisode !== undefined ? v.imdbEpisode : v.episode);
+          if (p && p.done && epMap[ck] && !traktSeen[epMap[ck]]) missing.push(v);
+        });
+      });
+      if (!missing.length) return;
+      missing.forEach(function (v) { traktSeen[traktKey(v)] = true; });
+      if (traktNext && traktSeen[traktNext]) traktNext = null;
+      Trakt.markWatched(missing.map(function (v) { return extend(epCtx(v), { at: progress[v.id].ts }); }), true).then(function () {
+        logEv('trakt', 'vistos enviados con su numeración', { serie: meta.name, n: missing.length });
+      }, function () {
+        missing.forEach(function (v) { delete traktSeen[traktKey(v)]; }); // se vuelve a intentar al abrir la ficha otra vez
+      });
+    }
+
     // episodio para «▶ Ver»: el que está a medias, el siguiente al último visto (aquí o en Trakt) o el primero sin ver
     function nextToWatch() {
       var s = seasonsOf(), all = [], last = null, i;
@@ -402,6 +422,7 @@
         Trakt.showProgress(imdbOf()).then(alive(screen, function (tp) {
           traktSeen = tp.seen;
           traktNext = tp.next;
+          sendMissingSeen();
           var untouched = Nav.root === root && Nav.cur === screen.autoFocus;
           // si no hay progreso local, ir a la temporada del siguiente episodio según Trakt
           if (traktNext && lastWatchedSeason(seasons) === null) {

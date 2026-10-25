@@ -316,7 +316,8 @@
         if (c.type === 'movie') { movies.push({ ids: { imdb: c.imdb } }); return; }
         var sh = shows[c.imdb] = shows[c.imdb] || {};
         var se = c.traktS || c.imdbS;
-        (sh[se] = sh[se] || []).push({ number: +(c.traktE || c.imdbE) });
+        // con «at», la fecha en que se vio (si no, Trakt pone la de ahora)
+        (sh[se] = sh[se] || []).push({ number: +(c.traktE || c.imdbE), watched_at: c.at ? new Date(c.at).toISOString() : undefined });
       });
       var body = { movies: movies, shows: Object.keys(shows).map(function (imdb) {
         return { ids: { imdb: imdb }, seasons: Object.keys(shows[imdb]).map(function (n) { return { number: +n, episodes: shows[imdb][n] }; }) };
