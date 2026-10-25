@@ -172,7 +172,7 @@
       return inp;
     }
 
-    var build = {};
+    var build = {}, onResume = null;
     function heading(t) {
       var h = el('div', 'row-title', esc(t));
       h.style.padding = box.children.length ? '30px 0 16px 0' : '0 0 16px 0';
@@ -435,6 +435,9 @@
 
       opt('Ocultar lo que ya he visto (Trakt y esta app)', function () { return yesNo(settings.hideWatched); }, function () { settings.hideWatched = !settings.hideWatched; Seen.at = 0; });
 
+      var platOpt = opt('Mis plataformas', platformsSummary, function () { push(platformsScreen()); });
+      onResume = function () { platOpt.lastChild.textContent = platformsSummary(); };
+
       ['home', 'anime', 'movies', 'series'].forEach(function (page) {
         opt(tr('Filas de {0}', tr(PAGE_NAMES[page])), function () { return tr('Ordenar u ocultar ›'); }, function () { push(rowsScreen(page)); });
       });
@@ -500,6 +503,54 @@
     };
 
     build[section]();
+    return { el: root, initialFocus: function () { return box.querySelector('.f'); }, onResume: function () { if (onResume) onResume(); } };
+  }
+
+  // «Netflix, Prime Video», «4 plataformas» o «Ninguna»
+  function platformsSummary() {
+    var mine = myPlatformKeys();
+    if (!mine.length) return tr('Ninguna');
+    if (mine.length > 2) return tr('{0} plataformas', mine.length);
+    return PLATFORMS.filter(function (pl) { return mine.indexOf(pl.k) >= 0; }).map(function (pl) { return pl.name; }).join(', ');
+  }
+
+  // Ajustes → General → Mis plataformas: OK marca o desmarca cada una. Con alguna elegida, Inicio tiene «Novedades en tus
+  // plataformas» y, en las pestañas, las filas de las demás plataformas pasan a estar ocultas de serie
+  function platformsScreen() {
+    var root = el('div', 'screen');
+    var vs = el('div', 'vscroll');
+    root.appendChild(vs);
+    vs.appendChild(header('settings'));
+    vs.appendChild(el('div', 'screen-title settings-title', esc(tr('Ajustes') + ' › ' + tr('Mis plataformas'))));
+    var box = el('div');
+    box.style.cssText = 'padding:0 80px;width:1400px';
+    vs.appendChild(box);
+    box.appendChild(el('div', 'note', esc(tr('Las plataformas que tienes contratadas. Inicio muestra lo que acaba de llegar a ellas (según su fecha de estreno o del último episodio: TMDB no dice el día en que entró en la plataforma) y en Anime, Películas y Series se ven sus filas y se ocultan las de las demás (en Filas de … se pueden volver a mostrar).') +
+      (settings.tmdbKey ? '' : ' ' + tr('Necesita una clave de TMDB (Ajustes → Cuentas).')))));
+    PLATFORMS.forEach(function (pl) {
+      var o = el('div', 'opt');
+      o.appendChild(el('span', null, esc(pl.name)));
+      var v = el('span', 'val');
+      o.appendChild(v);
+      var paint = function () {
+        var on = myPlatformKeys().indexOf(pl.k) >= 0;
+        v.textContent = on ? '✓ ' + tr('Sí') : tr('No');
+        o.classList.toggle('off', !on);
+      };
+      focusable(o, function () {
+        var mine = myPlatformKeys(), on = mine.indexOf(pl.k) >= 0;
+        settings.myPlatforms = PLATFORMS.filter(function (x) { return x.k === pl.k ? !on : mine.indexOf(x.k) >= 0; }).map(function (x) { return x.k; });
+        // al cambiar de plataformas, sus filas en las pestañas vuelven a lo que toque por defecto (las elegidas, visibles)
+        for (var page in ROWS_SETTING) {
+          var pref = settings[ROWS_SETTING[page]];
+          if (pref && pref.hidden) for (var k in pref.hidden) if (k.indexOf('prov:') === 0) delete pref.hidden[k];
+        }
+        saveSettings();
+        paint();
+      });
+      paint();
+      box.appendChild(o);
+    });
     return { el: root, initialFocus: function () { return box.querySelector('.f'); } };
   }
 

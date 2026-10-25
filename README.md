@@ -48,6 +48,7 @@ Escrito en ES5 y CSS sin funciones modernas para que funcione en el motor web de
 - **Saga** en la ficha de las películas que forman parte de una (TMDB): todas en orden de estreno, con ✓ en las vistas.
 - **Notas de Rotten Tomatoes y Metacritic** junto a la de IMDb con una clave gratuita de OMDb (Ajustes → Cuentas) y **dónde verla en España** con suscripción (TMDB/JustWatch).
 - **Filas a tu gusto** (Ajustes → General → Filas de Inicio / Anime / Películas / Series): subir, bajar u ocultar cada fila, también las de los addons.
+- **Novedades en tus plataformas** (TMDB): en Ajustes → General → Mis plataformas eliges las que tienes (Netflix, Prime Video, Disney+…) y Inicio muestra lo recién llegado a ellas, películas y series mezcladas, lo más nuevo primero, con la plataforma en el nombre y sin lo visto (también en Películas y Series). TMDB no sabe el día en que un título entra en una plataforma: se aproxima con la fecha de estreno (películas, últimos 60 días) o del último episodio (series, últimos 30 días). Con plataformas elegidas, las filas de las demás quedan ocultas de serie en las pestañas.
 - **Series que Trakt numera distinto** (Mashle, The Apothecary Diaries: en Trakt una sola temporada larga): los episodios se emparejan por fecha de emisión, así que salen como vistos, las filas dicen el episodio correcto y lo que ves se registra en Trakt con su número.
 - **Trakt**: vinculación con código, scrobble automático (visto al pasar del 80 %), «Continuar», tu lista, recomendaciones y episodios vistos. El anime se registra usando su equivalencia en IMDb.
 
