@@ -238,8 +238,7 @@
     'Pulsa cualquier tecla para volver': 'Press any key to go back', 'Protector de pantalla con el vídeo en pausa': 'Screensaver while the video is paused',
     'A los {0} min': 'After {0} min', 'Vídeo en pausa al salir de la app: pulsa OK para seguir': 'Video paused when you left the app: press OK to continue',
     // tráiler, saga, notas y plataformas
-    'Tráiler': 'Trailer', 'Saga': 'Collection', 'En España: {0}': 'In Spain: {0}', 'Abriendo el tráiler en TizenTube…': 'Opening the trailer in TizenTube…',
-    'Para ver tráileres, abre TizenTube una vez desde que encendiste la tele y vuelve a probar': 'To watch trailers, open TizenTube once after turning on the TV and try again',
+    'Tráiler': 'Trailer', 'Cargando el tráiler…': 'Loading the trailer…', 'sin vídeo': 'no video', '{0} no ha podido darte el tráiler ({1})': '{0} couldn’t get you the trailer ({1})', 'Saga': 'Collection', 'En España: {0}': 'In Spain: {0}',
     'Notas de Rotten Tomatoes y Metacritic (OMDb)': 'Rotten Tomatoes and Metacritic scores (OMDb)', 'Clave de OMDb (pulsa OK para escribirla)': 'OMDb key (press OK to type it)',
     'Clave de omdbapi.com': 'omdbapi.com key', 'Sin clave: solo la nota de IMDb.': 'No key: IMDb rating only.',
     '✓ Clave válida (Cadena perpetua: Rotten Tomatoes {0} %)': '✓ Valid key (The Shawshank Redemption: Rotten Tomatoes {0} %)',

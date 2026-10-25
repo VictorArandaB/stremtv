@@ -1,5 +1,5 @@
-// 0.23: tráiler (por DIAL a TizenTube), saga, notas de Rotten Tomatoes/Metacritic, plataformas en España y filas de Inicio.
-// TMDB, OMDb, TizenTube y Cinemeta se simulan. Sale con código 1 si alguna comprobación falla.
+// 0.23: tráiler (con el debrid, en el reproductor), saga, notas de Rotten Tomatoes/Metacritic, plataformas en España y filas de Inicio.
+// TMDB, OMDb, AllDebrid y Cinemeta se simulan (y se comprueba que no se llama a TizenTube). Sale con código 1 si alguna comprobación falla.
 const puppeteer = require('puppeteer-core');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const OUT = __dirname + '/shots';
@@ -12,15 +12,25 @@ const check = (ok, what, got) => { console.log((ok ? '✓ ' : '✗ ') + what + (
   const cors = { 'Access-Control-Allow-Origin': '*' };
   const json = (req, o, status) => req.respond({ status: status || 200, headers: cors, contentType: 'application/json', body: JSON.stringify(o) });
   const dial = [];
-  let dialUp = true;
+  let adUp = true;
+  const ad = [];
   const parts = [['tt0120737', 120, 'La Comunidad del Anillo', '2001-12-19'], ['tt0167260', 122, 'El retorno del Rey', '2003-12-17'], ['tt0167261', 121, 'Las dos torres', '2002-12-18']];
   p.on('request', (req) => {
     const u = req.url();
     if (u.indexOf('127.0.0.1:8095') >= 0) {
-      if (!dialUp) return req.abort();
       dial.push(req.method() + ' ' + req.postData());
       return req.respond({ status: 201, headers: cors, contentType: 'text/plain', body: 'run' });
     }
+    if (u.indexOf('api.alldebrid.com') >= 0) {
+      if (req.method() === 'OPTIONS') return req.respond({ status: 204, headers: Object.assign({ 'Access-Control-Allow-Headers': '*' }, cors) });
+      ad.push(u.replace(/^https:\/\/api\.alldebrid\.com\/v4\//, '') + ' ' + (req.headers().authorization || ''));
+      if (!adUp) return json(req, { status: 'error', error: { code: 'LINK_HOST_NOT_SUPPORTED', message: 'no' } });
+      if (/link\/unlock/.test(u)) return json(req, { status: 'success', data: { id: 'abc', filename: 'Trailer.mp4', link: '', streams: [
+        { id: 's2160', ext: 'mp4', quality: 2160 }, { id: 's1080', ext: 'mp4', quality: 1080 }, { id: 's720w', ext: 'webm', quality: 720 }, { id: 's480', ext: 'mp4', quality: 480 }] } });
+      if (/link\/streaming/.test(u)) return json(req, { status: 'success', data: { link: '', delayed: 77 } });
+      if (/link\/delayed/.test(u)) return json(req, { status: 'success', data: { status: 2, link: 'https://cdn.example/trailer.mp4' } });
+    }
+    if (u.indexOf('cdn.example/trailer.mp4') >= 0) return req.respond({ status: 206, headers: Object.assign({ 'Content-Range': 'bytes 0-0/100' }, cors), contentType: 'video/mp4', body: 'x' });
     if (u.indexOf('omdbapi.com') >= 0) return json(req, { Ratings: [{ Source: 'Internet Movie Database', Value: '8.9/10' }, { Source: 'Rotten Tomatoes', Value: '91%' }, { Source: 'Metacritic', Value: '92/100' }] });
     if (u.indexOf('api.themoviedb.org') >= 0) {
       const f = /\/find\/(tt\d+)/.exec(u);
@@ -64,12 +74,18 @@ const check = (ok, what, got) => { console.log((ok ? '✓ ' : '✗ ') + what + (
   const prov = await p.evaluate((top) => (eval(top).querySelector('.providers') || {}).textContent, top);
   check(prov === 'En España: Max, Prime Video', 'plataformas en España', prov);
   await p.screenshot({ path: OUT + '/230-detail-extras.png' });
-  await focusText('^Tráiler$'); await key('Enter'); await sleep(800);
-  check(dial[0] === 'POST v=SPANISH0001', 'el tráiler va a TizenTube por DIAL (el de español primero)', dial[0]);
-  dialUp = false;
-  await key('Enter'); await sleep(800);
+  // el navegador de las pruebas no reproduce el vídeo simulado: se mira qué recibe el reproductor
+  await p.evaluate(() => { StremTV.Player.open = (s, c) => { window.__pl = { url: s.url, quality: s.quality, trailer: c.trailer, label: c.label }; }; });
+  await focusText('^Tráiler$'); await key('Enter'); await sleep(3500);
+  check(/^link\/unlock\?link=https%3A%2F%2Fwww\.youtube\.com%2Fwatch%3Fv%3DSPANISH0001&agent=stremtv Bearer K$/.test(ad[0] || ''), 'el tráiler se pide a AllDebrid (el de español primero)', ad[0]);
+  check(/stream=s1080/.test(ad[1] || '') && /delayed\?id=77/.test(ad[2] || ''), 'calidad 1080p en mp4 y espera a que esté listo', ad.slice(1).join(' · '));
+  const pl = await p.evaluate(() => window.__pl || {});
+  check(pl.trailer && pl.url === 'https://cdn.example/trailer.mp4' && pl.quality === '1080p' && pl.label === 'Tráiler · La Comunidad del Anillo', 'se ve en el reproductor de StremTV', JSON.stringify(pl));
+  // si el debrid no puede: aviso (y nada de otras apps)
+  adUp = false;
+  await focusText('^Tráiler$'); await key('Enter'); await sleep(1200);
   const t = await p.evaluate(() => document.querySelector('#toast').textContent);
-  check(/abre TizenTube/.test(t), 'sin TizenTube, aviso de abrirla', t);
+  check(t === 'AllDebrid no ha podido darte el tráiler (no)' && !dial.length, 'si el debrid no puede, aviso', t);
   await focusText('^Saga$'); await key('Enter'); await sleep(2000);
   const saga = await p.evaluate((top) => [eval(top).querySelector('.screen-title').textContent, Array.from(eval(top).querySelectorAll('.card .name')).map((x) => x.textContent).join(' / ')].join(' : '), top);
   check(/Colección : La Comunidad del Anillo \/ Las dos torres \/ El retorno del Rey$/.test(saga), 'saga en orden de estreno', saga);

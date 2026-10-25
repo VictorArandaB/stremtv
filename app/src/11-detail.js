@@ -64,7 +64,7 @@
       var yt = trailerId(meta);
       if (!yt) return;
       var b = el('div', 'btn small', tr('Tráiler'));
-      focusable(b, function () { playTrailer(yt); });
+      focusable(b, function () { playTrailer(yt, meta); });
       container.appendChild(b);
     }
 

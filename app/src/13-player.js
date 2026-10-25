@@ -163,7 +163,7 @@
         if (self.stream === stream) self.fail(msg);
       });
 
-      Subs.fetchList(ctx).then(function (list) {
+      if (!ctx.trailer) Subs.fetchList(ctx).then(function (list) {
         if (self.session !== session || settings.subLang === 'off' || self.skipAutoSubs() || Subs.embedded || Subs.manual) return;
         for (var i = 0; i < list.length; i++) {
           if (list[i].lang === settings.subLang) { Subs.auto = true; Subs.select(list[i]); return; }
@@ -1001,7 +1001,7 @@
 
     saveProgress: function () {
       var c = this.ctx;
-      if (!c || !this.started || !this.duration || this.time < 5) return;
+      if (!c || c.trailer || !this.started || !this.duration || this.time < 5) return; // un tráiler no cuenta como visto
       // visto: casi al final, en el ending (AniSkip) o ya en el aviso del siguiente episodio (últimos 40 s)
       var done = this.time / this.duration > 0.92 || this.duration - this.time <= 40 || this.inEnding();
       saveProgress({

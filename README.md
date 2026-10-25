@@ -45,7 +45,7 @@ Escrito en ES5 y CSS sin funciones modernas para que funcione en el motor web de
 - **Teclas 0-9 en el vídeo**: 1-9 van al 10 %-90 % y 0 al principio; la burbuja al avanzar dice también cuánto se salta.
 - **Cola desde el móvil**: escribe títulos o enlaces de IMDb en `cola.txt` del Gist de la copia y llegan a Mi lista en unos minutos («ver …» abre además su ficha).
 - **Siguientes episodios** con «Nuevo» (emitidos en las últimas 48 h, primero) y una insignia con los episodios que faltan por ver (también en Continuar, Mi lista y Visto recientemente). El progreso de cada serie se guarda en la tele y solo se vuelve a pedir a Trakt si ha cambiado.
-- **Tráiler** en la ficha: se abre en TizenTube (en español si TMDB lo tiene). Hace falta haber abierto TizenTube una vez desde que se encendió la tele.
+- **Tráiler** en la ficha, en el reproductor de StremTV (en español si TMDB lo tiene): el debrid (AllDebrid o Real-Debrid) convierte el enlace de YouTube en el vídeo directo, en mp4 hasta 1080p. No cuenta como visto.
 - **Saga** en la ficha de las películas que forman parte de una (TMDB): todas en orden de estreno, con ✓ en las vistas.
 - **Notas de Rotten Tomatoes y Metacritic** junto a la de IMDb con una clave gratuita de OMDb (Ajustes → Cuentas) y **dónde verla en España** con suscripción (TMDB/JustWatch).
 - **Filas a tu gusto** (Ajustes → General → Filas de Inicio / Anime / Películas / Series): subir, bajar u ocultar cada fila, también las de los addons.
