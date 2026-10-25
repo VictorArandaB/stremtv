@@ -20,8 +20,9 @@ Escrito en ES5 y CSS sin funciones modernas para que funcione en el motor web de
 - **Títulos y sinopsis en español** con una clave gratuita de TMDB (Ajustes, debajo del idioma): tarjetas, fichas, géneros, nombres de episodio y búsqueda en español.
 - **Retomar desde Trakt** lo dejado a medias en otro dispositivo («▶ Continuar (35 %)»).
 - **Copia de seguridad** en un Gist secreto de GitHub (Ajustes → Copia de seguridad): diaria y automática; para restaurar basta con escribir el token.
-- **Addons de Stremio**: en Ajustes → Fuentes y debrid se pega la URL de un manifest; sus fuentes se suman entre sí, sus catálogos salen en Inicio (hasta 4 filas) y en la búsqueda, y sus subtítulos en el menú ▲.
-- **Explorar**: películas o series por género y año, populares o mejor valoradas.
+- **Addons de Stremio**: en Ajustes → Fuentes y debrid se pega la URL de un manifest; sus fuentes se suman entre sí, sus catálogos salen en Películas, Series o Inicio según su tipo (hasta 4 filas) y en la búsqueda, y sus subtítulos en el menú ▲.
+- **Pestañas Series y Películas**: Para ti (recomendaciones de Trakt sin nada visto ni empezado), tendencia, en emisión o estrenos (en digital y en cines), populares, mejor valoradas y una fila por plataforma en España (Netflix, Prime Video, Disney+, HBO Max, Apple TV+, Movistar Plus+; SkyShowtime y Filmin, ocultas de serie). Las de TMDB necesitan su clave. Inicio queda para lo tuyo: continuar, siguientes episodios, esta semana, tu lista y lo visto.
+- **Explorar en Buscar**: sin escribir nada, filtros de tipo, género, año o década, nota mínima, plataforma, orden (populares, mejor valoradas, más recientes) y «solo sin ver». Sin clave de TMDB, con los catálogos de Cinemeta (año suelto, sin plataforma).
 - **Esta semana en tus series** (Trakt): episodios de las series que sigues, de hace dos días a una semana vista.
 - **Reproducción directa**: «▶ Ver» arranca la mejor fuente (instantánea, que quepa en la conexión, o la misma release que en el episodio anterior); para elegir otra, ▼ → «Cambiar fuente…».
 - Hora a la que termina el vídeo en la barra, subtítulos con fondo y subtítulos del propio MKV por defecto si los trae en tu idioma.
@@ -47,7 +48,7 @@ Escrito en ES5 y CSS sin funciones modernas para que funcione en el motor web de
 - **Tráiler** en la ficha: se abre en TizenTube (en español si TMDB lo tiene). Hace falta haber abierto TizenTube una vez desde que se encendió la tele.
 - **Saga** en la ficha de las películas que forman parte de una (TMDB): todas en orden de estreno, con ✓ en las vistas.
 - **Notas de Rotten Tomatoes y Metacritic** junto a la de IMDb con una clave gratuita de OMDb (Ajustes → Cuentas) y **dónde verla en España** con suscripción (TMDB/JustWatch).
-- **Filas de Inicio a tu gusto** (Ajustes → General → Filas de Inicio): subir, bajar u ocultar cada fila, también las de los addons.
+- **Filas a tu gusto** (Ajustes → General → Filas de Inicio / Series / Películas): subir, bajar u ocultar cada fila, también las de los addons.
 - **Series que Trakt numera distinto** (Mashle, The Apothecary Diaries: en Trakt una sola temporada larga): los episodios se emparejan por fecha de emisión, así que salen como vistos, las filas dicen el episodio correcto y lo que ves se registra en Trakt con su número.
 - **Trakt**: vinculación con código, scrobble automático (visto al pasar del 80 %), «Continuar», tu lista, recomendaciones y episodios vistos. El anime se registra usando su equivalencia en IMDb.
 

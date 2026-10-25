@@ -249,7 +249,16 @@
     'Filas de Inicio': 'Home rows', 'Ordenar u ocultar ›': 'Reorder or hide ›', 'Oculta': 'Hidden', 'Visible': 'Visible',
     'Subir': 'Move up', 'Bajar': 'Move down', 'Arriba del todo': 'Move to top', 'Ocultar': 'Hide',
     'OK sobre una fila para subirla, bajarla u ocultarla. Los avisos (fuentes, certificado) salen siempre arriba.': 'Press OK on a row to move it up, down or hide it. Warnings (sources, certificate) always show at the top.',
-    'Volver al orden de siempre': 'Restore the default order', 'Inicio vuelve a tener todas las filas en su orden de siempre': 'Home is back to all rows in the default order'
+    'Volver al orden de siempre': 'Restore the default order', 'Inicio vuelve a tener todas las filas en su orden de siempre': 'Home is back to all rows in the default order',
+    'Filas de {0}': '{0} rows', '{0} vuelve a tener las filas en su orden de siempre': '{0} is back to its rows in the default order',
+    'OK sobre una fila para subirla, bajarla u ocultarla.': 'Press OK on a row to move it up, down or hide it.',
+    'Con una clave de TMDB (Ajustes → Cuentas) hay más filas: tendencias, estrenos y una por plataforma.': 'With a TMDB key (Settings → Accounts) there are more rows: trending, new releases and one per platform.',
+    // series y películas
+    'Para ti': 'For you', 'Tendencia esta semana': 'Trending this week', 'En emisión': 'Airing now', 'Estrenos': 'New releases',
+    'Estrenos en digital': 'New on digital', 'En cines': 'In theaters', 'En {0}': 'On {0}',
+    // explorar (en Buscar)
+    'Años {0}': '{0}s', 'Antes de {0}': 'Before {0}', 'Nota mínima': 'Minimum rating', 'Cualquiera': 'Any', 'Plataforma': 'Platform',
+    'Más recientes': 'Newest', 'Solo sin ver': 'Unwatched only', 'Todo': 'Everything'
   };
 
   function tr(s) {

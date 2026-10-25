@@ -108,7 +108,7 @@
       Trakt.watchlist = {};
       Trakt.watchedCache = null; Trakt.upNextCache = null; Trakt.resumeCache = null;
       Trakt.progressCache = {}; save('upnext', {});
-      Seen.movies = {}; Seen.shows = {}; Seen.at = 0; Seen.loading = null;
+      Seen.movies = {}; Seen.shows = {}; Seen.tmdb = {}; Seen.started = {}; Seen.at = 0; Seen.loading = null;
     },
 
     // Trakt y Cinemeta pueden numerar distinto los episodios de una serie (Mashle: en Trakt una T1 de 24, en Cinemeta T1 y T2
@@ -379,7 +379,7 @@
     },
 
     recommendations: function (kind) {
-      return Trakt.call('GET', '/recommendations/' + kind + '?limit=30&ignore_collected=true').then(function (items) {
+      return Trakt.call('GET', '/recommendations/' + kind + '?limit=60&ignore_collected=true').then(function (items) {
         return (items || []).filter(function (o) { return o.ids && o.ids.imdb; }).map(function (o) {
           return { id: o.ids.imdb, type: kind === 'movies' ? 'movie' : 'series', name: o.title, poster: metahubPoster(o.ids.imdb) };
         });
@@ -392,17 +392,29 @@
         Trakt.call('GET', '/sync/watched/movies'),
         Trakt.watchedShows()
       ]).then(function (r) {
-        var movies = {}, shows = {};
-        (r[0] || []).forEach(function (it) { if (it.movie && it.movie.ids && it.movie.ids.imdb) movies[it.movie.ids.imdb] = true; });
+        var movies = {}, shows = {}, tmdb = {}, started = {};
+        (r[0] || []).forEach(function (it) {
+          var ids = it.movie && it.movie.ids;
+          if (!ids) return;
+          if (ids.imdb) movies[ids.imdb] = true;
+          if (ids.tmdb) tmdb['movie:' + ids.tmdb] = true;
+        });
         (r[1] || []).forEach(function (it) {
           var sh = it.show;
-          if (!sh || !sh.ids || !sh.ids.imdb) return;
+          if (!sh || !sh.ids) return;
           var n = 0;
           (it.seasons || []).forEach(function (se) { if (se.number > 0) n += (se.episodes || []).length; });
-          if (sh.aired_episodes && n >= sh.aired_episodes) shows[sh.ids.imdb] = true;
+          if (sh.ids.imdb) started[sh.ids.imdb] = true;
+          if (sh.ids.tmdb) started['tv:' + sh.ids.tmdb] = true;
+          if (sh.aired_episodes && n >= sh.aired_episodes) {
+            if (sh.ids.imdb) shows[sh.ids.imdb] = true;
+            if (sh.ids.tmdb) tmdb['tv:' + sh.ids.tmdb] = true;
+          }
         });
         Seen.movies = movies;
         Seen.shows = shows;
+        Seen.tmdb = tmdb;
+        Seen.started = started;
         Seen.at = Date.now();
       });
     },

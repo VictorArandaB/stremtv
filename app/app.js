@@ -409,7 +409,16 @@
     'Filas de Inicio': 'Home rows', 'Ordenar u ocultar ›': 'Reorder or hide ›', 'Oculta': 'Hidden', 'Visible': 'Visible',
     'Subir': 'Move up', 'Bajar': 'Move down', 'Arriba del todo': 'Move to top', 'Ocultar': 'Hide',
     'OK sobre una fila para subirla, bajarla u ocultarla. Los avisos (fuentes, certificado) salen siempre arriba.': 'Press OK on a row to move it up, down or hide it. Warnings (sources, certificate) always show at the top.',
-    'Volver al orden de siempre': 'Restore the default order', 'Inicio vuelve a tener todas las filas en su orden de siempre': 'Home is back to all rows in the default order'
+    'Volver al orden de siempre': 'Restore the default order', 'Inicio vuelve a tener todas las filas en su orden de siempre': 'Home is back to all rows in the default order',
+    'Filas de {0}': '{0} rows', '{0} vuelve a tener las filas en su orden de siempre': '{0} is back to its rows in the default order',
+    'OK sobre una fila para subirla, bajarla u ocultarla.': 'Press OK on a row to move it up, down or hide it.',
+    'Con una clave de TMDB (Ajustes → Cuentas) hay más filas: tendencias, estrenos y una por plataforma.': 'With a TMDB key (Settings → Accounts) there are more rows: trending, new releases and one per platform.',
+    // series y películas
+    'Para ti': 'For you', 'Tendencia esta semana': 'Trending this week', 'En emisión': 'Airing now', 'Estrenos': 'New releases',
+    'Estrenos en digital': 'New on digital', 'En cines': 'In theaters', 'En {0}': 'On {0}',
+    // explorar (en Buscar)
+    'Años {0}': '{0}s', 'Antes de {0}': 'Before {0}', 'Nota mínima': 'Minimum rating', 'Cualquiera': 'Any', 'Plataforma': 'Platform',
+    'Más recientes': 'Newest', 'Solo sin ver': 'Unwatched only', 'Todo': 'Everything'
   };
 
   function tr(s) {
@@ -453,7 +462,7 @@
     debrid: 'realdebrid', key: '', onlyCached: true, maxQ: 'all',
     preferEs: true, compatFirst: true, hideWatched: true, maxRate: 'auto', measuredMbps: 0, measuredAt: 0,
     subLang: 'spa', subSize: 'normal', autoNext: true, audioLang: 'spa', lang: 'es', quickPlay: true, subBg: true, tmdbKey: '', autoSkip: false, subColor: 'white', subPos: 'low', saver: 3,
-    idleSaver: 10, saverShow: 'mix', saverEvery: 20, omdbKey: '', homeRows: null
+    idleSaver: 10, saverShow: 'mix', saverEvery: 20, omdbKey: '', homeRows: null, seriesRows: null, moviesRows: null
   };
   var settings = extend(extend({}, DEFAULTS), load('settings', {}));
   function saveSettings() { save('settings', settings); }
@@ -643,7 +652,7 @@
 
   function tmdbGet(path) {
     var key = settings.tmdbKey, bearer = key.length > 40; // token de lectura (v4) o clave de la API (v3)
-    var url = TMDB + path + (path.indexOf('?') >= 0 ? '&' : '?') + 'language=es-ES' + (bearer ? '' : '&api_key=' + encodeURIComponent(key));
+    var url = TMDB + path + (path.indexOf('?') >= 0 ? '&' : '?') + 'language=' + (settings.lang === 'en' ? 'en-US' : 'es-ES') + (bearer ? '' : '&api_key=' + encodeURIComponent(key));
     return xhr('GET', url, { timeout: 15000, headers: bearer ? { Authorization: 'Bearer ' + key } : {},
       fail: function (st) { return st === 401 ? tr('la clave de TMDB no es válida') : 'TMDB ' + st; } }).then(strictJSON);
   }
@@ -709,6 +718,62 @@
       });
     });
   }
+
+  // ---------------------------------------------------------------- listas de TMDB (Series, Películas y Buscar)
+
+  // carátula de un resultado de TMDB; se abre por su id de IMDb al elegirla (openMeta)
+  function tmdbMeta(x, k) {
+    var date = x.release_date || x.first_air_date || '';
+    return { id: 'tmdb:' + k + ':' + x.id, type: k === 'movie' ? 'movie' : 'series', name: x.title || x.name,
+      poster: x.poster_path ? 'https://image.tmdb.org/t/p/w185' + x.poster_path : '',
+      background: x.backdrop_path ? 'https://image.tmdb.org/t/p/w1280' + x.backdrop_path : '',
+      description: x.overview || '', releaseInfo: date.slice(0, 4),
+      imdbRating: x.vote_count >= 50 && x.vote_average ? x.vote_average.toFixed(1) : '' };
+  }
+  // una página de resultados de TMDB como carátulas, con si hay más páginas
+  function tmdbPage(path, k) {
+    return tmdbGet(path).then(function (d) {
+      return { metas: (d.results || []).map(function (x) { return tmdbMeta(x, k); }), more: (d.page || 1) < Math.min(d.total_pages || 1, 500) };
+    });
+  }
+  function tmdbList(path, k) { return tmdbPage(path, k).then(function (r) { return r.metas; }); }
+
+  function isoDay(ms) { return new Date(ms).toISOString().slice(0, 10); }
+
+  // plataformas con suscripción en España: por su id de TMDB y, si ya no está, por el nombre (cambian: Max → HBO Max).
+  // Apple TV+ solo por id: ahora se llama «Apple TV», igual que la tienda de alquiler de Apple
+  var PLATFORMS = [
+    { k: 'netflix', name: 'Netflix', ids: [8], m: ['netflix'] },
+    { k: 'prime', name: 'Prime Video', ids: [119], m: ['amazonprimevideo', 'primevideo'] },
+    { k: 'disney', name: 'Disney+', ids: [337], m: ['disneyplus'] },
+    { k: 'max', name: 'HBO Max', ids: [1899, 384], m: ['hbomax', 'max'] },
+    { k: 'apple', name: 'Apple TV+', ids: [350], m: ['appletvplus'] },
+    { k: 'movistar', name: 'Movistar Plus+', ids: [149], m: ['movistarplusplus', 'movistarplus'] },
+    { k: 'skyshowtime', name: 'SkyShowtime', ids: [1773], m: ['skyshowtime'], off: true },
+    { k: 'filmin', name: 'Filmin', ids: [63], m: ['filmin'], off: true }
+  ];
+  var providerLists = {};
+  function platformId(k, pl) {
+    if (!providerLists[k]) {
+      providerLists[k] = tmdbGet('/watch/providers/' + k + '?watch_region=ES').then(function (d) { return d.results || []; })
+        .catch(function (e) { delete providerLists[k]; throw e; });
+    }
+    return providerLists[k].then(function (list) {
+      var norm = function (n) { return String(n).toLowerCase().replace(/\+/g, 'plus').replace(/[^a-z0-9]/g, ''); };
+      var i, j;
+      for (i = 0; i < pl.ids.length; i++) {
+        for (j = 0; j < list.length; j++) if (list[j].provider_id === pl.ids[i]) return pl.ids[i];
+      }
+      for (i = 0; i < pl.m.length; i++) {
+        for (j = 0; j < list.length; j++) if (norm(list[j].provider_name) === pl.m[i]) return list[j].provider_id;
+      }
+      return 0;
+    });
+  }
+  // con suscripción en esa plataforma (en España)
+  function platformParams(id) { return '&with_watch_providers=' + id + '&watch_region=ES&with_watch_monetization_types=flatrate'; }
+  // sin telediarios, programas de entrevistas ni culebrones
+  var TV_JUNK = '&without_genres=10763,10767,10766';
 
   // ---------------------------------------------------------------- tráileres (en TizenTube)
 
@@ -963,7 +1028,7 @@
       Trakt.watchlist = {};
       Trakt.watchedCache = null; Trakt.upNextCache = null; Trakt.resumeCache = null;
       Trakt.progressCache = {}; save('upnext', {});
-      Seen.movies = {}; Seen.shows = {}; Seen.at = 0; Seen.loading = null;
+      Seen.movies = {}; Seen.shows = {}; Seen.tmdb = {}; Seen.started = {}; Seen.at = 0; Seen.loading = null;
     },
 
     // Trakt y Cinemeta pueden numerar distinto los episodios de una serie (Mashle: en Trakt una T1 de 24, en Cinemeta T1 y T2
@@ -1234,7 +1299,7 @@
     },
 
     recommendations: function (kind) {
-      return Trakt.call('GET', '/recommendations/' + kind + '?limit=30&ignore_collected=true').then(function (items) {
+      return Trakt.call('GET', '/recommendations/' + kind + '?limit=60&ignore_collected=true').then(function (items) {
         return (items || []).filter(function (o) { return o.ids && o.ids.imdb; }).map(function (o) {
           return { id: o.ids.imdb, type: kind === 'movies' ? 'movie' : 'series', name: o.title, poster: metahubPoster(o.ids.imdb) };
         });
@@ -1247,17 +1312,29 @@
         Trakt.call('GET', '/sync/watched/movies'),
         Trakt.watchedShows()
       ]).then(function (r) {
-        var movies = {}, shows = {};
-        (r[0] || []).forEach(function (it) { if (it.movie && it.movie.ids && it.movie.ids.imdb) movies[it.movie.ids.imdb] = true; });
+        var movies = {}, shows = {}, tmdb = {}, started = {};
+        (r[0] || []).forEach(function (it) {
+          var ids = it.movie && it.movie.ids;
+          if (!ids) return;
+          if (ids.imdb) movies[ids.imdb] = true;
+          if (ids.tmdb) tmdb['movie:' + ids.tmdb] = true;
+        });
         (r[1] || []).forEach(function (it) {
           var sh = it.show;
-          if (!sh || !sh.ids || !sh.ids.imdb) return;
+          if (!sh || !sh.ids) return;
           var n = 0;
           (it.seasons || []).forEach(function (se) { if (se.number > 0) n += (se.episodes || []).length; });
-          if (sh.aired_episodes && n >= sh.aired_episodes) shows[sh.ids.imdb] = true;
+          if (sh.ids.imdb) started[sh.ids.imdb] = true;
+          if (sh.ids.tmdb) started['tv:' + sh.ids.tmdb] = true;
+          if (sh.aired_episodes && n >= sh.aired_episodes) {
+            if (sh.ids.imdb) shows[sh.ids.imdb] = true;
+            if (sh.ids.tmdb) tmdb['tv:' + sh.ids.tmdb] = true;
+          }
         });
         Seen.movies = movies;
         Seen.shows = shows;
+        Seen.tmdb = tmdb;
+        Seen.started = started;
         Seen.at = Date.now();
       });
     },
@@ -1505,11 +1582,13 @@
 
   // ---------------------------------------------------------------- ocultar lo ya visto
 
-  var Seen = { movies: {}, shows: {}, at: 0, loading: null };
+  // movies / shows: vistas (series: sin emitidos pendientes) por id de IMDb; tmdb: lo mismo por «movie:id» / «tv:id»;
+  // started: series con algún episodio visto (imdb y «tv:id»)
+  var Seen = { movies: {}, shows: {}, tmdb: {}, started: {}, at: 0, loading: null };
 
-  // espera (como mucho una vez cada 10 min) a tener la lista de vistos de Trakt
-  function seenReady() {
-    if (!settings.hideWatched || !Trakt.linked()) return Promise.resolve();
+  // espera (como mucho una vez cada 10 min) a tener la lista de vistos de Trakt; «always»: aunque no se oculte lo visto
+  function seenReady(always) {
+    if ((!settings.hideWatched && !always) || !Trakt.linked()) return Promise.resolve();
     if (Date.now() - Seen.at < 600000) return Promise.resolve();
     if (!Seen.loading) {
       Seen.loading = Trakt.loadWatched().catch(function () { /* sin Trakt: se muestra todo */ }).then(function () { Seen.loading = null; });
@@ -1522,12 +1601,22 @@
     var id = String(m.id || m.metaId || '');
     return m.imdb || m.imdb_id || (id.indexOf('tt') === 0 ? id : null);
   }
+  function tmdbKeyOf(m) {
+    var t = /^tmdb:(movie|tv):(\d+)$/.exec(String(m.id || ''));
+    return t ? t[1] + ':' + t[2] : null;
+  }
 
   function isSeenMeta(m) {
     var id = String(m.id || '');
-    var imdb = imdbOfMeta(m);
+    var imdb = imdbOfMeta(m), tk = tmdbKeyOf(m);
+    if (tk && Seen.tmdb[tk]) return true;
     if (m.type === 'movie') return !!((imdb && Seen.movies[imdb]) || (progress[id] && progress[id].done));
     return !!(imdb && Seen.shows[imdb]);
+  }
+  // ni vista ni empezada (para «Para ti» y «Solo sin ver»)
+  function isUnseen(m) {
+    var imdb = imdbOfMeta(m), tk = tmdbKeyOf(m);
+    return !isSeenMeta(m) && !(imdb && Seen.started[imdb]) && !(tk && Seen.started[tk]);
   }
 
   function filterSeen(metas) {
@@ -2026,24 +2115,32 @@
   document.addEventListener('visibilitychange', function () { if (!document.hidden) clockCheck('volver a la app'); });
   document.addEventListener('keydown', function () { if (Date.now() - clockTick > 15000) clockCheck('tecla'); }, true);
 
+  var TABS = [['home', 'Inicio'], ['series', 'Series'], ['movies', 'Películas'], ['anime', 'Anime'], ['search', 'Buscar'], ['settings', 'Ajustes']];
   function header(active) {
     var h = el('div', 'header');
     h.appendChild(el('div', 'logo', 'StremTV'));
-    [['home', 'Inicio'], ['anime', 'Anime'], ['explore', 'Explorar'], ['search', 'Buscar'], ['settings', 'Ajustes']].forEach(function (t) {
+    TABS.forEach(function (t) {
       var tab = el('div', 'tab' + (t[0] === active ? ' active' : ''), tr(t[1]));
-      focusable(tab, function () {
-        if (t[0] === active) return;
-        if (t[0] === 'search') push(searchScreen());
-        else if (t[0] === 'anime') push(animeScreen());
-        else if (t[0] === 'explore') push(exploreScreen());
-        else if (t[0] === 'settings') openSettings();
-        else while (stack.length > 1) pop();
-      });
+      focusable(tab, function () { if (t[0] !== active) openTab(t[0]); });
       h.appendChild(tab);
     });
     h.appendChild(el('div', 'clock', clockText(new Date())));
     return h;
   }
+  // cada pestaña se abre sobre Inicio (Atrás siempre vuelve a Inicio); al volver a Inicio, el foco en su pestaña,
+  // no en la que se pulsó para salir de ella
+  function openTab(k) {
+    while (stack.length > 1) {
+      if (stack.length === 2) stack[0].lastFocus = stack[0].el.querySelector('.tab.active');
+      pop();
+    }
+    if (k === 'home') return;
+    if (k === 'search') push(searchScreen());
+    else if (k === 'anime') push(animeScreen());
+    else if (k === 'series' || k === 'movies') push(catalogScreen(k));
+    else if (k === 'settings') openSettings();
+  }
+  function activeTab(root) { return function () { return root.querySelector('.tab.active'); }; }
 
   // ---------------------------------------------------------------- cabecera grande (inicio y anime)
 
@@ -2233,41 +2330,70 @@
     return { root: root, vs: vs };
   }
 
-  // filas de Inicio que se pueden ordenar u ocultar (Ajustes → General → Filas de Inicio); las de los addons van detrás,
-  // con la clave «addon:url|tipo|id». settings.homeRows: { order: [claves], hidden: { clave: true } }
-  var HOME_ROWS = [
-    { k: 'cont', name: 'Continuar viendo' },
-    { k: 'mylist', name: 'Mi lista', local: true }, // sin Trakt (con Trakt, su lista va en dos filas)
-    { k: 'traktCont', name: 'Continuar (Trakt)', trakt: true },
-    { k: 'upnext', name: 'Siguientes episodios', trakt: true },
-    { k: 'week', name: 'Esta semana en tus series', trakt: true },
-    { k: 'wlMovies', name: 'Mi lista: películas', trakt: true },
-    { k: 'wlSeries', name: 'Mi lista: series', trakt: true },
-    { k: 'recMovies', name: 'Recomendadas para ti: películas', trakt: true },
-    { k: 'recSeries', name: 'Recomendadas para ti: series', trakt: true },
-    { k: 'history', name: 'Visto recientemente' },
-    { k: 'popMovies', name: 'Películas populares', url: CINEMETA + '/catalog/movie/top.json' },
-    { k: 'popSeries', name: 'Series populares', url: CINEMETA + '/catalog/series/top.json' },
-    { k: 'topMovies', name: 'Películas mejor valoradas', url: CINEMETA + '/catalog/movie/imdbRating.json' },
-    { k: 'topSeries', name: 'Series mejor valoradas', url: CINEMETA + '/catalog/series/imdbRating.json' }
-  ];
+  // filas de Inicio, Series y Películas que se pueden ordenar u ocultar (Ajustes → General → Filas de …). Las de los addons van
+  // detrás, con la clave «addon:url|tipo|id»: las de películas en Películas, las de series en Series y las demás en Inicio.
+  // settings.homeRows / seriesRows / moviesRows: { order: [claves], hidden: { clave: true | false } }; sin dato, oculta si «off»
+  // (u «offIfTrakt» con Trakt vinculado).
+  // trakt: solo con Trakt vinculado; local: solo sin él; tmdb: solo con clave de TMDB
+  var PAGE_ROWS = {
+    home: [
+      { k: 'cont', name: 'Continuar viendo' },
+      { k: 'mylist', name: 'Mi lista', local: true }, // sin Trakt (con Trakt, su lista va en dos filas)
+      { k: 'traktCont', name: 'Continuar (Trakt)', trakt: true },
+      { k: 'upnext', name: 'Siguientes episodios', trakt: true },
+      { k: 'week', name: 'Esta semana en tus series', trakt: true },
+      { k: 'wlMovies', name: 'Mi lista: películas', trakt: true },
+      { k: 'wlSeries', name: 'Mi lista: series', trakt: true },
+      { k: 'history', name: 'Visto recientemente' },
+      // lo de Series y Películas; en Inicio, solo si no hay Trakt (si no, saldría casi vacío)
+      { k: 'popMovies', name: 'Películas populares', url: CINEMETA + '/catalog/movie/top.json', offIfTrakt: true },
+      { k: 'popSeries', name: 'Series populares', url: CINEMETA + '/catalog/series/top.json', offIfTrakt: true }
+    ],
+    series: [
+      { k: 'forYou', name: 'Para ti', trakt: true },
+      { k: 'trending', name: 'Tendencia esta semana', tmdb: true },
+      { k: 'airing', name: 'En emisión', tmdb: true },
+      { k: 'pop', name: 'Populares', url: CINEMETA + '/catalog/series/top.json' },
+      { k: 'new', name: 'Estrenos', tmdb: true },
+      { k: 'top', name: 'Mejor valoradas', url: CINEMETA + '/catalog/series/imdbRating.json' }
+    ],
+    movies: [
+      { k: 'forYou', name: 'Para ti', trakt: true },
+      { k: 'trending', name: 'Tendencia esta semana', tmdb: true },
+      { k: 'new', name: 'Estrenos en digital', tmdb: true },
+      { k: 'cinema', name: 'En cines', tmdb: true },
+      { k: 'pop', name: 'Populares', url: CINEMETA + '/catalog/movie/top.json' },
+      { k: 'top', name: 'Mejor valoradas', url: CINEMETA + '/catalog/movie/imdbRating.json' }
+    ]
+  };
+  // una fila por plataforma en Series y Películas
+  PLATFORMS.forEach(function (pl) {
+    PAGE_ROWS.series.push({ k: 'prov:' + pl.k, name: 'En {0}', arg: pl.name, tmdb: true, off: pl.off, platform: pl });
+    PAGE_ROWS.movies.push({ k: 'prov:' + pl.k, name: 'En {0}', arg: pl.name, tmdb: true, off: pl.off, platform: pl });
+  });
+  var ROWS_SETTING = { home: 'homeRows', series: 'seriesRows', movies: 'moviesRows' };
+  var PAGE_NAMES = { home: 'Inicio', series: 'Series', movies: 'Películas' };
 
-  // las filas que tocan ahora (con o sin Trakt; de cada addon, como mucho 4) en el orden elegido; las nuevas, al final
-  function homeRows() {
-    var linked = Trakt.linked(), perAddon = {};
-    var all = HOME_ROWS.filter(function (r) { return !(r.trakt && !linked) && !(r.local && linked); })
-      .map(function (r) { return extend({ title: tr(r.name) }, r); });
+  // las filas que tocan ahora en una pestaña (de cada addon, como mucho 4) en el orden elegido; las nuevas, al final
+  function pageRows(page) {
+    var linked = Trakt.linked(), tmdb = !!settings.tmdbKey, perAddon = {};
+    var all = PAGE_ROWS[page].filter(function (r) { return !(r.trakt && !linked) && !(r.local && linked) && !(r.tmdb && !tmdb); })
+      .map(function (r) { return extend({ title: tr(r.name, r.arg) }, r); });
     addonCatalogs(false).forEach(function (c) {
+      var t = c.catalog.type, to = t === 'movie' ? 'movies' : t === 'series' ? 'series' : 'home';
+      if (to !== page) return;
       var n = perAddon[c.addon.url] = (perAddon[c.addon.url] || 0) + 1;
-      if (n <= 4) all.push({ k: 'addon:' + c.addon.url + '|' + c.catalog.type + '|' + c.catalog.id, title: c.title, catalog: c });
+      if (n <= 4) all.push({ k: 'addon:' + c.addon.url + '|' + t + '|' + c.catalog.id, title: c.title, catalog: c });
     });
-    var pref = settings.homeRows || {}, order = pref.order || [], hidden = pref.hidden || {};
+    var pref = settings[ROWS_SETTING[page]] || {}, order = pref.order || [], hidden = pref.hidden || {};
     return all.map(function (r, i) {
       var p = order.indexOf(r.k);
-      r.hidden = !!hidden[r.k];
+      r.hidden = hidden[r.k] === undefined ? !!(r.off || (r.offIfTrakt && linked)) : !!hidden[r.k];
       return { r: r, p: p < 0 ? 1000 + i : p };
     }).sort(function (a, b) { return a.p - b.p; }).map(function (x) { return x.r; });
   }
+  function homeRows() { return pageRows('home'); }
+  function rowsKey(rows) { return rows.map(function (r) { return r.k + (r.hidden ? '-' : '+'); }).join(','); }
 
   function homeScreen() {
     var hs = heroScreen('home'), root = hs.root, vs = hs.vs;
@@ -2323,7 +2449,7 @@
       if (!Trakt.linked()) { traktLoaded = 0; return; }
       if (Date.now() - traktLoaded < 120000) return; // como mucho cada 2 minutos
       traktLoaded = Date.now();
-      ['traktCont', 'upnext', 'week', 'wlMovies', 'wlSeries', 'recMovies', 'recSeries'].forEach(function (k) { if (slots[k]) slots[k].innerHTML = ''; });
+      ['traktCont', 'upnext', 'week', 'wlMovies', 'wlSeries'].forEach(function (k) { if (slots[k]) slots[k].innerHTML = ''; });
       var local = {};
       if (slot('cont')) continueList().forEach(function (p) { local[p.metaId] = true; });
       // cada fila se da como función: si falla por la red, se vuelve a pedir sola al volver (las que comparten datos, con shared)
@@ -2351,11 +2477,6 @@
       var wlOf = function (type) { return function () { return wl().then(function (m) { return m.filter(function (x) { return x.type === type; }); }); }; };
       if (slot('wlMovies')) promiseRow(slot('wlMovies'), tr('Mi lista: películas'), wlOf('movie'), openMeta, true, 100);
       if (slot('wlSeries')) promiseRow(slot('wlSeries'), tr('Mi lista: series'), function () { return wlOf('series')().then(Trakt.withPending); }, openMeta, true, 100);
-      var recs = function (kind) {
-        return function () { return Promise.all([Trakt.recommendations(kind), seenReady()]).then(function (r) { return filterSeen(r[0]); }); };
-      };
-      if (slot('recMovies')) promiseRow(slot('recMovies'), tr('Recomendadas para ti: películas'), recs('movies'), openMeta, true);
-      if (slot('recSeries')) promiseRow(slot('recSeries'), tr('Recomendadas para ti: series'), recs('shows'), openMeta, true);
     }
 
     // lo último visto: de Trakt si está vinculado (incluye otros dispositivos) o, si no, de esta tele
@@ -2394,7 +2515,6 @@
       });
     }
 
-    function rowsKey(rows) { return rows.map(function (r) { return r.k + (r.hidden ? '-' : '+'); }).join(','); }
     function layout(rows) {
       rowsSig = rowsKey(rows);
       vs.innerHTML = '';
@@ -2450,10 +2570,67 @@
     asyncRow(vs, tr('Tendencias'), ANIME + '/catalog/anime/kitsu-anime-trending.json', openMeta);
     asyncRow(vs, tr('Más populares'), ANIME + '/catalog/anime/kitsu-anime-popular.json', openMeta);
     asyncRow(vs, tr('Mejor valorados'), ANIME + '/catalog/anime/kitsu-anime-rating.json', openMeta);
-    return { el: root, initialFocus: function () { return root.querySelectorAll('.tab')[1]; } };
+    return { el: root, initialFocus: activeTab(root) };
   }
 
-  // ---------------------------------------------------------------- pantalla: explorar (tipo, género, año)
+  // ---------------------------------------------------------------- pantallas: series y películas
+
+  // lo que carga cada fila (función: si falla por la red, la fila se vuelve a pedir sola al volver)
+  function pageRowLoader(page, r) {
+    var k = page === 'movies' ? 'movie' : 'tv', now = Date.now(), today = isoDay(now);
+    var seen = function (list) { return Promise.all([list, seenReady()]).then(function (x) { return filterSeen(x[0] || []); }); };
+    var tmdb = function (path) { return function () { return seen(tmdbList(path, k)); }; };
+    if (r.catalog) {
+      var c = r.catalog;
+      return function () { return seen(getJSON(c.addon.url + '/catalog/' + c.catalog.type + '/' + c.catalog.id + '.json').then(function (d) { return d.metas; })); };
+    }
+    if (r.url) return function () { return seen(getJSON(r.url).then(function (d) { return d.metas; })); };
+    if (r.platform) {
+      return function () {
+        return seen(platformId(k, r.platform).then(function (id) {
+          return id ? tmdbList('/discover/' + k + '?sort_by=popularity.desc' + platformParams(id) + (k === 'tv' ? TV_JUNK : ''), k) : [];
+        }));
+      };
+    }
+    switch (r.k) {
+      // recomendaciones de Trakt sin nada visto ni empezado (aunque no se oculte lo visto)
+      case 'forYou': return function () {
+        return Promise.all([Trakt.recommendations(page === 'movies' ? 'movies' : 'shows'), seenReady(true)]).then(function (x) { return x[0].filter(isUnseen); });
+      };
+      case 'trending': return tmdb('/trending/' + k + '/week');
+      case 'airing': return tmdb('/discover/tv?air_date.gte=' + isoDay(now - 7 * 86400000) + '&air_date.lte=' + today + '&sort_by=popularity.desc&vote_count.gte=50' + TV_JUNK);
+      case 'new': return k === 'tv'
+        ? tmdb('/discover/tv?first_air_date.gte=' + isoDay(now - 120 * 86400000) + '&first_air_date.lte=' + today + '&sort_by=popularity.desc&vote_count.gte=10' + TV_JUNK)
+        // estrenadas en digital (alquiler, compra o plataforma) en España en los últimos 4 meses
+        : tmdb('/discover/movie?region=ES&with_release_type=4%7C5&release_date.gte=' + isoDay(now - 120 * 86400000) + '&release_date.lte=' + today + '&sort_by=popularity.desc&vote_count.gte=10');
+      case 'cinema': return tmdb('/movie/now_playing?region=ES');
+    }
+    return function () { return Promise.resolve([]); };
+  }
+
+  // Series o Películas: cabecera grande y las filas elegidas (Ajustes → General → Filas de …)
+  function catalogScreen(page) {
+    var hs = heroScreen(page), root = hs.root, vs = hs.vs, sig = '';
+    var screen = { el: root, initialFocus: activeTab(root) };
+    function layout() {
+      var rows = pageRows(page);
+      sig = rowsKey(rows) + settings.tmdbKey;
+      vs.innerHTML = '';
+      scrollTop0(vs);
+      rows.forEach(function (r) { if (!r.hidden) promiseRow(vs, r.title, pageRowLoader(page, r), openMeta, true); });
+    }
+    layout();
+    screen.onShow = function () { primeHero(vs); };
+    screen.onResume = function () {
+      if (rowsKey(pageRows(page)) + settings.tmdbKey === sig) return;
+      layout();
+      screen.lastFocus = null;
+      if (root._hero) root._hero.cur = null;
+    };
+    return screen;
+  }
+
+  // ---------------------------------------------------------------- explorar (en Buscar)
 
   var GENRES = ['Action', 'Adventure', 'Animation', 'Biography', 'Comedy', 'Crime', 'Documentary', 'Drama', 'Family', 'Fantasy',
     'History', 'Horror', 'Mystery', 'Romance', 'Sci-Fi', 'Sport', 'Thriller', 'War', 'Western'];
@@ -2462,59 +2639,149 @@
     Horror: 'Terror', Mystery: 'Misterio', Romance: 'Romance', 'Sci-Fi': 'Ciencia ficción', Sport: 'Deporte', Thriller: 'Suspense',
     War: 'Bélica', Western: 'Western' };
 
-  function exploreScreen() {
-    var f = extend({ type: 'movie', genre: '', year: '', sort: 'top' }, load('explore', {}));
-    var root = el('div', 'screen');
-    var vs = el('div', 'vscroll');
-    root.appendChild(vs);
-    vs.appendChild(header('explore'));
-    var filters = el('div');
-    vs.appendChild(filters);
-    var results = el('div', 'grid');
-    vs.appendChild(results);
-    var cards = [], fetched = 0, loading = false, more = null, emptyPages = 0, gen = 0;
+  // géneros de TMDB (en series hay menos: acción y aventura van juntas, igual que ciencia ficción y fantasía)
+  var TMDB_GENRES = {
+    movie: { Action: 28, Adventure: 12, Animation: 16, Comedy: 35, Crime: 80, Documentary: 99, Drama: 18, Family: 10751, Fantasy: 14,
+      History: 36, Horror: 27, Mystery: 9648, Romance: 10749, 'Sci-Fi': 878, Thriller: 53, War: 10752, Western: 37 },
+    tv: { Action: 10759, Animation: 16, Comedy: 35, Crime: 80, Documentary: 99, Drama: 18, Family: 10751, Mystery: 9648,
+      'Sci-Fi': 10765, War: 10768, Western: 37 }
+  };
+  var GENRES_TV_ES = { Action: 'Acción y aventura', 'Sci-Fi': 'Ciencia ficción y fantasía', War: 'Bélica y política' };
+  var GENRES_TV_EN = { Action: 'Action & Adventure', 'Sci-Fi': 'Sci-Fi & Fantasy', War: 'War & Politics' };
 
-    function chips(title, values, key, label) {
-      var row = el('div', 'row chips-row');
-      row.appendChild(el('div', 'row-title', esc(title)));
-      var sc = el('div', 'hscroll chips');
-      sc.style.position = 'relative';
-      values.forEach(function (v) {
-        var b = el('div', 'btn' + (f[key] === v ? ' primary' : ''), esc(label(v)));
-        focusable(b, function () {
-          if (f[key] === v) return;
-          f[key] = v;
-          save('explore', f);
-          Array.prototype.forEach.call(sc.children, function (x) { x.classList.remove('primary'); });
-          b.classList.add('primary');
-          reload();
-        });
-        sc.appendChild(b);
-        if (f[key] === v) sc._last = b; // al bajar a esta fila, ir a la opción elegida
-      });
-      row.appendChild(sc);
-      filters.appendChild(row);
+  // Buscar sin escribir nada: explorar con filtros. Con clave de TMDB, todos (tipo, género, año o década, nota mínima,
+  // plataforma, orden y solo sin ver); sin ella, los catálogos de Cinemeta (un año suelto, sin plataforma ni estrenos)
+  function discoverFilters(wrap) {
+    var f = extend({ type: 'movie', genre: '', year: '', rating: '', platform: '', sort: 'pop', unseen: false }, load('explore', {}));
+    if (f.sort === 'top') f.sort = 'pop'; // filtros guardados por la versión anterior
+    if (f.sort === 'imdbRating') f.sort = 'rated';
+    if (/^\d{4}$/.test(f.year)) f.year = 'Y' + f.year;
+    var filters = el('div'), results = el('div', 'grid');
+    wrap.appendChild(filters);
+    wrap.appendChild(results);
+    var cards = [], page = 0, fetched = 0, loading = false, more = null, emptyPages = 0, gen = 0;
+    var tmdb = !!settings.tmdbKey, cur = new Date().getFullYear();
+
+    function opts() {
+      var k = f.type === 'movie' ? 'movie' : 'tv', en = settings.lang === 'en';
+      var genres = tmdb ? GENRES.filter(function (g) { return TMDB_GENRES[k][g]; }) : GENRES;
+      var years = [''];
+      if (tmdb) {
+        years.push('Y' + cur, 'Y' + (cur - 1), 'Y' + (cur - 2));
+        for (var d = Math.floor(cur / 10) * 10; d >= 1980; d -= 10) years.push('D' + d);
+        years.push('B1980');
+      } else for (var y = cur; y >= 1987; y--) years.push('Y' + y);
+      return [
+        [tr('Tipo'), 'type', ['movie', 'series'], function (v) { return v === 'movie' ? tr('Películas') : tr('Series'); }],
+        [tr('Género'), 'genre', [''].concat(genres), function (v) {
+          if (!v) return tr('Todos');
+          if (tmdb && k === 'tv' && (en ? GENRES_TV_EN : GENRES_TV_ES)[v]) return (en ? GENRES_TV_EN : GENRES_TV_ES)[v];
+          return en ? v : GENRES_ES[v] || v;
+        }],
+        [tr('Año'), 'year', years, function (v) {
+          if (!v) return tr('Todos');
+          var n = +v.slice(1);
+          if (v[0] === 'D') return n >= 2000 ? tr('Años {0}', n) : tr('Años {0}', String(n).slice(2));
+          if (v[0] === 'B') return tr('Antes de {0}', n);
+          return String(n);
+        }],
+        [tr('Nota mínima'), 'rating', ['', '6', '7', '7.5', '8'], function (v) { return v ? '★ ' + num(v) + '+' : tr('Cualquiera'); }],
+        tmdb ? [tr('Plataforma'), 'platform', [''].concat(PLATFORMS.map(function (p) { return p.k; })), function (v) {
+          return v ? PLATFORMS.filter(function (p) { return p.k === v; })[0].name : tr('Todas');
+        }] : null,
+        [tr('Orden'), 'sort', tmdb ? ['pop', 'rated', 'new'] : ['pop', 'rated'], function (v) {
+          return v === 'pop' ? tr('Populares') : v === 'rated' ? tr('Mejor valoradas') : tr('Más recientes');
+        }],
+        [tr('Mostrar'), 'unseen', [false, true], function (v) { return v ? tr('Solo sin ver') : tr('Todo'); }]
+      ].filter(Boolean);
     }
 
-    var years = [''];
-    for (var y = new Date().getFullYear(); y >= 1987; y--) years.push(String(y));
-    chips(tr('Tipo'), ['movie', 'series'], 'type', function (v) { return v === 'movie' ? tr('Películas') : tr('Series'); });
-    chips(tr('Género'), [''].concat(GENRES), 'genre', function (v) { return !v ? tr('Todos') : settings.lang === 'en' ? v : GENRES_ES[v] || v; });
-    chips(tr('Año'), years, 'year', function (v) { return v || tr('Todos'); });
-    chips(tr('Orden'), ['top', 'imdbRating'], 'sort', function (v) { return v === 'top' ? tr('Populares') : tr('Mejor valoradas'); });
+    function paint(focusKey) {
+      filters.innerHTML = '';
+      var target = null;
+      opts().forEach(function (o) {
+        var key = o[1];
+        if (o[2].indexOf(f[key]) < 0) f[key] = o[2][0]; // ya no vale (otro tipo u otro modo)
+        var row = el('div', 'row chips-row');
+        row.appendChild(el('div', 'row-title', esc(o[0])));
+        var sc = el('div', 'hscroll chips');
+        sc.style.position = 'relative';
+        o[2].forEach(function (v) {
+          var b = el('div', 'btn' + (f[key] === v ? ' primary' : ''), esc(o[3](v)));
+          focusable(b, function () {
+            if (f[key] === v) return;
+            f[key] = v;
+            save('explore', f);
+            // al cambiar de tipo cambian los géneros: se rehacen los filtros con el foco en el mismo botón
+            if (key === 'type') paint(key);
+            else {
+              Array.prototype.forEach.call(sc.children, function (x) { x.classList.remove('primary'); });
+              b.classList.add('primary');
+            }
+            reload();
+          });
+          sc.appendChild(b);
+          if (f[key] === v) { sc._last = b; if (key === focusKey) target = b; } // al bajar a esta fila, ir a la opción elegida
+        });
+        row.appendChild(sc);
+        filters.appendChild(row);
+      });
+      save('explore', f);
+      if (target) Nav.focus(target);
+    }
 
+    // TMDB: una página de /discover con todos los filtros
+    function tmdbUrl(n) {
+      var k = f.type === 'movie' ? 'movie' : 'tv', field = k === 'movie' ? 'primary_release_date' : 'first_air_date';
+      var p = '/discover/' + k + '?include_adult=false&page=' + n, gte = '', lte = '', y = +f.year.slice(1);
+      if (f.year[0] === 'Y') { gte = y + '-01-01'; lte = y + '-12-31'; }
+      else if (f.year[0] === 'D') { gte = y + '-01-01'; lte = (y + 9) + '-12-31'; }
+      else if (f.year[0] === 'B') lte = (y - 1) + '-12-31';
+      var votes = f.rating ? 100 : 0;
+      if (f.sort === 'rated') { p += '&sort_by=vote_average.desc'; votes = k === 'movie' ? 500 : 200; }
+      else if (f.sort === 'new') {
+        p += '&sort_by=' + field + '.desc';
+        votes = Math.max(votes, 20);
+        var today = isoDay(Date.now());
+        if (!lte || lte > today) lte = today; // nada aún sin estrenar
+      } else p += '&sort_by=popularity.desc';
+      if (gte) p += '&' + field + '.gte=' + gte;
+      if (lte) p += '&' + field + '.lte=' + lte;
+      if (votes) p += '&vote_count.gte=' + votes;
+      if (f.rating) p += '&vote_average.gte=' + f.rating;
+      if (f.genre) p += '&with_genres=' + TMDB_GENRES[k][f.genre];
+      if (k === 'tv') p += TV_JUNK;
+      if (!f.platform) return Promise.resolve(p);
+      return platformId(k, PLATFORMS.filter(function (x) { return x.k === f.platform; })[0]).then(function (id) { return p + platformParams(id || 0); });
+    }
     // Cinemeta no combina género y año: con año se pide el catálogo del año y el género se filtra aquí
-    function url() {
-      var extra = [];
-      if (f.year) extra.push('genre=' + f.year);
+    function cinemetaUrl() {
+      var extra = [], y = f.year.slice(1);
+      if (y) extra.push('genre=' + y);
       else if (f.genre) extra.push('genre=' + encodeURIComponent(f.genre));
       if (fetched) extra.push('skip=' + fetched);
-      return CINEMETA + '/catalog/' + f.type + '/' + (f.year ? 'year' : f.sort) + (extra.length ? '/' + extra.join('&') : '') + '.json';
+      var cat = y ? 'year' : f.sort === 'rated' ? 'imdbRating' : 'top';
+      return CINEMETA + '/catalog/' + f.type + '/' + cat + (extra.length ? '/' + extra.join('&') : '') + '.json';
+    }
+    function fetchPage() {
+      if (tmdb) {
+        page++;
+        return tmdbUrl(page).then(function (u) { return tmdbPage(u, f.type === 'movie' ? 'movie' : 'tv'); });
+      }
+      return getJSON(cinemetaUrl()).then(function (d) {
+        var raw = d.metas || [];
+        fetched += raw.length;
+        var metas = raw;
+        if (f.year && f.genre) metas = metas.filter(function (m) { return (m.genre || m.genres || []).indexOf(f.genre) >= 0; });
+        if (f.rating) metas = metas.filter(function (m) { return parseFloat(m.imdbRating) >= +f.rating; });
+        if (f.year && f.sort === 'rated') metas.sort(function (a, b) { return (parseFloat(b.imdbRating) || 0) - (parseFloat(a.imdbRating) || 0); });
+        return { metas: metas, more: raw.length >= 20 };
+      });
     }
 
     function reload() {
       results.innerHTML = '';
-      cards = []; fetched = 0; more = null; emptyPages = 0;
+      cards = []; page = 0; fetched = 0; more = null; emptyPages = 0;
       loading = false;
       gen++; // las respuestas de los filtros anteriores se descartan
       loadPage();
@@ -2529,15 +2796,11 @@
       var status = el('div', 'empty', tr('Cargando…'));
       results.appendChild(status);
       var g = gen, first = cards.length;
-      Promise.all([getJSON(url()), seenReady()]).then(function (r) {
+      Promise.all([fetchPage(), seenReady(f.unseen)]).then(function (r) {
         if (g !== gen) return; // filtros cambiados mientras cargaba
         loading = false;
         results.removeChild(status);
-        var raw = r[0].metas || [];
-        fetched += raw.length;
-        var metas = filterSeen(raw);
-        if (f.year && f.genre) metas = metas.filter(function (m) { return (m.genre || m.genres || []).indexOf(f.genre) >= 0; });
-        if (f.year && f.sort === 'imdbRating') metas.sort(function (a, b) { return (parseFloat(b.imdbRating) || 0) - (parseFloat(a.imdbRating) || 0); });
+        var metas = f.unseen ? r[0].metas.filter(isUnseen) : filterSeen(r[0].metas);
         metas.forEach(function (m) {
           var i = cards.length;
           var c = card(m, function () { openMeta(m); });
@@ -2546,10 +2809,9 @@
           results.appendChild(c);
         });
         loadImages(cards, first + 13);
-        var hasMore = raw.length >= 20;
-        // con año y género puede que una página entera no tenga ninguno: seguir buscando un poco
-        if (!metas.length && hasMore && ++emptyPages < 4) { loadPage(hadFocus); return; }
-        if (hasMore) {
+        // con filtros que quitan mucho puede que una página entera no tenga ninguno: seguir buscando un poco
+        if (!metas.length && r[0].more && ++emptyPages < 4) { loadPage(hadFocus); return; }
+        if (r[0].more) {
           more = el('div', 'btn', tr('Cargar más'));
           focusable(more, loadPage);
           results.appendChild(more);
@@ -2564,13 +2826,13 @@
         if (e.status === 0) Net.whenBack(function () {
           if (g !== gen || loading || !document.body.contains(status)) return;
           results.removeChild(status);
+          if (tmdb) page--;
           loadPage(hadFocus);
         });
       });
     }
+    paint();
     loadPage();
-
-    return { el: root, initialFocus: function () { return vs.querySelectorAll('.tab')[2]; } };
   }
 
   // ---------------------------------------------------------------- pantalla: más como esto
@@ -2667,6 +2929,7 @@
     // resultados mientras se escribe: a partir de 3 letras, cuando se deja de teclear un momento
     input.addEventListener('input', function () {
       clearTimeout(liveTimer);
+      if (!trim(input.value)) { run(''); return; } // borrado: vuelven los filtros
       liveTimer = setTimeout(function () {
         var q = trim(input.value);
         if (q.length >= 3 && q !== lastRun) run(q);
@@ -2679,6 +2942,11 @@
     vs.appendChild(recent);
     var results = el('div');
     vs.appendChild(results);
+    // sin nada escrito, explorar con filtros
+    var explore = el('div');
+    explore.appendChild(el('div', 'screen-title settings-title', esc(tr('Explorar'))));
+    vs.appendChild(explore);
+    discoverFilters(explore);
 
     function trim(q) { return (q || '').replace(/^\s+|\s+$/g, ''); }
 
@@ -2718,6 +2986,7 @@
       q = trim(q);
       lastRun = q;
       results.innerHTML = '';
+      explore.style.display = q ? 'none' : '';
       if (!q) return;
       var enc = encodeURIComponent(q);
       if (tmdbOn()) {
@@ -5378,7 +5647,9 @@
 
       opt('Ocultar lo que ya he visto (Trakt y esta app)', function () { return yesNo(settings.hideWatched); }, function () { settings.hideWatched = !settings.hideWatched; Seen.at = 0; });
 
-      opt('Filas de Inicio', function () { return tr('Ordenar u ocultar ›'); }, function () { push(homeRowsScreen()); });
+      ['home', 'series', 'movies'].forEach(function (page) {
+        opt(tr('Filas de {0}', tr(PAGE_NAMES[page])), function () { return tr('Ordenar u ocultar ›'); }, function () { push(rowsScreen(page)); });
+      });
     };
 
     build.data = function () {
@@ -5444,40 +5715,42 @@
     return { el: root, initialFocus: function () { return box.querySelector('.f'); } };
   }
 
-  // Ajustes → General → Filas de Inicio: OK sobre una fila la sube, baja, lleva arriba del todo u oculta
-  function homeRowsScreen() {
+  // Ajustes → General → Filas de Inicio / Series / Películas: OK sobre una fila la sube, baja, lleva arriba del todo u oculta
+  function rowsScreen(page) {
+    var key = ROWS_SETTING[page], pageName = tr(PAGE_NAMES[page]);
     var root = el('div', 'screen');
     var vs = el('div', 'vscroll');
     root.appendChild(vs);
     vs.appendChild(header('settings'));
-    vs.appendChild(el('div', 'screen-title settings-title', esc(tr('Ajustes') + ' › ' + tr('Filas de Inicio'))));
+    vs.appendChild(el('div', 'screen-title settings-title', esc(tr('Ajustes') + ' › ' + tr('Filas de {0}', pageName))));
     var box = el('div');
     box.style.cssText = 'padding:0 80px;width:1400px';
     vs.appendChild(box);
-    box.appendChild(el('div', 'note', esc(tr('OK sobre una fila para subirla, bajarla u ocultarla. Los avisos (fuentes, certificado) salen siempre arriba.'))));
+    box.appendChild(el('div', 'note', esc(page === 'home' ? tr('OK sobre una fila para subirla, bajarla u ocultarla. Los avisos (fuentes, certificado) salen siempre arriba.')
+      : tr('OK sobre una fila para subirla, bajarla u ocultarla.') + (settings.tmdbKey ? '' : ' ' + tr('Con una clave de TMDB (Ajustes → Cuentas) hay más filas: tendencias, estrenos y una por plataforma.')))));
     var list = el('div');
     box.appendChild(list);
     var reset = el('div', 'btn', tr('Volver al orden de siempre'));
     focusable(reset, function () {
-      settings.homeRows = null;
+      settings[key] = null;
       saveSettings();
       paint();
-      toast(tr('Inicio vuelve a tener todas las filas en su orden de siempre'));
+      toast(tr('{0} vuelve a tener las filas en su orden de siempre', pageName));
     });
     box.appendChild(reset);
 
     function store(rows) {
       var hidden = {};
-      rows.forEach(function (r) { if (r.hidden) hidden[r.k] = true; });
+      rows.forEach(function (r) { hidden[r.k] = !!r.hidden; });
       var order = rows.map(function (r) { return r.k; });
       // las que ahora no tocan (de Trakt sin vincular, de un addon quitado) conservan su sitio para cuando vuelvan
-      var prev = settings.homeRows || {};
-      (prev.order || []).forEach(function (k) { if (order.indexOf(k) < 0) { order.push(k); if (prev.hidden && prev.hidden[k]) hidden[k] = true; } });
-      settings.homeRows = { order: order, hidden: hidden };
+      var prev = settings[key] || {};
+      (prev.order || []).forEach(function (k) { if (order.indexOf(k) < 0) { order.push(k); if (prev.hidden && k in prev.hidden) hidden[k] = prev.hidden[k]; } });
+      settings[key] = { order: order, hidden: hidden };
       saveSettings();
     }
     function paint(focusK) {
-      var rows = homeRows(), target = null;
+      var rows = pageRows(page), target = null;
       list.innerHTML = '';
       rows.forEach(function (r, i) {
         var o = el('div', 'opt' + (r.hidden ? ' off' : ''));
@@ -5527,7 +5800,7 @@
 
   // ---------------------------------------------------------------- arranque
 
-  var VERSION = '0.23.1';
+  var VERSION = '0.24.0';
 
   function fitScreen() {
     var z = window.innerWidth / 1920;

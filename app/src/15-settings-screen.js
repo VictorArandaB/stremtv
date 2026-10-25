@@ -435,7 +435,9 @@
 
       opt('Ocultar lo que ya he visto (Trakt y esta app)', function () { return yesNo(settings.hideWatched); }, function () { settings.hideWatched = !settings.hideWatched; Seen.at = 0; });
 
-      opt('Filas de Inicio', function () { return tr('Ordenar u ocultar ›'); }, function () { push(homeRowsScreen()); });
+      ['home', 'series', 'movies'].forEach(function (page) {
+        opt(tr('Filas de {0}', tr(PAGE_NAMES[page])), function () { return tr('Ordenar u ocultar ›'); }, function () { push(rowsScreen(page)); });
+      });
     };
 
     build.data = function () {
@@ -501,40 +503,42 @@
     return { el: root, initialFocus: function () { return box.querySelector('.f'); } };
   }
 
-  // Ajustes → General → Filas de Inicio: OK sobre una fila la sube, baja, lleva arriba del todo u oculta
-  function homeRowsScreen() {
+  // Ajustes → General → Filas de Inicio / Series / Películas: OK sobre una fila la sube, baja, lleva arriba del todo u oculta
+  function rowsScreen(page) {
+    var key = ROWS_SETTING[page], pageName = tr(PAGE_NAMES[page]);
     var root = el('div', 'screen');
     var vs = el('div', 'vscroll');
     root.appendChild(vs);
     vs.appendChild(header('settings'));
-    vs.appendChild(el('div', 'screen-title settings-title', esc(tr('Ajustes') + ' › ' + tr('Filas de Inicio'))));
+    vs.appendChild(el('div', 'screen-title settings-title', esc(tr('Ajustes') + ' › ' + tr('Filas de {0}', pageName))));
     var box = el('div');
     box.style.cssText = 'padding:0 80px;width:1400px';
     vs.appendChild(box);
-    box.appendChild(el('div', 'note', esc(tr('OK sobre una fila para subirla, bajarla u ocultarla. Los avisos (fuentes, certificado) salen siempre arriba.'))));
+    box.appendChild(el('div', 'note', esc(page === 'home' ? tr('OK sobre una fila para subirla, bajarla u ocultarla. Los avisos (fuentes, certificado) salen siempre arriba.')
+      : tr('OK sobre una fila para subirla, bajarla u ocultarla.') + (settings.tmdbKey ? '' : ' ' + tr('Con una clave de TMDB (Ajustes → Cuentas) hay más filas: tendencias, estrenos y una por plataforma.')))));
     var list = el('div');
     box.appendChild(list);
     var reset = el('div', 'btn', tr('Volver al orden de siempre'));
     focusable(reset, function () {
-      settings.homeRows = null;
+      settings[key] = null;
       saveSettings();
       paint();
-      toast(tr('Inicio vuelve a tener todas las filas en su orden de siempre'));
+      toast(tr('{0} vuelve a tener las filas en su orden de siempre', pageName));
     });
     box.appendChild(reset);
 
     function store(rows) {
       var hidden = {};
-      rows.forEach(function (r) { if (r.hidden) hidden[r.k] = true; });
+      rows.forEach(function (r) { hidden[r.k] = !!r.hidden; });
       var order = rows.map(function (r) { return r.k; });
       // las que ahora no tocan (de Trakt sin vincular, de un addon quitado) conservan su sitio para cuando vuelvan
-      var prev = settings.homeRows || {};
-      (prev.order || []).forEach(function (k) { if (order.indexOf(k) < 0) { order.push(k); if (prev.hidden && prev.hidden[k]) hidden[k] = true; } });
-      settings.homeRows = { order: order, hidden: hidden };
+      var prev = settings[key] || {};
+      (prev.order || []).forEach(function (k) { if (order.indexOf(k) < 0) { order.push(k); if (prev.hidden && k in prev.hidden) hidden[k] = prev.hidden[k]; } });
+      settings[key] = { order: order, hidden: hidden };
       saveSettings();
     }
     function paint(focusK) {
-      var rows = homeRows(), target = null;
+      var rows = pageRows(page), target = null;
       list.innerHTML = '';
       rows.forEach(function (r, i) {
         var o = el('div', 'opt' + (r.hidden ? ' off' : ''));

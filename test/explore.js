@@ -1,4 +1,4 @@
-// Explorar (tipo, género, año, cargar más) y calendario de Trakt en Inicio.
+// Explorar en Buscar (tipo, género, año, cargar más; sin clave de TMDB, con Cinemeta) y calendario de Trakt en Inicio.
 const puppeteer = require('puppeteer-core');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 (async () => {
@@ -26,7 +26,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     localStorage.setItem('stv.trakt', JSON.stringify({ clientId: 'c', access: 'a', refresh: 'r', expires: Date.now() + 9e9 })); });
   await p.reload({ waitUntil: 'networkidle2' }); await sleep(3000);
   console.log('calendario:', await p.evaluate(() => { const r = Array.from(document.querySelectorAll('.row')).filter((x) => /Esta semana/.test(x.textContent))[0]; return r ? Array.from(r.querySelectorAll('.name')).map((x) => x.textContent).join(' | ') : 'NO'; }));
-  await p.evaluate(() => { const t = Array.from(document.querySelectorAll('.tab')).filter((x) => x.textContent === 'Explorar')[0]; StremTV.Nav.focus(t); });
+  await p.evaluate(() => { const t = Array.from(document.querySelectorAll('.tab')).filter((x) => x.textContent === 'Buscar')[0]; StremTV.Nav.focus(t); });
   await key('Enter'); await sleep(3000);
   console.log('foco inicial:', await p.evaluate(() => StremTV.Nav.cur.textContent), '· populares:', JSON.stringify(await grid()));
   await p.screenshot({ path: __dirname + '/shots/90-explore.png' });

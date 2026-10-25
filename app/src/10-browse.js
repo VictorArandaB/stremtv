@@ -1,4 +1,4 @@
-  // ---------------------------------------------------------------- pantalla: explorar (tipo, género, año)
+  // ---------------------------------------------------------------- explorar (en Buscar)
 
   var GENRES = ['Action', 'Adventure', 'Animation', 'Biography', 'Comedy', 'Crime', 'Documentary', 'Drama', 'Family', 'Fantasy',
     'History', 'Horror', 'Mystery', 'Romance', 'Sci-Fi', 'Sport', 'Thriller', 'War', 'Western'];
@@ -7,59 +7,149 @@
     Horror: 'Terror', Mystery: 'Misterio', Romance: 'Romance', 'Sci-Fi': 'Ciencia ficción', Sport: 'Deporte', Thriller: 'Suspense',
     War: 'Bélica', Western: 'Western' };
 
-  function exploreScreen() {
-    var f = extend({ type: 'movie', genre: '', year: '', sort: 'top' }, load('explore', {}));
-    var root = el('div', 'screen');
-    var vs = el('div', 'vscroll');
-    root.appendChild(vs);
-    vs.appendChild(header('explore'));
-    var filters = el('div');
-    vs.appendChild(filters);
-    var results = el('div', 'grid');
-    vs.appendChild(results);
-    var cards = [], fetched = 0, loading = false, more = null, emptyPages = 0, gen = 0;
+  // géneros de TMDB (en series hay menos: acción y aventura van juntas, igual que ciencia ficción y fantasía)
+  var TMDB_GENRES = {
+    movie: { Action: 28, Adventure: 12, Animation: 16, Comedy: 35, Crime: 80, Documentary: 99, Drama: 18, Family: 10751, Fantasy: 14,
+      History: 36, Horror: 27, Mystery: 9648, Romance: 10749, 'Sci-Fi': 878, Thriller: 53, War: 10752, Western: 37 },
+    tv: { Action: 10759, Animation: 16, Comedy: 35, Crime: 80, Documentary: 99, Drama: 18, Family: 10751, Mystery: 9648,
+      'Sci-Fi': 10765, War: 10768, Western: 37 }
+  };
+  var GENRES_TV_ES = { Action: 'Acción y aventura', 'Sci-Fi': 'Ciencia ficción y fantasía', War: 'Bélica y política' };
+  var GENRES_TV_EN = { Action: 'Action & Adventure', 'Sci-Fi': 'Sci-Fi & Fantasy', War: 'War & Politics' };
 
-    function chips(title, values, key, label) {
-      var row = el('div', 'row chips-row');
-      row.appendChild(el('div', 'row-title', esc(title)));
-      var sc = el('div', 'hscroll chips');
-      sc.style.position = 'relative';
-      values.forEach(function (v) {
-        var b = el('div', 'btn' + (f[key] === v ? ' primary' : ''), esc(label(v)));
-        focusable(b, function () {
-          if (f[key] === v) return;
-          f[key] = v;
-          save('explore', f);
-          Array.prototype.forEach.call(sc.children, function (x) { x.classList.remove('primary'); });
-          b.classList.add('primary');
-          reload();
-        });
-        sc.appendChild(b);
-        if (f[key] === v) sc._last = b; // al bajar a esta fila, ir a la opción elegida
-      });
-      row.appendChild(sc);
-      filters.appendChild(row);
+  // Buscar sin escribir nada: explorar con filtros. Con clave de TMDB, todos (tipo, género, año o década, nota mínima,
+  // plataforma, orden y solo sin ver); sin ella, los catálogos de Cinemeta (un año suelto, sin plataforma ni estrenos)
+  function discoverFilters(wrap) {
+    var f = extend({ type: 'movie', genre: '', year: '', rating: '', platform: '', sort: 'pop', unseen: false }, load('explore', {}));
+    if (f.sort === 'top') f.sort = 'pop'; // filtros guardados por la versión anterior
+    if (f.sort === 'imdbRating') f.sort = 'rated';
+    if (/^\d{4}$/.test(f.year)) f.year = 'Y' + f.year;
+    var filters = el('div'), results = el('div', 'grid');
+    wrap.appendChild(filters);
+    wrap.appendChild(results);
+    var cards = [], page = 0, fetched = 0, loading = false, more = null, emptyPages = 0, gen = 0;
+    var tmdb = !!settings.tmdbKey, cur = new Date().getFullYear();
+
+    function opts() {
+      var k = f.type === 'movie' ? 'movie' : 'tv', en = settings.lang === 'en';
+      var genres = tmdb ? GENRES.filter(function (g) { return TMDB_GENRES[k][g]; }) : GENRES;
+      var years = [''];
+      if (tmdb) {
+        years.push('Y' + cur, 'Y' + (cur - 1), 'Y' + (cur - 2));
+        for (var d = Math.floor(cur / 10) * 10; d >= 1980; d -= 10) years.push('D' + d);
+        years.push('B1980');
+      } else for (var y = cur; y >= 1987; y--) years.push('Y' + y);
+      return [
+        [tr('Tipo'), 'type', ['movie', 'series'], function (v) { return v === 'movie' ? tr('Películas') : tr('Series'); }],
+        [tr('Género'), 'genre', [''].concat(genres), function (v) {
+          if (!v) return tr('Todos');
+          if (tmdb && k === 'tv' && (en ? GENRES_TV_EN : GENRES_TV_ES)[v]) return (en ? GENRES_TV_EN : GENRES_TV_ES)[v];
+          return en ? v : GENRES_ES[v] || v;
+        }],
+        [tr('Año'), 'year', years, function (v) {
+          if (!v) return tr('Todos');
+          var n = +v.slice(1);
+          if (v[0] === 'D') return n >= 2000 ? tr('Años {0}', n) : tr('Años {0}', String(n).slice(2));
+          if (v[0] === 'B') return tr('Antes de {0}', n);
+          return String(n);
+        }],
+        [tr('Nota mínima'), 'rating', ['', '6', '7', '7.5', '8'], function (v) { return v ? '★ ' + num(v) + '+' : tr('Cualquiera'); }],
+        tmdb ? [tr('Plataforma'), 'platform', [''].concat(PLATFORMS.map(function (p) { return p.k; })), function (v) {
+          return v ? PLATFORMS.filter(function (p) { return p.k === v; })[0].name : tr('Todas');
+        }] : null,
+        [tr('Orden'), 'sort', tmdb ? ['pop', 'rated', 'new'] : ['pop', 'rated'], function (v) {
+          return v === 'pop' ? tr('Populares') : v === 'rated' ? tr('Mejor valoradas') : tr('Más recientes');
+        }],
+        [tr('Mostrar'), 'unseen', [false, true], function (v) { return v ? tr('Solo sin ver') : tr('Todo'); }]
+      ].filter(Boolean);
     }
 
-    var years = [''];
-    for (var y = new Date().getFullYear(); y >= 1987; y--) years.push(String(y));
-    chips(tr('Tipo'), ['movie', 'series'], 'type', function (v) { return v === 'movie' ? tr('Películas') : tr('Series'); });
-    chips(tr('Género'), [''].concat(GENRES), 'genre', function (v) { return !v ? tr('Todos') : settings.lang === 'en' ? v : GENRES_ES[v] || v; });
-    chips(tr('Año'), years, 'year', function (v) { return v || tr('Todos'); });
-    chips(tr('Orden'), ['top', 'imdbRating'], 'sort', function (v) { return v === 'top' ? tr('Populares') : tr('Mejor valoradas'); });
+    function paint(focusKey) {
+      filters.innerHTML = '';
+      var target = null;
+      opts().forEach(function (o) {
+        var key = o[1];
+        if (o[2].indexOf(f[key]) < 0) f[key] = o[2][0]; // ya no vale (otro tipo u otro modo)
+        var row = el('div', 'row chips-row');
+        row.appendChild(el('div', 'row-title', esc(o[0])));
+        var sc = el('div', 'hscroll chips');
+        sc.style.position = 'relative';
+        o[2].forEach(function (v) {
+          var b = el('div', 'btn' + (f[key] === v ? ' primary' : ''), esc(o[3](v)));
+          focusable(b, function () {
+            if (f[key] === v) return;
+            f[key] = v;
+            save('explore', f);
+            // al cambiar de tipo cambian los géneros: se rehacen los filtros con el foco en el mismo botón
+            if (key === 'type') paint(key);
+            else {
+              Array.prototype.forEach.call(sc.children, function (x) { x.classList.remove('primary'); });
+              b.classList.add('primary');
+            }
+            reload();
+          });
+          sc.appendChild(b);
+          if (f[key] === v) { sc._last = b; if (key === focusKey) target = b; } // al bajar a esta fila, ir a la opción elegida
+        });
+        row.appendChild(sc);
+        filters.appendChild(row);
+      });
+      save('explore', f);
+      if (target) Nav.focus(target);
+    }
 
+    // TMDB: una página de /discover con todos los filtros
+    function tmdbUrl(n) {
+      var k = f.type === 'movie' ? 'movie' : 'tv', field = k === 'movie' ? 'primary_release_date' : 'first_air_date';
+      var p = '/discover/' + k + '?include_adult=false&page=' + n, gte = '', lte = '', y = +f.year.slice(1);
+      if (f.year[0] === 'Y') { gte = y + '-01-01'; lte = y + '-12-31'; }
+      else if (f.year[0] === 'D') { gte = y + '-01-01'; lte = (y + 9) + '-12-31'; }
+      else if (f.year[0] === 'B') lte = (y - 1) + '-12-31';
+      var votes = f.rating ? 100 : 0;
+      if (f.sort === 'rated') { p += '&sort_by=vote_average.desc'; votes = k === 'movie' ? 500 : 200; }
+      else if (f.sort === 'new') {
+        p += '&sort_by=' + field + '.desc';
+        votes = Math.max(votes, 20);
+        var today = isoDay(Date.now());
+        if (!lte || lte > today) lte = today; // nada aún sin estrenar
+      } else p += '&sort_by=popularity.desc';
+      if (gte) p += '&' + field + '.gte=' + gte;
+      if (lte) p += '&' + field + '.lte=' + lte;
+      if (votes) p += '&vote_count.gte=' + votes;
+      if (f.rating) p += '&vote_average.gte=' + f.rating;
+      if (f.genre) p += '&with_genres=' + TMDB_GENRES[k][f.genre];
+      if (k === 'tv') p += TV_JUNK;
+      if (!f.platform) return Promise.resolve(p);
+      return platformId(k, PLATFORMS.filter(function (x) { return x.k === f.platform; })[0]).then(function (id) { return p + platformParams(id || 0); });
+    }
     // Cinemeta no combina género y año: con año se pide el catálogo del año y el género se filtra aquí
-    function url() {
-      var extra = [];
-      if (f.year) extra.push('genre=' + f.year);
+    function cinemetaUrl() {
+      var extra = [], y = f.year.slice(1);
+      if (y) extra.push('genre=' + y);
       else if (f.genre) extra.push('genre=' + encodeURIComponent(f.genre));
       if (fetched) extra.push('skip=' + fetched);
-      return CINEMETA + '/catalog/' + f.type + '/' + (f.year ? 'year' : f.sort) + (extra.length ? '/' + extra.join('&') : '') + '.json';
+      var cat = y ? 'year' : f.sort === 'rated' ? 'imdbRating' : 'top';
+      return CINEMETA + '/catalog/' + f.type + '/' + cat + (extra.length ? '/' + extra.join('&') : '') + '.json';
+    }
+    function fetchPage() {
+      if (tmdb) {
+        page++;
+        return tmdbUrl(page).then(function (u) { return tmdbPage(u, f.type === 'movie' ? 'movie' : 'tv'); });
+      }
+      return getJSON(cinemetaUrl()).then(function (d) {
+        var raw = d.metas || [];
+        fetched += raw.length;
+        var metas = raw;
+        if (f.year && f.genre) metas = metas.filter(function (m) { return (m.genre || m.genres || []).indexOf(f.genre) >= 0; });
+        if (f.rating) metas = metas.filter(function (m) { return parseFloat(m.imdbRating) >= +f.rating; });
+        if (f.year && f.sort === 'rated') metas.sort(function (a, b) { return (parseFloat(b.imdbRating) || 0) - (parseFloat(a.imdbRating) || 0); });
+        return { metas: metas, more: raw.length >= 20 };
+      });
     }
 
     function reload() {
       results.innerHTML = '';
-      cards = []; fetched = 0; more = null; emptyPages = 0;
+      cards = []; page = 0; fetched = 0; more = null; emptyPages = 0;
       loading = false;
       gen++; // las respuestas de los filtros anteriores se descartan
       loadPage();
@@ -74,15 +164,11 @@
       var status = el('div', 'empty', tr('Cargando…'));
       results.appendChild(status);
       var g = gen, first = cards.length;
-      Promise.all([getJSON(url()), seenReady()]).then(function (r) {
+      Promise.all([fetchPage(), seenReady(f.unseen)]).then(function (r) {
         if (g !== gen) return; // filtros cambiados mientras cargaba
         loading = false;
         results.removeChild(status);
-        var raw = r[0].metas || [];
-        fetched += raw.length;
-        var metas = filterSeen(raw);
-        if (f.year && f.genre) metas = metas.filter(function (m) { return (m.genre || m.genres || []).indexOf(f.genre) >= 0; });
-        if (f.year && f.sort === 'imdbRating') metas.sort(function (a, b) { return (parseFloat(b.imdbRating) || 0) - (parseFloat(a.imdbRating) || 0); });
+        var metas = f.unseen ? r[0].metas.filter(isUnseen) : filterSeen(r[0].metas);
         metas.forEach(function (m) {
           var i = cards.length;
           var c = card(m, function () { openMeta(m); });
@@ -91,10 +177,9 @@
           results.appendChild(c);
         });
         loadImages(cards, first + 13);
-        var hasMore = raw.length >= 20;
-        // con año y género puede que una página entera no tenga ninguno: seguir buscando un poco
-        if (!metas.length && hasMore && ++emptyPages < 4) { loadPage(hadFocus); return; }
-        if (hasMore) {
+        // con filtros que quitan mucho puede que una página entera no tenga ninguno: seguir buscando un poco
+        if (!metas.length && r[0].more && ++emptyPages < 4) { loadPage(hadFocus); return; }
+        if (r[0].more) {
           more = el('div', 'btn', tr('Cargar más'));
           focusable(more, loadPage);
           results.appendChild(more);
@@ -109,13 +194,13 @@
         if (e.status === 0) Net.whenBack(function () {
           if (g !== gen || loading || !document.body.contains(status)) return;
           results.removeChild(status);
+          if (tmdb) page--;
           loadPage(hadFocus);
         });
       });
     }
+    paint();
     loadPage();
-
-    return { el: root, initialFocus: function () { return vs.querySelectorAll('.tab')[2]; } };
   }
 
   // ---------------------------------------------------------------- pantalla: más como esto
@@ -212,6 +297,7 @@
     // resultados mientras se escribe: a partir de 3 letras, cuando se deja de teclear un momento
     input.addEventListener('input', function () {
       clearTimeout(liveTimer);
+      if (!trim(input.value)) { run(''); return; } // borrado: vuelven los filtros
       liveTimer = setTimeout(function () {
         var q = trim(input.value);
         if (q.length >= 3 && q !== lastRun) run(q);
@@ -224,6 +310,11 @@
     vs.appendChild(recent);
     var results = el('div');
     vs.appendChild(results);
+    // sin nada escrito, explorar con filtros
+    var explore = el('div');
+    explore.appendChild(el('div', 'screen-title settings-title', esc(tr('Explorar'))));
+    vs.appendChild(explore);
+    discoverFilters(explore);
 
     function trim(q) { return (q || '').replace(/^\s+|\s+$/g, ''); }
 
@@ -263,6 +354,7 @@
       q = trim(q);
       lastRun = q;
       results.innerHTML = '';
+      explore.style.display = q ? 'none' : '';
       if (!q) return;
       var enc = encodeURIComponent(q);
       if (tmdbOn()) {

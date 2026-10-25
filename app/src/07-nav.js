@@ -1,10 +1,12 @@
   // ---------------------------------------------------------------- ocultar lo ya visto
 
-  var Seen = { movies: {}, shows: {}, at: 0, loading: null };
+  // movies / shows: vistas (series: sin emitidos pendientes) por id de IMDb; tmdb: lo mismo por «movie:id» / «tv:id»;
+  // started: series con algún episodio visto (imdb y «tv:id»)
+  var Seen = { movies: {}, shows: {}, tmdb: {}, started: {}, at: 0, loading: null };
 
-  // espera (como mucho una vez cada 10 min) a tener la lista de vistos de Trakt
-  function seenReady() {
-    if (!settings.hideWatched || !Trakt.linked()) return Promise.resolve();
+  // espera (como mucho una vez cada 10 min) a tener la lista de vistos de Trakt; «always»: aunque no se oculte lo visto
+  function seenReady(always) {
+    if ((!settings.hideWatched && !always) || !Trakt.linked()) return Promise.resolve();
     if (Date.now() - Seen.at < 600000) return Promise.resolve();
     if (!Seen.loading) {
       Seen.loading = Trakt.loadWatched().catch(function () { /* sin Trakt: se muestra todo */ }).then(function () { Seen.loading = null; });
@@ -17,12 +19,22 @@
     var id = String(m.id || m.metaId || '');
     return m.imdb || m.imdb_id || (id.indexOf('tt') === 0 ? id : null);
   }
+  function tmdbKeyOf(m) {
+    var t = /^tmdb:(movie|tv):(\d+)$/.exec(String(m.id || ''));
+    return t ? t[1] + ':' + t[2] : null;
+  }
 
   function isSeenMeta(m) {
     var id = String(m.id || '');
-    var imdb = imdbOfMeta(m);
+    var imdb = imdbOfMeta(m), tk = tmdbKeyOf(m);
+    if (tk && Seen.tmdb[tk]) return true;
     if (m.type === 'movie') return !!((imdb && Seen.movies[imdb]) || (progress[id] && progress[id].done));
     return !!(imdb && Seen.shows[imdb]);
+  }
+  // ni vista ni empezada (para «Para ti» y «Solo sin ver»)
+  function isUnseen(m) {
+    var imdb = imdbOfMeta(m), tk = tmdbKeyOf(m);
+    return !isSeenMeta(m) && !(imdb && Seen.started[imdb]) && !(tk && Seen.started[tk]);
   }
 
   function filterSeen(metas) {

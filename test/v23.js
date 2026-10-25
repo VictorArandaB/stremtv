@@ -78,16 +78,16 @@ const check = (ok, what, got) => { console.log((ok ? '✓ ' : '✗ ') + what + (
 
   // --- filas de Inicio: por defecto, en su orden
   let rows = await rowTitles();
-  check(/Pop película \| .*Pop serie/.test(rows) || /Películas populares \| Series populares \| Películas mejor valoradas \| Series mejor valoradas/.test(rows), 'Inicio en el orden de siempre', rows);
-  // Ajustes → General → Filas de Inicio: subir «Series mejor valoradas» arriba del todo y ocultar «Películas populares»
+  check(/Películas populares \| Series populares$/.test(rows), 'Inicio en el orden de siempre', rows);
+  // Ajustes → General → Filas de Inicio: subir «Series populares» arriba del todo y ocultar «Películas populares»
   await p.evaluate(() => StremTV.openSettings('general')); await sleep(600);
   await focusText('Filas de Inicio'); await key('Enter'); await sleep(600);
   const list = await p.evaluate((top) => Array.from(eval(top).querySelectorAll('.opt')).map((x) => x.firstChild.textContent).join(' | '), top);
-  check(/1\. Continuar viendo/.test(list) && /Series mejor valoradas/.test(list), 'lista de filas', list);
-  await focusText('Series mejor valoradas'); await key('Enter'); await sleep(400);
+  check(/1\. Continuar viendo/.test(list) && /Series populares/.test(list), 'lista de filas', list);
+  await focusText('Series populares'); await key('Enter'); await sleep(400);
   await focusText('^Arriba del todo$'); await key('Enter'); await sleep(400);
   const after = await p.evaluate((top) => [eval(top).querySelector('.opt').firstChild.textContent, StremTV.Nav.cur.firstChild.textContent].join(' · foco: '), top);
-  check(/^1\. Series mejor valoradas · foco: 1\. Series mejor valoradas$/.test(after), 'arriba del todo (y el foco la sigue)', after);
+  check(/^1\. Series populares · foco: 1\. Series populares$/.test(after), 'arriba del todo (y el foco la sigue)', after);
   await focusText('Películas populares'); await key('Enter'); await sleep(400);
   await focusText('^Ocultar$'); await key('Enter'); await sleep(400);
   const hid = await p.evaluate((top) => Array.from(eval(top).querySelectorAll('.opt.off')).map((x) => x.textContent).join(' | '), top);
@@ -95,7 +95,7 @@ const check = (ok, what, got) => { console.log((ok ? '✓ ' : '✗ ') + what + (
   await p.screenshot({ path: OUT + '/232-home-rows.png' });
   await key('Escape'); await key('Escape'); await key('Escape'); await sleep(1500);
   rows = await rowTitles();
-  check(/^Series mejor valoradas/.test(rows) && !/Películas populares/.test(rows), 'Inicio con el orden nuevo y sin la fila oculta', rows);
+  check(/^Series populares/.test(rows) && !/Películas populares/.test(rows), 'Inicio con el orden nuevo y sin la fila oculta', rows);
   check(await p.evaluate(() => StremTV.Nav.cur && StremTV.stack[0].el.contains(StremTV.Nav.cur)), 'el foco está en Inicio');
   // volver al orden de siempre
   await p.evaluate(() => StremTV.openSettings('general')); await sleep(500);
@@ -103,7 +103,7 @@ const check = (ok, what, got) => { console.log((ok ? '✓ ' : '✗ ') + what + (
   await focusText('orden de siempre'); await key('Enter'); await sleep(300);
   await key('Escape'); await key('Escape'); await key('Escape'); await sleep(1500);
   rows = await rowTitles();
-  check(/Películas populares \| Series populares \| Películas mejor valoradas \| Series mejor valoradas/.test(rows), 'orden de siempre restaurado', rows);
+  check(/Películas populares \| Series populares$/.test(rows), 'orden de siempre restaurado', rows);
 
   console.log('ERRORES:', errs.length ? errs.join(' | ') : 'ninguno');
   await b.close();

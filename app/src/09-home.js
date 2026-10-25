@@ -19,24 +19,32 @@
   document.addEventListener('visibilitychange', function () { if (!document.hidden) clockCheck('volver a la app'); });
   document.addEventListener('keydown', function () { if (Date.now() - clockTick > 15000) clockCheck('tecla'); }, true);
 
+  var TABS = [['home', 'Inicio'], ['series', 'Series'], ['movies', 'Películas'], ['anime', 'Anime'], ['search', 'Buscar'], ['settings', 'Ajustes']];
   function header(active) {
     var h = el('div', 'header');
     h.appendChild(el('div', 'logo', 'StremTV'));
-    [['home', 'Inicio'], ['anime', 'Anime'], ['explore', 'Explorar'], ['search', 'Buscar'], ['settings', 'Ajustes']].forEach(function (t) {
+    TABS.forEach(function (t) {
       var tab = el('div', 'tab' + (t[0] === active ? ' active' : ''), tr(t[1]));
-      focusable(tab, function () {
-        if (t[0] === active) return;
-        if (t[0] === 'search') push(searchScreen());
-        else if (t[0] === 'anime') push(animeScreen());
-        else if (t[0] === 'explore') push(exploreScreen());
-        else if (t[0] === 'settings') openSettings();
-        else while (stack.length > 1) pop();
-      });
+      focusable(tab, function () { if (t[0] !== active) openTab(t[0]); });
       h.appendChild(tab);
     });
     h.appendChild(el('div', 'clock', clockText(new Date())));
     return h;
   }
+  // cada pestaña se abre sobre Inicio (Atrás siempre vuelve a Inicio); al volver a Inicio, el foco en su pestaña,
+  // no en la que se pulsó para salir de ella
+  function openTab(k) {
+    while (stack.length > 1) {
+      if (stack.length === 2) stack[0].lastFocus = stack[0].el.querySelector('.tab.active');
+      pop();
+    }
+    if (k === 'home') return;
+    if (k === 'search') push(searchScreen());
+    else if (k === 'anime') push(animeScreen());
+    else if (k === 'series' || k === 'movies') push(catalogScreen(k));
+    else if (k === 'settings') openSettings();
+  }
+  function activeTab(root) { return function () { return root.querySelector('.tab.active'); }; }
 
   // ---------------------------------------------------------------- cabecera grande (inicio y anime)
 
@@ -226,41 +234,70 @@
     return { root: root, vs: vs };
   }
 
-  // filas de Inicio que se pueden ordenar u ocultar (Ajustes → General → Filas de Inicio); las de los addons van detrás,
-  // con la clave «addon:url|tipo|id». settings.homeRows: { order: [claves], hidden: { clave: true } }
-  var HOME_ROWS = [
-    { k: 'cont', name: 'Continuar viendo' },
-    { k: 'mylist', name: 'Mi lista', local: true }, // sin Trakt (con Trakt, su lista va en dos filas)
-    { k: 'traktCont', name: 'Continuar (Trakt)', trakt: true },
-    { k: 'upnext', name: 'Siguientes episodios', trakt: true },
-    { k: 'week', name: 'Esta semana en tus series', trakt: true },
-    { k: 'wlMovies', name: 'Mi lista: películas', trakt: true },
-    { k: 'wlSeries', name: 'Mi lista: series', trakt: true },
-    { k: 'recMovies', name: 'Recomendadas para ti: películas', trakt: true },
-    { k: 'recSeries', name: 'Recomendadas para ti: series', trakt: true },
-    { k: 'history', name: 'Visto recientemente' },
-    { k: 'popMovies', name: 'Películas populares', url: CINEMETA + '/catalog/movie/top.json' },
-    { k: 'popSeries', name: 'Series populares', url: CINEMETA + '/catalog/series/top.json' },
-    { k: 'topMovies', name: 'Películas mejor valoradas', url: CINEMETA + '/catalog/movie/imdbRating.json' },
-    { k: 'topSeries', name: 'Series mejor valoradas', url: CINEMETA + '/catalog/series/imdbRating.json' }
-  ];
+  // filas de Inicio, Series y Películas que se pueden ordenar u ocultar (Ajustes → General → Filas de …). Las de los addons van
+  // detrás, con la clave «addon:url|tipo|id»: las de películas en Películas, las de series en Series y las demás en Inicio.
+  // settings.homeRows / seriesRows / moviesRows: { order: [claves], hidden: { clave: true | false } }; sin dato, oculta si «off»
+  // (u «offIfTrakt» con Trakt vinculado).
+  // trakt: solo con Trakt vinculado; local: solo sin él; tmdb: solo con clave de TMDB
+  var PAGE_ROWS = {
+    home: [
+      { k: 'cont', name: 'Continuar viendo' },
+      { k: 'mylist', name: 'Mi lista', local: true }, // sin Trakt (con Trakt, su lista va en dos filas)
+      { k: 'traktCont', name: 'Continuar (Trakt)', trakt: true },
+      { k: 'upnext', name: 'Siguientes episodios', trakt: true },
+      { k: 'week', name: 'Esta semana en tus series', trakt: true },
+      { k: 'wlMovies', name: 'Mi lista: películas', trakt: true },
+      { k: 'wlSeries', name: 'Mi lista: series', trakt: true },
+      { k: 'history', name: 'Visto recientemente' },
+      // lo de Series y Películas; en Inicio, solo si no hay Trakt (si no, saldría casi vacío)
+      { k: 'popMovies', name: 'Películas populares', url: CINEMETA + '/catalog/movie/top.json', offIfTrakt: true },
+      { k: 'popSeries', name: 'Series populares', url: CINEMETA + '/catalog/series/top.json', offIfTrakt: true }
+    ],
+    series: [
+      { k: 'forYou', name: 'Para ti', trakt: true },
+      { k: 'trending', name: 'Tendencia esta semana', tmdb: true },
+      { k: 'airing', name: 'En emisión', tmdb: true },
+      { k: 'pop', name: 'Populares', url: CINEMETA + '/catalog/series/top.json' },
+      { k: 'new', name: 'Estrenos', tmdb: true },
+      { k: 'top', name: 'Mejor valoradas', url: CINEMETA + '/catalog/series/imdbRating.json' }
+    ],
+    movies: [
+      { k: 'forYou', name: 'Para ti', trakt: true },
+      { k: 'trending', name: 'Tendencia esta semana', tmdb: true },
+      { k: 'new', name: 'Estrenos en digital', tmdb: true },
+      { k: 'cinema', name: 'En cines', tmdb: true },
+      { k: 'pop', name: 'Populares', url: CINEMETA + '/catalog/movie/top.json' },
+      { k: 'top', name: 'Mejor valoradas', url: CINEMETA + '/catalog/movie/imdbRating.json' }
+    ]
+  };
+  // una fila por plataforma en Series y Películas
+  PLATFORMS.forEach(function (pl) {
+    PAGE_ROWS.series.push({ k: 'prov:' + pl.k, name: 'En {0}', arg: pl.name, tmdb: true, off: pl.off, platform: pl });
+    PAGE_ROWS.movies.push({ k: 'prov:' + pl.k, name: 'En {0}', arg: pl.name, tmdb: true, off: pl.off, platform: pl });
+  });
+  var ROWS_SETTING = { home: 'homeRows', series: 'seriesRows', movies: 'moviesRows' };
+  var PAGE_NAMES = { home: 'Inicio', series: 'Series', movies: 'Películas' };
 
-  // las filas que tocan ahora (con o sin Trakt; de cada addon, como mucho 4) en el orden elegido; las nuevas, al final
-  function homeRows() {
-    var linked = Trakt.linked(), perAddon = {};
-    var all = HOME_ROWS.filter(function (r) { return !(r.trakt && !linked) && !(r.local && linked); })
-      .map(function (r) { return extend({ title: tr(r.name) }, r); });
+  // las filas que tocan ahora en una pestaña (de cada addon, como mucho 4) en el orden elegido; las nuevas, al final
+  function pageRows(page) {
+    var linked = Trakt.linked(), tmdb = !!settings.tmdbKey, perAddon = {};
+    var all = PAGE_ROWS[page].filter(function (r) { return !(r.trakt && !linked) && !(r.local && linked) && !(r.tmdb && !tmdb); })
+      .map(function (r) { return extend({ title: tr(r.name, r.arg) }, r); });
     addonCatalogs(false).forEach(function (c) {
+      var t = c.catalog.type, to = t === 'movie' ? 'movies' : t === 'series' ? 'series' : 'home';
+      if (to !== page) return;
       var n = perAddon[c.addon.url] = (perAddon[c.addon.url] || 0) + 1;
-      if (n <= 4) all.push({ k: 'addon:' + c.addon.url + '|' + c.catalog.type + '|' + c.catalog.id, title: c.title, catalog: c });
+      if (n <= 4) all.push({ k: 'addon:' + c.addon.url + '|' + t + '|' + c.catalog.id, title: c.title, catalog: c });
     });
-    var pref = settings.homeRows || {}, order = pref.order || [], hidden = pref.hidden || {};
+    var pref = settings[ROWS_SETTING[page]] || {}, order = pref.order || [], hidden = pref.hidden || {};
     return all.map(function (r, i) {
       var p = order.indexOf(r.k);
-      r.hidden = !!hidden[r.k];
+      r.hidden = hidden[r.k] === undefined ? !!(r.off || (r.offIfTrakt && linked)) : !!hidden[r.k];
       return { r: r, p: p < 0 ? 1000 + i : p };
     }).sort(function (a, b) { return a.p - b.p; }).map(function (x) { return x.r; });
   }
+  function homeRows() { return pageRows('home'); }
+  function rowsKey(rows) { return rows.map(function (r) { return r.k + (r.hidden ? '-' : '+'); }).join(','); }
 
   function homeScreen() {
     var hs = heroScreen('home'), root = hs.root, vs = hs.vs;
@@ -316,7 +353,7 @@
       if (!Trakt.linked()) { traktLoaded = 0; return; }
       if (Date.now() - traktLoaded < 120000) return; // como mucho cada 2 minutos
       traktLoaded = Date.now();
-      ['traktCont', 'upnext', 'week', 'wlMovies', 'wlSeries', 'recMovies', 'recSeries'].forEach(function (k) { if (slots[k]) slots[k].innerHTML = ''; });
+      ['traktCont', 'upnext', 'week', 'wlMovies', 'wlSeries'].forEach(function (k) { if (slots[k]) slots[k].innerHTML = ''; });
       var local = {};
       if (slot('cont')) continueList().forEach(function (p) { local[p.metaId] = true; });
       // cada fila se da como función: si falla por la red, se vuelve a pedir sola al volver (las que comparten datos, con shared)
@@ -344,11 +381,6 @@
       var wlOf = function (type) { return function () { return wl().then(function (m) { return m.filter(function (x) { return x.type === type; }); }); }; };
       if (slot('wlMovies')) promiseRow(slot('wlMovies'), tr('Mi lista: películas'), wlOf('movie'), openMeta, true, 100);
       if (slot('wlSeries')) promiseRow(slot('wlSeries'), tr('Mi lista: series'), function () { return wlOf('series')().then(Trakt.withPending); }, openMeta, true, 100);
-      var recs = function (kind) {
-        return function () { return Promise.all([Trakt.recommendations(kind), seenReady()]).then(function (r) { return filterSeen(r[0]); }); };
-      };
-      if (slot('recMovies')) promiseRow(slot('recMovies'), tr('Recomendadas para ti: películas'), recs('movies'), openMeta, true);
-      if (slot('recSeries')) promiseRow(slot('recSeries'), tr('Recomendadas para ti: series'), recs('shows'), openMeta, true);
     }
 
     // lo último visto: de Trakt si está vinculado (incluye otros dispositivos) o, si no, de esta tele
@@ -387,7 +419,6 @@
       });
     }
 
-    function rowsKey(rows) { return rows.map(function (r) { return r.k + (r.hidden ? '-' : '+'); }).join(','); }
     function layout(rows) {
       rowsSig = rowsKey(rows);
       vs.innerHTML = '';
@@ -443,5 +474,62 @@
     asyncRow(vs, tr('Tendencias'), ANIME + '/catalog/anime/kitsu-anime-trending.json', openMeta);
     asyncRow(vs, tr('Más populares'), ANIME + '/catalog/anime/kitsu-anime-popular.json', openMeta);
     asyncRow(vs, tr('Mejor valorados'), ANIME + '/catalog/anime/kitsu-anime-rating.json', openMeta);
-    return { el: root, initialFocus: function () { return root.querySelectorAll('.tab')[1]; } };
+    return { el: root, initialFocus: activeTab(root) };
+  }
+
+  // ---------------------------------------------------------------- pantallas: series y películas
+
+  // lo que carga cada fila (función: si falla por la red, la fila se vuelve a pedir sola al volver)
+  function pageRowLoader(page, r) {
+    var k = page === 'movies' ? 'movie' : 'tv', now = Date.now(), today = isoDay(now);
+    var seen = function (list) { return Promise.all([list, seenReady()]).then(function (x) { return filterSeen(x[0] || []); }); };
+    var tmdb = function (path) { return function () { return seen(tmdbList(path, k)); }; };
+    if (r.catalog) {
+      var c = r.catalog;
+      return function () { return seen(getJSON(c.addon.url + '/catalog/' + c.catalog.type + '/' + c.catalog.id + '.json').then(function (d) { return d.metas; })); };
+    }
+    if (r.url) return function () { return seen(getJSON(r.url).then(function (d) { return d.metas; })); };
+    if (r.platform) {
+      return function () {
+        return seen(platformId(k, r.platform).then(function (id) {
+          return id ? tmdbList('/discover/' + k + '?sort_by=popularity.desc' + platformParams(id) + (k === 'tv' ? TV_JUNK : ''), k) : [];
+        }));
+      };
+    }
+    switch (r.k) {
+      // recomendaciones de Trakt sin nada visto ni empezado (aunque no se oculte lo visto)
+      case 'forYou': return function () {
+        return Promise.all([Trakt.recommendations(page === 'movies' ? 'movies' : 'shows'), seenReady(true)]).then(function (x) { return x[0].filter(isUnseen); });
+      };
+      case 'trending': return tmdb('/trending/' + k + '/week');
+      case 'airing': return tmdb('/discover/tv?air_date.gte=' + isoDay(now - 7 * 86400000) + '&air_date.lte=' + today + '&sort_by=popularity.desc&vote_count.gte=50' + TV_JUNK);
+      case 'new': return k === 'tv'
+        ? tmdb('/discover/tv?first_air_date.gte=' + isoDay(now - 120 * 86400000) + '&first_air_date.lte=' + today + '&sort_by=popularity.desc&vote_count.gte=10' + TV_JUNK)
+        // estrenadas en digital (alquiler, compra o plataforma) en España en los últimos 4 meses
+        : tmdb('/discover/movie?region=ES&with_release_type=4%7C5&release_date.gte=' + isoDay(now - 120 * 86400000) + '&release_date.lte=' + today + '&sort_by=popularity.desc&vote_count.gte=10');
+      case 'cinema': return tmdb('/movie/now_playing?region=ES');
+    }
+    return function () { return Promise.resolve([]); };
+  }
+
+  // Series o Películas: cabecera grande y las filas elegidas (Ajustes → General → Filas de …)
+  function catalogScreen(page) {
+    var hs = heroScreen(page), root = hs.root, vs = hs.vs, sig = '';
+    var screen = { el: root, initialFocus: activeTab(root) };
+    function layout() {
+      var rows = pageRows(page);
+      sig = rowsKey(rows) + settings.tmdbKey;
+      vs.innerHTML = '';
+      scrollTop0(vs);
+      rows.forEach(function (r) { if (!r.hidden) promiseRow(vs, r.title, pageRowLoader(page, r), openMeta, true); });
+    }
+    layout();
+    screen.onShow = function () { primeHero(vs); };
+    screen.onResume = function () {
+      if (rowsKey(pageRows(page)) + settings.tmdbKey === sig) return;
+      layout();
+      screen.lastFocus = null;
+      if (root._hero) root._hero.cur = null;
+    };
+    return screen;
   }

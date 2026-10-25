@@ -10,7 +10,7 @@
 
   function tmdbGet(path) {
     var key = settings.tmdbKey, bearer = key.length > 40; // token de lectura (v4) o clave de la API (v3)
-    var url = TMDB + path + (path.indexOf('?') >= 0 ? '&' : '?') + 'language=es-ES' + (bearer ? '' : '&api_key=' + encodeURIComponent(key));
+    var url = TMDB + path + (path.indexOf('?') >= 0 ? '&' : '?') + 'language=' + (settings.lang === 'en' ? 'en-US' : 'es-ES') + (bearer ? '' : '&api_key=' + encodeURIComponent(key));
     return xhr('GET', url, { timeout: 15000, headers: bearer ? { Authorization: 'Bearer ' + key } : {},
       fail: function (st) { return st === 401 ? tr('la clave de TMDB no es válida') : 'TMDB ' + st; } }).then(strictJSON);
   }
@@ -76,6 +76,62 @@
       });
     });
   }
+
+  // ---------------------------------------------------------------- listas de TMDB (Series, Películas y Buscar)
+
+  // carátula de un resultado de TMDB; se abre por su id de IMDb al elegirla (openMeta)
+  function tmdbMeta(x, k) {
+    var date = x.release_date || x.first_air_date || '';
+    return { id: 'tmdb:' + k + ':' + x.id, type: k === 'movie' ? 'movie' : 'series', name: x.title || x.name,
+      poster: x.poster_path ? 'https://image.tmdb.org/t/p/w185' + x.poster_path : '',
+      background: x.backdrop_path ? 'https://image.tmdb.org/t/p/w1280' + x.backdrop_path : '',
+      description: x.overview || '', releaseInfo: date.slice(0, 4),
+      imdbRating: x.vote_count >= 50 && x.vote_average ? x.vote_average.toFixed(1) : '' };
+  }
+  // una página de resultados de TMDB como carátulas, con si hay más páginas
+  function tmdbPage(path, k) {
+    return tmdbGet(path).then(function (d) {
+      return { metas: (d.results || []).map(function (x) { return tmdbMeta(x, k); }), more: (d.page || 1) < Math.min(d.total_pages || 1, 500) };
+    });
+  }
+  function tmdbList(path, k) { return tmdbPage(path, k).then(function (r) { return r.metas; }); }
+
+  function isoDay(ms) { return new Date(ms).toISOString().slice(0, 10); }
+
+  // plataformas con suscripción en España: por su id de TMDB y, si ya no está, por el nombre (cambian: Max → HBO Max).
+  // Apple TV+ solo por id: ahora se llama «Apple TV», igual que la tienda de alquiler de Apple
+  var PLATFORMS = [
+    { k: 'netflix', name: 'Netflix', ids: [8], m: ['netflix'] },
+    { k: 'prime', name: 'Prime Video', ids: [119], m: ['amazonprimevideo', 'primevideo'] },
+    { k: 'disney', name: 'Disney+', ids: [337], m: ['disneyplus'] },
+    { k: 'max', name: 'HBO Max', ids: [1899, 384], m: ['hbomax', 'max'] },
+    { k: 'apple', name: 'Apple TV+', ids: [350], m: ['appletvplus'] },
+    { k: 'movistar', name: 'Movistar Plus+', ids: [149], m: ['movistarplusplus', 'movistarplus'] },
+    { k: 'skyshowtime', name: 'SkyShowtime', ids: [1773], m: ['skyshowtime'], off: true },
+    { k: 'filmin', name: 'Filmin', ids: [63], m: ['filmin'], off: true }
+  ];
+  var providerLists = {};
+  function platformId(k, pl) {
+    if (!providerLists[k]) {
+      providerLists[k] = tmdbGet('/watch/providers/' + k + '?watch_region=ES').then(function (d) { return d.results || []; })
+        .catch(function (e) { delete providerLists[k]; throw e; });
+    }
+    return providerLists[k].then(function (list) {
+      var norm = function (n) { return String(n).toLowerCase().replace(/\+/g, 'plus').replace(/[^a-z0-9]/g, ''); };
+      var i, j;
+      for (i = 0; i < pl.ids.length; i++) {
+        for (j = 0; j < list.length; j++) if (list[j].provider_id === pl.ids[i]) return pl.ids[i];
+      }
+      for (i = 0; i < pl.m.length; i++) {
+        for (j = 0; j < list.length; j++) if (norm(list[j].provider_name) === pl.m[i]) return list[j].provider_id;
+      }
+      return 0;
+    });
+  }
+  // con suscripción en esa plataforma (en España)
+  function platformParams(id) { return '&with_watch_providers=' + id + '&watch_region=ES&with_watch_monetization_types=flatrate'; }
+  // sin telediarios, programas de entrevistas ni culebrones
+  var TV_JUNK = '&without_genres=10763,10767,10766';
 
   // ---------------------------------------------------------------- tráileres (en TizenTube)
 
