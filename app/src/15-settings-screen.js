@@ -435,6 +435,9 @@
 
       opt('Ocultar lo que ya he visto (Trakt y esta app)', function () { return yesNo(settings.hideWatched); }, function () { settings.hideWatched = !settings.hideWatched; Seen.at = 0; });
 
+      // sin spoilers: de los episodios sin ver, ni sinopsis ni imagen (ficha e INFO del vídeo); el título se queda
+      opt('Sin spoilers (episodios sin ver: sin sinopsis ni imagen)', function () { return yesNo(settings.noSpoilers); }, function () { settings.noSpoilers = !settings.noSpoilers; });
+
       ['home', 'anime', 'movies', 'series'].forEach(function (page) {
         opt(tr('Filas de {0}', tr(PAGE_NAMES[page])), function () { return tr('Ordenar u ocultar ›'); }, function () { push(rowsScreen(page)); });
       });
