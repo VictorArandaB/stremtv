@@ -232,7 +232,10 @@
     var top = stack[stack.length - 1];
     if (top) {
       top.lastFocus = Nav.cur;
-      if (!screen.overlay) top.el.style.display = 'none';
+      if (!screen.overlay) {
+        top.el.style.display = 'none';
+        if (top.onHide) top.onHide(); // tapada por otra pantalla (vuelve con onResume)
+      }
     }
     (screen.overlay ? document.body : $('#screens')).appendChild(screen.el);
     stack.push(screen);
