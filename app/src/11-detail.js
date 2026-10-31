@@ -85,6 +85,9 @@
         meta = res.meta;
         if (!meta) throw new Error(tr('sin datos'));
         if (isAnime) type = meta.type === 'movie' ? 'movie' : 'series';
+        // la continuación que IMDb tiene aparte, como las temporadas siguientes (withSequels)
+        return type === 'series' && !isAnime ? withSequels(imdbOf(), meta.videos).then(function (v) { meta.videos = v; }) : null;
+      }).then(function () {
         // la numeración de Trakt (a la vez que TMDB; guardada en la tele, así que casi siempre está ya)
         var mapping = type === 'series' && !isAnime && Trakt.linked() && imdbOf()
           ? withTimeout(Trakt.epMap(imdbOf(), meta.videos), 2500).then(function (m) { epMap = m || {}; }, function () { /* sin ella: la misma numeración */ })
@@ -315,6 +318,7 @@
         imdbS: v.imdbSeason !== undefined ? v.imdbSeason : v.season,
         imdbE: v.imdbEpisode !== undefined ? v.imdbEpisode : v.episode,
         traktS: tk[0], traktE: tk[1],
+        srcImdb: v._imdb, srcS: v._s, srcE: v._e, // de la continuación de IMDb (withSequels): subtítulos e intro con la suya
         startAt: p && !p.done ? p.t : 0,
         startPct: p ? 0 : resumePct(imdbOf() + ':' + traktKey(v)),
         runtime: parseRuntime(v.runtime) || parseRuntime(meta.runtime),

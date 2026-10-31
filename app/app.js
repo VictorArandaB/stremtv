@@ -866,6 +866,37 @@
     });
   }
 
+  // ---------------------------------------------------------------- series que IMDb parte en dos
+
+  // Trakt (y TMDB) las tienen como una sola serie y Cinemeta (IMDb) como dos: la continuación se añade a la primera como
+  // las temporadas siguientes, para que la numeración de Trakt (Bleach T2 = Thousand-Year Blood War) caiga en ella.
+  // Sus episodios conservan su id (tt14986406:1:1, con el que los addons dan fuentes) y en _imdb/_s/_e su numeración
+  // en IMDb (subtítulos, saltar intro); la serie para Trakt es la primera
+  var SEQUELS = { tt0434665: ['tt14986406'] }; // Bleach → Bleach: Thousand-Year Blood War
+  function withSequels(imdb, videos) {
+    var more = SEQUELS[imdb];
+    if (!more) return Promise.resolve(videos);
+    return Promise.all(more.map(function (id) {
+      return getJSON(CINEMETA + '/meta/series/' + id + '.json').then(function (r) { return (r.meta || {}).videos || []; }, function () { return []; });
+    })).then(function (lists) {
+      var out = (videos || []).slice(), top = 0;
+      out.forEach(function (v) { if (v.season > top) top = v.season; });
+      lists.forEach(function (list, i) {
+        var last = top;
+        list.forEach(function (v) {
+          if (!(v.season > 0)) return; // sus especiales no
+          var s = top + v.season;
+          if (s > last) last = s;
+          var c = extend({}, v);
+          delete c.imdb_id; // el id del episodio en IMDb: para Trakt va con la serie principal
+          out.push(extend(c, { season: s, _imdb: more[i], _s: v.season, _e: v.episode }));
+        });
+        top = last;
+      });
+      return out;
+    });
+  }
+
   // ---------------------------------------------------------------- saltar intro y ending de anime (AniSkip)
 
   // id de MyAnimeList y número de episodio de lo que se reproduce (ARM traduce de Kitsu o IMDb); null si no es anime
@@ -880,15 +911,16 @@
       var ep = +String(ctx.videoId).split(':')[2] || 1;
       return armGet('ids?source=kitsu&id=' + k[1]).then(function (d) { return d && d.myanimelist ? { id: d.myanimelist, ep: ep } : null; });
     }
-    if (!ctx.imdb) return Promise.resolve(null);
-    return armGet('imdb?id=' + ctx.imdb).then(function (list) {
+    var imdb = ctx.srcImdb || ctx.imdb, season = ctx.srcImdb ? ctx.srcS : ctx.imdbS, epNum = ctx.srcImdb ? ctx.srcE : ctx.imdbE;
+    if (!imdb) return Promise.resolve(null);
+    return armGet('imdb?id=' + imdb).then(function (list) {
       list = (list || []).filter(function (x) { return x.myanimelist; });
       if (!list.length) return null;
       if (ctx.type === 'movie') return { id: list[0].myanimelist, ep: 1 };
       // series: la entrada de MyAnimeList de esa temporada
-      var bySeason = list.filter(function (x) { return x['thetvdb-season'] === +ctx.imdbS || x['themoviedb-season'] === +ctx.imdbS; });
+      var bySeason = list.filter(function (x) { return x['thetvdb-season'] === +season || x['themoviedb-season'] === +season; });
       var m = bySeason.length === 1 ? bySeason[0] : list.length === 1 ? list[0] : null;
-      return m ? { id: m.myanimelist, ep: +ctx.imdbE } : null;
+      return m ? { id: m.myanimelist, ep: +epNum } : null;
     });
   }
 
@@ -1093,7 +1125,7 @@
       var eps = (videos || []).filter(function (v) { return v.season > 0 && v.episode > 0; })
         .sort(function (a, b) { return a.season - b.season || a.episode - b.episode; });
       var c = Trakt.epMaps[imdb];
-      if (c && c.future && c.n === eps.length && Date.now() - c.ts < 7 * 86400000) return Promise.resolve(c.map); // sin future: de la 0.23
+      if (c && c.future && c.n === eps.length && (c.seq || !SEQUELS[imdb]) && Date.now() - c.ts < 7 * 86400000) return Promise.resolve(c.map); // sin future: de la 0.23; sin seq: sin la continuación
       return Trakt.call('GET', '/shows/' + imdb + '/seasons?extended=episodes,full').then(function (seasons) {
         var aired = {}, byDay = {}, map = {}, order = [], future = [];
         (seasons || []).forEach(function (se) {
@@ -1133,7 +1165,7 @@
             if (!v.released || new Date(v.released).getTime() > now) future.push(tk);
           });
         }
-        Trakt.epMaps[imdb] = { ts: Date.now(), n: eps.length, map: map, future: future };
+        Trakt.epMaps[imdb] = { ts: Date.now(), n: eps.length, map: map, future: future, seq: SEQUELS[imdb] ? 1 : undefined };
         capByTs(Trakt.epMaps, 300);
         save('epmaps', Trakt.epMaps);
         return map;
@@ -1157,9 +1189,10 @@
     },
     // equivalencias de las series de una fila que aún no se conocen o tienen más de una semana (de tres en tres)
     learnEpMaps: function (imdbs) {
-      var todo = imdbs.filter(function (id, i) { var c = Trakt.epMaps[id]; return id && imdbs.indexOf(id) === i && !(c && c.future && Date.now() - c.ts < 7 * 86400000); });
+      var todo = imdbs.filter(function (id, i) { var c = Trakt.epMaps[id]; return id && imdbs.indexOf(id) === i && !(c && c.future && (c.seq || !SEQUELS[id]) && Date.now() - c.ts < 7 * 86400000); });
       return mapLimit(todo, 3, function (imdb) {
-        return getJSON(CINEMETA + '/meta/series/' + imdb + '.json').then(function (r) { return Trakt.epMap(imdb, (r.meta || {}).videos); })
+        return getJSON(CINEMETA + '/meta/series/' + imdb + '.json').then(function (r) { return withSequels(imdb, (r.meta || {}).videos); })
+          .then(function (videos) { return Trakt.epMap(imdb, videos); })
           .catch(function () { return null; });
       });
     },
@@ -5418,6 +5451,9 @@
         meta = res.meta;
         if (!meta) throw new Error(tr('sin datos'));
         if (isAnime) type = meta.type === 'movie' ? 'movie' : 'series';
+        // la continuación que IMDb tiene aparte, como las temporadas siguientes (withSequels)
+        return type === 'series' && !isAnime ? withSequels(imdbOf(), meta.videos).then(function (v) { meta.videos = v; }) : null;
+      }).then(function () {
         // la numeración de Trakt (a la vez que TMDB; guardada en la tele, así que casi siempre está ya)
         var mapping = type === 'series' && !isAnime && Trakt.linked() && imdbOf()
           ? withTimeout(Trakt.epMap(imdbOf(), meta.videos), 2500).then(function (m) { epMap = m || {}; }, function () { /* sin ella: la misma numeración */ })
@@ -5648,6 +5684,7 @@
         imdbS: v.imdbSeason !== undefined ? v.imdbSeason : v.season,
         imdbE: v.imdbEpisode !== undefined ? v.imdbEpisode : v.episode,
         traktS: tk[0], traktE: tk[1],
+        srcImdb: v._imdb, srcS: v._s, srcE: v._e, // de la continuación de IMDb (withSequels): subtítulos e intro con la suya
         startAt: p && !p.done ? p.t : 0,
         startPct: p ? 0 : resumePct(imdbOf() + ':' + traktKey(v)),
         runtime: parseRuntime(v.runtime) || parseRuntime(meta.runtime),
@@ -6250,7 +6287,7 @@
     fetchList: function (ctx) {
       var self = this, mine = Player.session;
       if (!ctx.imdb) { self.list = []; return Promise.resolve([]); }
-      var sid = ctx.type === 'movie' ? ctx.imdb : ctx.imdb + ':' + ctx.imdbS + ':' + ctx.imdbE;
+      var sid = ctx.type === 'movie' ? ctx.imdb : ctx.srcImdb ? ctx.srcImdb + ':' + ctx.srcS + ':' + ctx.srcE : ctx.imdb + ':' + ctx.imdbS + ':' + ctx.imdbE;
       var sources = [{ url: SUBS_ADDON, name: '' }].concat(addonsFor('subtitles', ctx.type, sid).map(function (a) { return { url: a.url, name: a.manifest.name }; }));
       return Promise.all(sources.map(function (src) {
         return getJSON(src.url + '/subtitles/' + ctx.type + '/' + sid + '.json').then(function (d) {
@@ -8566,7 +8603,7 @@
 
   // ---------------------------------------------------------------- arranque
 
-  var VERSION = '0.27.2';
+  var VERSION = '0.27.3';
 
   function fitScreen() {
     var z = window.innerWidth / 1920;

@@ -128,7 +128,7 @@
       var eps = (videos || []).filter(function (v) { return v.season > 0 && v.episode > 0; })
         .sort(function (a, b) { return a.season - b.season || a.episode - b.episode; });
       var c = Trakt.epMaps[imdb];
-      if (c && c.future && c.n === eps.length && Date.now() - c.ts < 7 * 86400000) return Promise.resolve(c.map); // sin future: de la 0.23
+      if (c && c.future && c.n === eps.length && (c.seq || !SEQUELS[imdb]) && Date.now() - c.ts < 7 * 86400000) return Promise.resolve(c.map); // sin future: de la 0.23; sin seq: sin la continuación
       return Trakt.call('GET', '/shows/' + imdb + '/seasons?extended=episodes,full').then(function (seasons) {
         var aired = {}, byDay = {}, map = {}, order = [], future = [];
         (seasons || []).forEach(function (se) {
@@ -168,7 +168,7 @@
             if (!v.released || new Date(v.released).getTime() > now) future.push(tk);
           });
         }
-        Trakt.epMaps[imdb] = { ts: Date.now(), n: eps.length, map: map, future: future };
+        Trakt.epMaps[imdb] = { ts: Date.now(), n: eps.length, map: map, future: future, seq: SEQUELS[imdb] ? 1 : undefined };
         capByTs(Trakt.epMaps, 300);
         save('epmaps', Trakt.epMaps);
         return map;
@@ -192,9 +192,10 @@
     },
     // equivalencias de las series de una fila que aún no se conocen o tienen más de una semana (de tres en tres)
     learnEpMaps: function (imdbs) {
-      var todo = imdbs.filter(function (id, i) { var c = Trakt.epMaps[id]; return id && imdbs.indexOf(id) === i && !(c && c.future && Date.now() - c.ts < 7 * 86400000); });
+      var todo = imdbs.filter(function (id, i) { var c = Trakt.epMaps[id]; return id && imdbs.indexOf(id) === i && !(c && c.future && (c.seq || !SEQUELS[id]) && Date.now() - c.ts < 7 * 86400000); });
       return mapLimit(todo, 3, function (imdb) {
-        return getJSON(CINEMETA + '/meta/series/' + imdb + '.json').then(function (r) { return Trakt.epMap(imdb, (r.meta || {}).videos); })
+        return getJSON(CINEMETA + '/meta/series/' + imdb + '.json').then(function (r) { return withSequels(imdb, (r.meta || {}).videos); })
+          .then(function (videos) { return Trakt.epMap(imdb, videos); })
           .catch(function () { return null; });
       });
     },

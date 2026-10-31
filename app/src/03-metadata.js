@@ -182,6 +182,37 @@
     });
   }
 
+  // ---------------------------------------------------------------- series que IMDb parte en dos
+
+  // Trakt (y TMDB) las tienen como una sola serie y Cinemeta (IMDb) como dos: la continuación se añade a la primera como
+  // las temporadas siguientes, para que la numeración de Trakt (Bleach T2 = Thousand-Year Blood War) caiga en ella.
+  // Sus episodios conservan su id (tt14986406:1:1, con el que los addons dan fuentes) y en _imdb/_s/_e su numeración
+  // en IMDb (subtítulos, saltar intro); la serie para Trakt es la primera
+  var SEQUELS = { tt0434665: ['tt14986406'] }; // Bleach → Bleach: Thousand-Year Blood War
+  function withSequels(imdb, videos) {
+    var more = SEQUELS[imdb];
+    if (!more) return Promise.resolve(videos);
+    return Promise.all(more.map(function (id) {
+      return getJSON(CINEMETA + '/meta/series/' + id + '.json').then(function (r) { return (r.meta || {}).videos || []; }, function () { return []; });
+    })).then(function (lists) {
+      var out = (videos || []).slice(), top = 0;
+      out.forEach(function (v) { if (v.season > top) top = v.season; });
+      lists.forEach(function (list, i) {
+        var last = top;
+        list.forEach(function (v) {
+          if (!(v.season > 0)) return; // sus especiales no
+          var s = top + v.season;
+          if (s > last) last = s;
+          var c = extend({}, v);
+          delete c.imdb_id; // el id del episodio en IMDb: para Trakt va con la serie principal
+          out.push(extend(c, { season: s, _imdb: more[i], _s: v.season, _e: v.episode }));
+        });
+        top = last;
+      });
+      return out;
+    });
+  }
+
   // ---------------------------------------------------------------- saltar intro y ending de anime (AniSkip)
 
   // id de MyAnimeList y número de episodio de lo que se reproduce (ARM traduce de Kitsu o IMDb); null si no es anime
@@ -196,15 +227,16 @@
       var ep = +String(ctx.videoId).split(':')[2] || 1;
       return armGet('ids?source=kitsu&id=' + k[1]).then(function (d) { return d && d.myanimelist ? { id: d.myanimelist, ep: ep } : null; });
     }
-    if (!ctx.imdb) return Promise.resolve(null);
-    return armGet('imdb?id=' + ctx.imdb).then(function (list) {
+    var imdb = ctx.srcImdb || ctx.imdb, season = ctx.srcImdb ? ctx.srcS : ctx.imdbS, epNum = ctx.srcImdb ? ctx.srcE : ctx.imdbE;
+    if (!imdb) return Promise.resolve(null);
+    return armGet('imdb?id=' + imdb).then(function (list) {
       list = (list || []).filter(function (x) { return x.myanimelist; });
       if (!list.length) return null;
       if (ctx.type === 'movie') return { id: list[0].myanimelist, ep: 1 };
       // series: la entrada de MyAnimeList de esa temporada
-      var bySeason = list.filter(function (x) { return x['thetvdb-season'] === +ctx.imdbS || x['themoviedb-season'] === +ctx.imdbS; });
+      var bySeason = list.filter(function (x) { return x['thetvdb-season'] === +season || x['themoviedb-season'] === +season; });
       var m = bySeason.length === 1 ? bySeason[0] : list.length === 1 ? list[0] : null;
-      return m ? { id: m.myanimelist, ep: +ctx.imdbE } : null;
+      return m ? { id: m.myanimelist, ep: +epNum } : null;
     });
   }
 

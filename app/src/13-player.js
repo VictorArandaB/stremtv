@@ -43,7 +43,7 @@
     fetchList: function (ctx) {
       var self = this, mine = Player.session;
       if (!ctx.imdb) { self.list = []; return Promise.resolve([]); }
-      var sid = ctx.type === 'movie' ? ctx.imdb : ctx.imdb + ':' + ctx.imdbS + ':' + ctx.imdbE;
+      var sid = ctx.type === 'movie' ? ctx.imdb : ctx.srcImdb ? ctx.srcImdb + ':' + ctx.srcS + ':' + ctx.srcE : ctx.imdb + ':' + ctx.imdbS + ':' + ctx.imdbE;
       var sources = [{ url: SUBS_ADDON, name: '' }].concat(addonsFor('subtitles', ctx.type, sid).map(function (a) { return { url: a.url, name: a.manifest.name }; }));
       return Promise.all(sources.map(function (src) {
         return getJSON(src.url + '/subtitles/' + ctx.type + '/' + sid + '.json').then(function (d) {
