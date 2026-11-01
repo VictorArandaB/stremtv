@@ -206,13 +206,46 @@
       return { show: { ids: { imdb: ctx.imdb } }, episode: { season: +(ctx.traktS || ctx.imdbS), number: +(ctx.traktE || ctx.imdbE) } };
     },
 
-    // start al reproducir, pause al pausar, stop al salir: Trakt lo marca como visto si progress >= 80
+    // start al reproducir, pause al pausar (Trakt guarda por dónde va), stop al salir: Trakt lo marca como visto si progress >= 80.
+    // Trakt admite un POST por segundo: van en cola, separados, y de lo mismo solo cuenta el último estado (pausar y reanudar
+    // seguido deja solo el start). Un 429 o un fallo de red se reintenta; el resultado de cada uno queda en el registro
+    scrobbleQ: [], scrobbleBusy: false, scrobbleLast: 0, scrobbleTimer: null,
     scrobble: function (action, ctx, pct) {
       if (!Trakt.linked() || !ctx) return;
       var b = Trakt.body(ctx);
       if (!b) return;
       b.progress = Math.max(0, Math.min(100, Math.round(pct * 100) / 100));
-      Trakt.call('POST', '/scrobble/' + action, b).catch(function () { /* 409 = duplicado reciente; no es grave */ });
+      var key = JSON.stringify(b.movie || [b.show, b.episode]), q = Trakt.scrobbleQ, last = q[q.length - 1];
+      var item = { action: action, body: b, key: key, label: ctx.label || key, tries: 0, gen: Trakt.gen };
+      if (last && last.key === key) q[q.length - 1] = item; else q.push(item);
+      Trakt.pumpScrobble();
+    },
+    pumpScrobble: function () {
+      if (Trakt.scrobbleBusy || Trakt.scrobbleTimer || !Trakt.scrobbleQ.length) return;
+      var wait = Trakt.scrobbleLast + 1100 - Date.now();
+      // sin esperar si se puede: al salir de la app la tele congela los temporizadores
+      if (wait > 0) { Trakt.scrobbleTimer = setTimeout(function () { Trakt.scrobbleTimer = null; Trakt.pumpScrobble(); }, wait); return; }
+      var it = Trakt.scrobbleQ.shift();
+      if (it.gen !== Trakt.gen) return Trakt.pumpScrobble(); // de una cuenta ya desvinculada
+      Trakt.scrobbleBusy = true;
+      Trakt.scrobbleLast = Date.now();
+      var ep = it.body.episode ? ' ' + it.body.episode.season + 'x' + it.body.episode.number : '';
+      var done = function (st, retry) {
+        Trakt.scrobbleBusy = false;
+        // 409: ya se marcó como visto hace poco (no es un fallo)
+        logEv('trakt', it.action + ' ' + it.body.progress + '% → ' + (st === 0 ? 'sin respuesta' : st) + (retry ? ' (reintento)' : ''),
+          { item: it.label, imdb: (it.body.movie || it.body.show).ids.imdb + ep });
+        if (retry && ++it.tries <= 3) {
+          // si entretanto llegó un estado nuevo de lo mismo, ese manda
+          if (!Trakt.scrobbleQ.some(function (x) { return x.key === it.key; })) Trakt.scrobbleQ.unshift(it);
+          Trakt.scrobbleLast = Date.now() + (st === 429 ? 1000 : 4000) * it.tries;
+        }
+        Trakt.pumpScrobble();
+      };
+      Trakt.call('POST', '/scrobble/' + it.action, it.body).then(function () { done(201); }, function (e) {
+        var st = e && e.status !== undefined ? e.status : 0;
+        done(st, st === 0 || st === 429 || st >= 500);
+      });
     },
 
     loadWatchlist: function () {

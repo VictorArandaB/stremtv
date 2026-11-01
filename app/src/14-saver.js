@@ -6,6 +6,9 @@
     Player.toggle();
     Player.paused = true;
     Player.autoPaused = true;
+    // a Trakt ya: con la app oculta el tick no corre y, si la tele se apaga, no llegaría nunca
+    Player.lastPaused = true;
+    Trakt.scrobble('pause', Player.ctx, Player.pct());
     logEv('pausa', 'al salir de la app');
   });
   document.addEventListener('visibilitychange', function () {
