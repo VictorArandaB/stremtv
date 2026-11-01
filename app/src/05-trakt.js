@@ -230,10 +230,13 @@
       Trakt.scrobbleBusy = true;
       Trakt.scrobbleLast = Date.now();
       var ep = it.body.episode ? ' ' + it.body.episode.season + 'x' + it.body.episode.number : '';
-      var done = function (st, retry) {
+      var done = function (st, retry, r) {
         Trakt.scrobbleBusy = false;
-        // 409: ya se marcó como visto hace poco (no es un fallo)
-        logEv('trakt', it.action + ' ' + it.body.progress + '% → ' + (st === 0 ? 'sin respuesta' : st) + (retry ? ' (reintento)' : ''),
+        // 409: ya se marcó como visto hace poco (no es un fallo). De la respuesta: qué ha hecho Trakt (start, pause o
+        // scrobble = visto), con qué progreso y a qué título y episodio lo ha asignado
+        var got = r && r.action ? ' · Trakt: ' + r.action + ' ' + r.progress + '% ' + ((r.show || r.movie || {}).title || '') +
+          (r.episode ? ' ' + r.episode.season + 'x' + r.episode.number : '') : '';
+        logEv('trakt', it.action + ' ' + it.body.progress + '% → ' + (st === 0 ? 'sin respuesta' : st) + (retry ? ' (reintento)' : '') + got,
           { item: it.label, imdb: (it.body.movie || it.body.show).ids.imdb + ep });
         if (retry && ++it.tries <= 3) {
           // si entretanto llegó un estado nuevo de lo mismo, ese manda
@@ -242,7 +245,7 @@
         }
         Trakt.pumpScrobble();
       };
-      Trakt.call('POST', '/scrobble/' + it.action, it.body).then(function () { done(201); }, function (e) {
+      Trakt.call('POST', '/scrobble/' + it.action, it.body).then(function (r) { done(201, false, r); }, function (e) {
         var st = e && e.status !== undefined ? e.status : 0;
         done(st, st === 0 || st === 429 || st >= 500);
       });

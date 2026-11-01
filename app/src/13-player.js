@@ -381,8 +381,9 @@
           if (!this.duration) this.duration = webapis.avplay.getDuration() / 1000;
         } catch (e) { /* aún no preparado */ }
       }
-      // avisar a Trakt al empezar, pausar y reanudar
-      if (this.started && this.lastPaused !== this.paused) {
+      // avisar a Trakt al empezar, pausar y reanudar. Con la posición ya conocida: AVPlay empieza a dar el tiempo un poco
+      // después de arrancar, y al retomar en el 32 % el start salía con 0 % (Trakt lo daba por empezado de cero)
+      if (this.started && this.lastPaused !== this.paused && this.time > 0 && this.duration) {
         if (this.paused) this.probeSpeed(); else { this.probeId++; this.probeText = ''; }
         this.lastPaused = this.paused;
         Trakt.scrobble(this.paused ? 'pause' : 'start', this.ctx, this.pct());
