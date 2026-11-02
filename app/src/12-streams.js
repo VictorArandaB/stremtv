@@ -125,9 +125,11 @@
 
   // ¿funciona el debrid a través del addon de fuentes? Se pregunta por Cadena perpetua (siempre tiene fuentes)
   // a los 20 s de arrancar y cada 15 min; mientras está caído, cada 2 min, con un aviso fijo arriba hasta que vuelve.
+  // Al volver de reposo (la app vuelve a verse o los temporizadores llevaban parados) se pregunta otra vez; si la red
+  // aún no ha vuelto, en cuanto vuelva.
   // También lo marcan la lista de fuentes (al ver ese aviso o fuentes buenas) y el reproductor (dos fallos iguales seguidos)
   var DebridStatus = {
-    down: false, since: 0, timer: null, checking: false, lastCheck: 0,
+    down: false, since: 0, timer: null, checking: false, lastCheck: 0, waitingNet: false, beat: Date.now(),
     schedule: function (ms) {
       clearTimeout(DebridStatus.timer);
       DebridStatus.timer = setTimeout(DebridStatus.check, ms || (DebridStatus.down ? 120000 : 900000));
@@ -137,14 +139,27 @@
       if (!da || !settings.key) { DebridStatus.ok(); return; }
       if (DebridStatus.checking) return;
       // sin red o con la app en segundo plano no se pregunta: ya se mirará al volver
-      if (Net.down || document.hidden) { DebridStatus.schedule(); return; }
+      if (document.hidden) { DebridStatus.schedule(); return; }
+      if (Net.down) { DebridStatus.afterNet(); return; }
       DebridStatus.checking = true;
       DebridStatus.lastCheck = Date.now();
       getJSON(freshURL(sourcesBase(da) + '/stream/movie/' + PROBE_ID + '.json')).then(function (d) {
         DebridStatus.checking = false;
         var why = debridDownText(d.streams);
         if (why) DebridStatus.lost(why); else if ((d.streams || []).length) DebridStatus.ok(); else DebridStatus.schedule();
-      }, function () { DebridStatus.checking = false; DebridStatus.schedule(); }); // el addon no responde: no se sabe
+      }, function (e) {
+        // sin respuesta: si es la red (recién despertada la tele, aún sin conexión), en cuanto vuelva; si es el addon, en 1 min
+        DebridStatus.checking = false;
+        if (e && e.status === 0) DebridStatus.afterNet();
+        DebridStatus.schedule(60000);
+      });
+    },
+    afterNet: function () {
+      DebridStatus.schedule(); // por si la red tarda: el temporizador de siempre sigue
+      if (DebridStatus.waitingNet) return;
+      DebridStatus.waitingNet = true;
+      // solo si la red estaba caída de verdad: si no (el addon tarda), ya está el reintento en 1 min, sin bucles
+      Net.whenBack(function () { DebridStatus.waitingNet = false; DebridStatus.check(); }, function () { DebridStatus.waitingNet = false; });
     },
     lost: function (why) {
       if (!DebridStatus.down) {
@@ -179,6 +194,16 @@
   document.addEventListener('visibilitychange', function () {
     if (!document.hidden && Date.now() - DebridStatus.lastCheck > (DebridStatus.down ? 60000 : 300000)) DebridStatus.check();
   });
+  // reposo sin cambiar de visibilidad: los temporizadores se paran; si este latido de 30 s llega con más de 90 s de
+  // retraso, la tele ha estado dormida
+  setInterval(function () {
+    var now = Date.now(), gap = now - DebridStatus.beat;
+    DebridStatus.beat = now;
+    if (gap > 90000 && DebridStatus.lastCheck) {
+      logEv('debrid', 'comprobar al despertar', { s: Math.round(gap / 1000) });
+      DebridStatus.check();
+    }
+  }, 30000);
   // fresh: saltarse la caché del navegador y de Cloudflare. Torrentio deja guardar la lista 1 h (y servirla caducada
   // otras 4 mientras la renueva): con el debrid caído la tele seguía con la lista de antes, de enlaces que ya no van
   function freshURL(url) { return url + (url.indexOf('?') < 0 ? '?' : '&') + 't=' + Date.now(); }
