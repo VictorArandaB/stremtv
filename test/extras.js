@@ -4,7 +4,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const VIDEO = 'https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/1080/Big_Buck_Bunny_1080_10s_30MB.mp4';
 (async () => {
   const b = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: 'new', defaultViewport: { width: 1920, height: 1080 } });
-  const p = await b.newPage(); const errs = []; p.on('pageerror', (e) => errs.push(e.message));
+  const p = await b.newPage(); await p.evaluateOnNewDocument(() => { window.STV_NOTICE_MAX = 0; }); // vídeos de prueba de 10 s, no de aviso
+  const errs = []; p.on('pageerror', (e) => errs.push(e.message));
   await p.setRequestInterception(true);
   const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': '*' };
   const json = (req, o) => req.respond({ status: 200, headers: cors, contentType: 'application/json', body: JSON.stringify(o) });

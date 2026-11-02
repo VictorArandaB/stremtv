@@ -9,7 +9,8 @@ let fails = 0;
 const check = (ok, what) => { console.log((ok ? 'OK  ' : 'MAL ') + what); if (!ok) fails++; };
 (async () => {
   const b = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: 'new', defaultViewport: { width: 1920, height: 1080 } });
-  const p = await b.newPage(); const errs = []; p.on('pageerror', (e) => errs.push(e.message));
+  const p = await b.newPage(); await p.evaluateOnNewDocument(() => { window.STV_NOTICE_MAX = 0; }); // vídeos de prueba de 10 s, no de aviso
+  const errs = []; p.on('pageerror', (e) => errs.push(e.message));
   await p.setRequestInterception(true);
   const cors = { 'Access-Control-Allow-Origin': '*' };
   const st = (q, name, extra) => ({ name: '[AD+] Torrentio\n' + q, title: name + '\n👤 50 💾 1.2 GB ⚙️ x' + (extra || ''), url: VIDEO, behaviorHints: { filename: name } });

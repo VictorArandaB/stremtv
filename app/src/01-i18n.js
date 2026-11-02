@@ -210,6 +210,7 @@
     'Aún no se ha hecho ninguna copia.': 'No backup made yet.', 'Guardando…': 'Saving…', 'Copia guardada en GitHub': 'Backup saved to GitHub',
     '¿Restaurar la copia? Se sustituyen los ajustes, el progreso y los addons de esta tele.': 'Restore the backup? It replaces the settings, progress and add-ons on this TV.',
     'Restaurar': 'Restore', 'Restaurando…': 'Restoring…', 'Copia del {0} restaurada. Reiniciando…': 'Backup from {0} restored. Restarting…',
+    'La fuente ha dado un vídeo de aviso de unos segundos en vez del vídeo: el debrid no la entrega ahora mismo.': 'The source returned a few-second notice video instead of the video: the debrid is not delivering it right now.',
     'Addons': 'Add-ons', 'la URL debe empezar por https://': 'the URL must start with https://',
     'no es un addon de Stremio': 'it is not a Stremio add-on', '{0} ya viene incluido en StremTV': '{0} is already built into StremTV',
     'hay que configurarlo primero en su web y pegar la URL que te dé': 'configure it on its website first and paste the URL it gives you',

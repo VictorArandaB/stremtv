@@ -52,7 +52,7 @@
     var nameLines = (s.name || '').split('\n');
     var head = nameLines[0] || '';
     var quality = (nameLines[1] || '').replace(/^\s+|\s+$/g, '') || head;
-    var title = s.title || '';
+    var title = s.title || s.description || ''; // Comet y los addons nuevos lo ponen en description
     var lines = title.split('\n');
     var stats = [], langs = '';
     for (var i = 1; i < lines.length; i++) {
@@ -63,7 +63,7 @@
       url: s.url,
       infoHash: s.infoHash,
       quality: quality,
-      cached: /\+\]/.test(head),
+      cached: /\+\]|⚡/.test(head), // [AD+] Torrentio, [AD⚡] Comet: ya en el debrid
       download: /download/i.test(head + quality),
       error: /error/i.test(quality) || /failed_access|failed_/.test(s.url || ''),
       file: (s.behaviorHints && s.behaviorHints.filename) || lines[0],

@@ -327,6 +327,7 @@
           // salió mientras preparaba: close() ya cerró ese vídeo; no tocar AVPlay, que puede ser ya el de otra fuente
           if (self.stream !== mine) return;
           self.duration = av.getDuration() / 1000;
+          if (self.noticeVideo()) return; // fail() → close() ya para AVPlay
           try {
             logEv('pistas', Math.round(self.duration) + ' s', webapis.avplay.getTotalTrackInfo().map(function (t) { return { tipo: t.type, i: t.index, info: t.extra_info }; }));
           } catch (e) { logEv('pistas', 'no disponibles: ' + e.message); }
@@ -355,6 +356,7 @@
       v.classList.remove('hidden');
       v.onloadedmetadata = function () {
         self.duration = v.duration || 0;
+        if (self.noticeVideo()) return;
         if (!self.startAt && self.startPct && self.duration) self.startAt = self.duration * self.startPct / 100;
         if (self.startAt > 5 && !self.started) v.currentTime = self.startAt;
       };
@@ -469,6 +471,18 @@
     inEnding: function () {
       for (var i = 0; i < this.skips.length; i++) if (this.skips[i].type === 'ed' && this.time >= this.skips[i].s) return true;
       return false;
+    },
+
+    // el debrid o el addon (Comet, Torrentio…) a veces dan, en vez del archivo, un vídeo de unos segundos con un aviso
+    // («provider is currently unavailable»): si se tomara por el episodio, al acabar quedaría visto y saltaría al
+    // siguiente, que daría el mismo aviso. Una película o un episodio de menos de 90 s es eso: fuente fallida
+    NOTICE_MAX: window.STV_NOTICE_MAX !== undefined ? window.STV_NOTICE_MAX : 90, // s (las pruebas con vídeos de 10 s ponen 0)
+    noticeVideo: function () {
+      if (this.started || !this.duration || this.duration >= this.NOTICE_MAX) return false;
+      logEv('fuente', 'vídeo de aviso', { s: Math.round(this.duration), archivo: this.stream && this.stream.file, addon: this.stream && this.stream.addon });
+      this.duration = 0;
+      this.fail(tr('La fuente ha dado un vídeo de aviso de unos segundos en vez del vídeo: el debrid no la entrega ahora mismo.'), false, 'aviso');
+      return true;
     },
 
     markStarted: function () {
