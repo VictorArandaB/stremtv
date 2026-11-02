@@ -6,6 +6,7 @@ const VIDEO = 'https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/1080/Big_Buc
 const BAD = (n) => 'https://bad.test/' + n + '.mp4';
 let mode = 'third';
 const cached = [];
+let adBad = false;
 const ok = (c, t) => console.log((c ? '✓ ' : '✗ ') + t);
 (async () => {
   const b = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: 'new', defaultViewport: { width: 1920, height: 1080 } });
@@ -14,6 +15,9 @@ const ok = (c, t) => console.log((c ? '✓ ' : '✗ ') + t);
   const cors = { 'Access-Control-Allow-Origin': '*' };
   p.on('request', (req) => {
     const u = req.url();
+    if (u.indexOf('api.alldebrid.com/v4/user') >= 0) return req.respond({ status: 200, headers: cors, contentType: 'application/json', body: JSON.stringify(adBad
+      ? { status: 'error', error: { code: 'AUTH_BAD_APIKEY', message: 'The auth apikey is invalid' } }
+      : { status: 'success', data: { user: { isPremium: true, premiumUntil: 1800000000 } } }) });
     if (u.indexOf('/stream/') >= 0 && u.indexOf('alldebrid=') >= 0 && !/\.json\?t=\d+$/.test(u)) cached.push(u);
     if (u.indexOf('/stream/') >= 0) {
       const s = (name, file, url) => ({ name: '[AD+] Torrentio\n' + name, title: file + '\n👤 50 💾 2 GB ⚙️ x', url });
@@ -92,6 +96,15 @@ const ok = (c, t) => console.log((c ? '✓ ' : '✗ ') + t);
   console.log('mismo aviso:', JSON.stringify(st));
   ok(!st.playing && st.failed.length === 2 && /han fallado igual/.test(st.toast), 'para tras dos fallos con el mismo aviso');
   ok(!(await box()), 'con fuentes buenas el aviso de arriba se quita');
+  // 6) clave mala: Torrentio dice «unavailable» igual, pero la lista y la etiqueta dicen que es la clave
+  adBad = true; mode = 'down';
+  await key('Escape'); await sleep(800); await key('Escape'); await sleep(1500);
+  await p.evaluate(() => StremTV.open('movie', 'tt0110912')); await sleep(2500);
+  await key('Enter'); await sleep(3500);
+  const msg2 = await p.evaluate(() => (document.querySelector('.loading') || {}).textContent || '');
+  console.log('clave mala:', msg2, '·', await box());
+  ok(/La clave de AllDebrid no es válida/.test(msg2) && /Clave de AllDebrid no válida/.test(await box()), 'con la clave mal lo dice la lista y la etiqueta');
+  ok(await p.evaluate(() => !!Array.prototype.filter.call(document.querySelectorAll('.btn'), (x) => /Abrir ajustes/.test(x.textContent)).length), 'con la clave mal ofrece abrir Ajustes');
   ok(!cached.length, 'la lista del debrid y la comprobación se piden sin caché' + (cached.length ? ': ' + cached[0] : ''));
   console.log('ERRORES:', errs.length ? errs : 'ninguno');
   await b.close();

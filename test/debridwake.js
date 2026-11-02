@@ -3,7 +3,7 @@
 const puppeteer = require('puppeteer-core');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const ok = (c, t) => console.log((c ? '✓ ' : '✗ ') + t);
-let down = false, offline = false, probes = 0;
+let down = false, offline = false, probes = 0, adBad = false;
 (async () => {
   const b = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: 'new', defaultViewport: { width: 1920, height: 1080 } });
   const p = await b.newPage(); const errs = []; p.on('pageerror', (e) => errs.push(e.message));
@@ -12,6 +12,9 @@ let down = false, offline = false, probes = 0;
   p.on('request', (req) => {
     const u = req.url();
     if (offline && !/127\.0\.0\.1/.test(u)) return req.abort('internetdisconnected');
+    if (u.indexOf('api.alldebrid.com/v4/user') >= 0) return req.respond({ status: 200, headers: cors, contentType: 'application/json', body: JSON.stringify(adBad
+      ? { status: 'error', error: { code: 'AUTH_BAD_APIKEY', message: 'The auth apikey is invalid' } }
+      : { status: 'success', data: { user: { isPremium: true, premiumUntil: 1800000000 } } }) });
     if (u.indexOf('/stream/movie/tt0111161.json') >= 0) {
       probes++;
       const streams = down ? [{ name: 'Torrentio\nAD error', title: 'AllDebrid is currently unavailable!\nPlease try again later.', url: 'https://torrentio.strem.fun/videos/failed_unavailable_v1.mp4' }]

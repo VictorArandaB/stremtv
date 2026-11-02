@@ -253,11 +253,20 @@
         var da = debridAddon();
         if (!da) { status.textContent = tr('Añade primero un addon de fuentes (arriba, en Addons).'); return; }
         status.textContent = tr('Comprobando…');
-        getJSON(sourcesBase(da) + '/stream/movie/' + PROBE_ID + '.json').then(function (d) {
-          var s = (d.streams || []).map(parseStream);
-          if (s.length === 1 && s[0].error) status.textContent = tr('✗ Clave no válida para {0}', DEBRID_NAMES[settings.debrid]);
-          else status.textContent = tr('✓ Clave válida · {0} fuentes de prueba', s.filter(function (x) { return x.url; }).length);
-        }).catch(function (e) { status.textContent = tr('No se pudo comprobar ({0})', e.message); });
+        // la clave, al propio debrid (Torrentio da fuentes aunque la clave esté mal); las fuentes, al addon
+        var account = debridAccount().then(function (a) { return a; }, function () { return null; });
+        var sources = getJSON(sourcesBase(da) + '/stream/movie/' + PROBE_ID + '.json?t=' + Date.now()).then(function (d) { return d.streams || []; }, function (e) { return e; });
+        Promise.all([account, sources]).then(function (r) {
+          var a = r[0], list = r[1];
+          if (a && !a.ok) { status.textContent = '✗ ' + accountProblem(a); return; }
+          var head = a ? tr('✓ Clave válida · premium hasta el {0}', a.until ? new Date(a.until).toLocaleDateString() : '?') : tr('Clave sin comprobar');
+          if (list instanceof Error) { status.textContent = head + ' · ' + tr('{0} no responde ({1})', da.manifest.name, list.message); return; }
+          var down = debridDownText(list);
+          if (down) { status.textContent = head + ' · ' + tr('{0} no funciona ahora mismo con {1}', DEBRID_NAMES[settings.debrid], da.manifest.name); return; }
+          var s = list.map(parseStream);
+          if (s.length === 1 && s[0].error) status.textContent = '✗ ' + tr('Clave no válida para {0}', DEBRID_NAMES[settings.debrid]);
+          else status.textContent = head + ' · ' + tr('{0} fuentes de prueba', s.filter(function (x) { return x.url; }).length);
+        });
       }
 
       heading(tr('Opciones de fuentes'));

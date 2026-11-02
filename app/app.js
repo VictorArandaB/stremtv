@@ -326,7 +326,12 @@
     'ir al %': 'go to %', '⚠ Esta fuente se corta': '⚠ This source keeps stalling', 'Cambiar a {0}': 'Switch to {0}',
     'OK cambiar · Atrás seguir con esta': 'OK switch · Back keep this one', 'La fuente ha fallado: sigue con otra ({0})': 'The source failed: continuing with another ({0})',
     'La fuente no ha arrancado: probando otra ({0})': 'The source did not start: trying another one ({0})',
-    '{0} no está disponible ahora mismo para {1}. No es cosa de tu clave: prueba dentro de un rato.': '{0} is not available for {1} right now. Your key is fine: try again in a while.',
+    '{0} no está disponible ahora mismo para {1}. Prueba dentro de un rato.': '{0} is not available for {1} right now. Try again in a while.',
+    'Revísala en Ajustes → Fuentes y debrid.': 'Check it in Settings → Sources and debrid.',
+    'La clave de {0} no es válida': 'The {0} key is invalid', '{0} ha bloqueado la cuenta o el acceso': '{0} has blocked the account or access',
+    'La suscripción de {0} ha caducado': 'The {0} subscription has expired', 'Clave de {0} no válida': 'Invalid {0} key',
+    '✓ Clave válida · premium hasta el {0}': '✓ Valid key · premium until {0}', 'Clave sin comprobar': 'Key not checked',
+    '{0} no responde ({1})': '{0} is not responding ({1})', '{0} fuentes de prueba': '{0} test sources', 'Clave no válida para {0}': 'Invalid key for {0}',
     '{0} no funciona ahora mismo con {1}': '{0} is not working with {1} right now', '{0} caído': '{0} down',
     '{0} vuelve a funcionar': '{0} is working again',
     'Las dos últimas fuentes han fallado igual: puede que {0} tenga problemas ahora mismo.': 'The last two sources failed the same way: {0} may be having problems right now.',
@@ -6094,6 +6099,38 @@
     return /unavailable|try again later/i.test(t) ? t.replace(/\s+/g, ' ') : '';
   }
 
+  // la cuenta del debrid, preguntando al propio debrid: Torrentio da la lista de fuentes sin comprobar la clave
+  // (con una clave a la que le faltaba una letra salían 40 fuentes «válidas») y, con la clave mal, a veces dice
+  // «unavailable» como si el debrid estuviera caído. → { ok, premium, until (ms) } o { ok: false, why: 'key'|'blocked'|'expired' };
+  // si no se puede saber (sin red), la promesa falla
+  function debridAccount() {
+    var key = encodeURIComponent(settings.key || '');
+    if (settings.debrid === 'alldebrid') {
+      return getJSON('https://api.alldebrid.com/v4/user?agent=stremtv&apikey=' + key).then(function (d) {
+        if (d.status === 'success') {
+          var u = d.data.user;
+          return u.isPremium ? { ok: true, premium: true, until: (u.premiumUntil || 0) * 1000 } : { ok: false, why: 'expired' };
+        }
+        var code = d.error && d.error.code || '';
+        if (/^AUTH_(BAD|MISSING)_APIKEY$/.test(code)) return { ok: false, why: 'key' };
+        if (/^AUTH_(BLOCKED|USER_BANNED)$/.test(code)) return { ok: false, why: 'blocked' };
+        throw new Error(code || 'AllDebrid');
+      });
+    }
+    return xhr('GET', 'https://api.real-debrid.com/rest/1.0/user', { headers: { Authorization: 'Bearer ' + (settings.key || '') } }).then(looseJSON).then(function (u) {
+      return u.type === 'premium' ? { ok: true, premium: true, until: Date.parse(u.expiration) || 0 } : { ok: false, why: 'expired' };
+    }, function (e) {
+      if (e.status === 401) return { ok: false, why: 'key' };
+      if (e.status === 403) return { ok: false, why: 'blocked' };
+      throw e;
+    });
+  }
+  function accountProblem(a) {
+    var name = DEBRID_NAMES[settings.debrid];
+    return a.why === 'key' ? tr('La clave de {0} no es válida', name) : a.why === 'blocked' ? tr('{0} ha bloqueado la cuenta o el acceso', name)
+      : tr('La suscripción de {0} ha caducado', name);
+  }
+
   // ¿funciona el debrid a través del addon de fuentes? Se pregunta por Cadena perpetua (siempre tiene fuentes)
   // a los 20 s de arrancar y cada 15 min; mientras está caído, cada 2 min, con un aviso fijo arriba hasta que vuelve.
   // Al volver de reposo (la app vuelve a verse o los temporizadores llevaban parados) se pregunta otra vez; si la red
@@ -6117,7 +6154,7 @@
       getJSON(freshURL(sourcesBase(da) + '/stream/movie/' + PROBE_ID + '.json')).then(function (d) {
         DebridStatus.checking = false;
         var why = debridDownText(d.streams);
-        if (why) DebridStatus.lost(why); else if ((d.streams || []).length) DebridStatus.ok(); else DebridStatus.schedule();
+        if (why) DebridStatus.lost(why, true); else if ((d.streams || []).length) DebridStatus.ok(); else DebridStatus.schedule();
       }, function (e) {
         // sin respuesta: si es la red (recién despertada la tele, aún sin conexión), en cuanto vuelva; si es el addon, en 1 min
         DebridStatus.checking = false;
@@ -6132,23 +6169,38 @@
       // solo si la red estaba caída de verdad: si no (el addon tarda), ya está el reintento en 1 min, sin bucles
       Net.whenBack(function () { DebridStatus.waitingNet = false; DebridStatus.check(); }, function () { DebridStatus.waitingNet = false; });
     },
-    lost: function (why) {
+    // ask: preguntar al debrid por la cuenta, por si no está caído sino que la clave está mal
+    lost: function (why, ask) {
+      if (ask) {
+        debridAccount().then(function (a) { DebridStatus.lost(why, false); if (!a.ok) DebridStatus.label(accountProblem(a), a); })
+          .catch(function () { DebridStatus.lost(why, false); });
+        return;
+      }
       if (!DebridStatus.down) {
         DebridStatus.down = true;
         DebridStatus.since = Date.now();
         logEv('debrid', 'caído', { aviso: why });
       }
-      var da = debridAddon(), box = $('#debridbox');
+      var da = debridAddon(), box;
       if (!DebridStatus.down) return;
+      DebridStatus.label('⚠ ' + tr('{0} caído', DEBRID_NAMES[settings.debrid]));
+      box = $('#debridbox');
+      box.title = tr('{0} no funciona ahora mismo con {1}', DEBRID_NAMES[settings.debrid], da ? da.manifest.name : '');
+      DebridStatus.schedule();
+    },
+    label: function (text, account) {
+      var box = $('#debridbox');
       if (!box) {
         box = el('div');
         box.id = 'debridbox';
         document.body.appendChild(box);
       }
-      box.textContent = '⚠ ' + tr('{0} caído', DEBRID_NAMES[settings.debrid]);
-      box.title = tr('{0} no funciona ahora mismo con {1}', DEBRID_NAMES[settings.debrid], da ? da.manifest.name : '');
+      if (account) {
+        text = '⚠ ' + (account.why === 'key' ? tr('Clave de {0} no válida', DEBRID_NAMES[settings.debrid]) : text);
+        logEv('debrid', 'cuenta', { problema: account.why });
+      }
+      box.textContent = text;
       box.classList.remove('hidden');
-      DebridStatus.schedule();
     },
     ok: function () {
       if (DebridStatus.down) {
@@ -6248,14 +6300,19 @@
         var streams = (d.streams || []).map(parseStream);
         // el debrid caído para el addon: aviso fijo arriba (aunque haya fuentes de otros addons) y, si no hay más, decirlo aquí
         var down = debridDownText(d.streams);
-        if (down) DebridStatus.lost(down);
+        if (down) DebridStatus.lost(down, true);
         else if (streams.some(function (x) { return x.url && !x.error; })) DebridStatus.ok();
         if (streams.length === 1 && streams[0].error && !extra.length) {
           sub.textContent = '';
           // la clave está bien: no mandar a Ajustes
           if (down) {
-            return message(tr('{0} no está disponible ahora mismo para {1}. No es cosa de tu clave: prueba dentro de un rato.',
+            message(tr('{0} no está disponible ahora mismo para {1}. Prueba dentro de un rato.',
               DEBRID_NAMES[settings.debrid], dAddon.manifest.name) + ' (' + down + ')');
+            // con la clave mal el addon dice lo mismo: preguntarlo al debrid y, si es eso, mandar a Ajustes
+            debridAccount().then(function (a) {
+              if (!screen.closed && !a.ok) message(accountProblem(a) + '. ' + tr('Revísala en Ajustes → Fuentes y debrid.'), true);
+            }, function () { /* no se sabe: se queda el aviso */ });
+            return;
           }
           return message(tr('La clave de {0} no es válida o ha caducado.', DEBRID_NAMES[settings.debrid]) + ' ' + (streams[0].raw.title || ''), true);
         }
@@ -8024,11 +8081,20 @@
         var da = debridAddon();
         if (!da) { status.textContent = tr('Añade primero un addon de fuentes (arriba, en Addons).'); return; }
         status.textContent = tr('Comprobando…');
-        getJSON(sourcesBase(da) + '/stream/movie/' + PROBE_ID + '.json').then(function (d) {
-          var s = (d.streams || []).map(parseStream);
-          if (s.length === 1 && s[0].error) status.textContent = tr('✗ Clave no válida para {0}', DEBRID_NAMES[settings.debrid]);
-          else status.textContent = tr('✓ Clave válida · {0} fuentes de prueba', s.filter(function (x) { return x.url; }).length);
-        }).catch(function (e) { status.textContent = tr('No se pudo comprobar ({0})', e.message); });
+        // la clave, al propio debrid (Torrentio da fuentes aunque la clave esté mal); las fuentes, al addon
+        var account = debridAccount().then(function (a) { return a; }, function () { return null; });
+        var sources = getJSON(sourcesBase(da) + '/stream/movie/' + PROBE_ID + '.json?t=' + Date.now()).then(function (d) { return d.streams || []; }, function (e) { return e; });
+        Promise.all([account, sources]).then(function (r) {
+          var a = r[0], list = r[1];
+          if (a && !a.ok) { status.textContent = '✗ ' + accountProblem(a); return; }
+          var head = a ? tr('✓ Clave válida · premium hasta el {0}', a.until ? new Date(a.until).toLocaleDateString() : '?') : tr('Clave sin comprobar');
+          if (list instanceof Error) { status.textContent = head + ' · ' + tr('{0} no responde ({1})', da.manifest.name, list.message); return; }
+          var down = debridDownText(list);
+          if (down) { status.textContent = head + ' · ' + tr('{0} no funciona ahora mismo con {1}', DEBRID_NAMES[settings.debrid], da.manifest.name); return; }
+          var s = list.map(parseStream);
+          if (s.length === 1 && s[0].error) status.textContent = '✗ ' + tr('Clave no válida para {0}', DEBRID_NAMES[settings.debrid]);
+          else status.textContent = head + ' · ' + tr('{0} fuentes de prueba', s.filter(function (x) { return x.url; }).length);
+        });
       }
 
       heading(tr('Opciones de fuentes'));
@@ -8781,7 +8847,7 @@
 
   // ---------------------------------------------------------------- arranque
 
-  var VERSION = '0.27.10';
+  var VERSION = '0.27.11';
 
   function fitScreen() {
     var z = window.innerWidth / 1920;
