@@ -5,6 +5,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const VIDEO = 'https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/1080/Big_Buck_Bunny_1080_10s_30MB.mp4';
 const BAD = (n) => 'https://bad.test/' + n + '.mp4';
 let mode = 'third';
+const cached = [];
 const ok = (c, t) => console.log((c ? '✓ ' : '✗ ') + t);
 (async () => {
   const b = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: 'new', defaultViewport: { width: 1920, height: 1080 } });
@@ -13,6 +14,7 @@ const ok = (c, t) => console.log((c ? '✓ ' : '✗ ') + t);
   const cors = { 'Access-Control-Allow-Origin': '*' };
   p.on('request', (req) => {
     const u = req.url();
+    if (u.indexOf('/stream/') >= 0 && u.indexOf('alldebrid=') >= 0 && !/\.json\?t=\d+$/.test(u)) cached.push(u);
     if (u.indexOf('/stream/') >= 0) {
       const s = (name, file, url) => ({ name: '[AD+] Torrentio\n' + name, title: file + '\n👤 50 💾 2 GB ⚙️ x', url });
       if (mode === 'down') return req.respond({ status: 200, headers: cors, contentType: 'application/json', body: JSON.stringify({ streams: [
@@ -90,6 +92,7 @@ const ok = (c, t) => console.log((c ? '✓ ' : '✗ ') + t);
   console.log('mismo aviso:', JSON.stringify(st));
   ok(!st.playing && st.failed.length === 2 && /han fallado igual/.test(st.toast), 'para tras dos fallos con el mismo aviso');
   ok(!(await box()), 'con fuentes buenas el aviso de arriba se quita');
+  ok(!cached.length, 'la lista del debrid y la comprobación se piden sin caché' + (cached.length ? ': ' + cached[0] : ''));
   console.log('ERRORES:', errs.length ? errs : 'ninguno');
   await b.close();
 })().catch((e) => { console.error(e); process.exit(1); });

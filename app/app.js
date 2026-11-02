@@ -6111,7 +6111,7 @@
       if (Net.down || document.hidden) { DebridStatus.schedule(); return; }
       DebridStatus.checking = true;
       DebridStatus.lastCheck = Date.now();
-      getJSON(sourcesBase(da) + '/stream/movie/' + PROBE_ID + '.json').then(function (d) {
+      getJSON(freshURL(sourcesBase(da) + '/stream/movie/' + PROBE_ID + '.json')).then(function (d) {
         DebridStatus.checking = false;
         var why = debridDownText(d.streams);
         if (why) DebridStatus.lost(why); else if ((d.streams || []).length) DebridStatus.ok(); else DebridStatus.schedule();
@@ -6150,11 +6150,14 @@
   document.addEventListener('visibilitychange', function () {
     if (!document.hidden && Date.now() - DebridStatus.lastCheck > (DebridStatus.down ? 60000 : 300000)) DebridStatus.check();
   });
-  function streamJSON(url) {
+  // fresh: saltarse la caché del navegador y de Cloudflare. Torrentio deja guardar la lista 1 h (y servirla caducada
+  // otras 4 mientras la renueva): con el debrid caído la tele seguía con la lista de antes, de enlaces que ya no van
+  function freshURL(url) { return url + (url.indexOf('?') < 0 ? '?' : '&') + 't=' + Date.now(); }
+  function streamJSON(url, fresh) {
     var now = Date.now();
     for (var k in streamCache) if (now - streamCache[k].ts > 300000) delete streamCache[k];
     if (streamCache[url]) return streamCache[url].p;
-    var p = getJSON(url);
+    var p = getJSON(fresh ? freshURL(url) : url);
     streamCache[url] = { p: p, ts: now };
     p.catch(function () { if (streamCache[url] && streamCache[url].p === p) delete streamCache[url]; });
     return p;
@@ -6169,7 +6172,9 @@
   }
   function prefetchStreams(type, videoId) {
     if (!videoId) return;
-    streamURLs(type, videoId).forEach(function (u) { streamJSON(u).catch(function () { /* ya se verá al abrir las fuentes */ }); });
+    // la primera es la del debrid (si hay): también sin caché, que es la que guarda luego la lista de fuentes
+    var dAddon = debridAddon();
+    streamURLs(type, videoId).forEach(function (u, i) { streamJSON(u, !!dAddon && i === 0).catch(function () { /* ya se verá al abrir las fuentes */ }); });
   }
 
   function streamsScreen(ctx) {
@@ -6209,7 +6214,7 @@
             .filter(function (st) { return st.url && !st.error; });
         }).catch(function () { return []; }); // un addon caído no estropea el resto
       }));
-      var fromDebrid = dAddon ? streamJSON(sourcesBase(dAddon) + '/stream/' + ctx.type + '/' + ctx.videoId + '.json').catch(function (e) { return { failed: e }; })
+      var fromDebrid = dAddon ? streamJSON(sourcesBase(dAddon) + '/stream/' + ctx.type + '/' + ctx.videoId + '.json', true).catch(function (e) { return { failed: e }; })
         : Promise.resolve({ streams: [] });
       Promise.all([fromDebrid, fromAddons]).then(function (r) {
         if (screen.closed) return; // Atrás antes de que respondan los addons: ni pintar ni reproducir
@@ -8751,7 +8756,7 @@
 
   // ---------------------------------------------------------------- arranque
 
-  var VERSION = '0.27.8';
+  var VERSION = '0.27.9';
 
   function fitScreen() {
     var z = window.innerWidth / 1920;
