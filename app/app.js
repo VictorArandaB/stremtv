@@ -325,6 +325,7 @@
     'Búsquedas recientes': 'Recent searches', 'Más como esto': 'More like this', 'Más como «{0}»': 'More like “{0}”',
     'ir al %': 'go to %', '⚠ Esta fuente se corta': '⚠ This source keeps stalling', 'Cambiar a {0}': 'Switch to {0}',
     'OK cambiar · Atrás seguir con esta': 'OK switch · Back keep this one', 'La fuente ha fallado: sigue con otra ({0})': 'The source failed: continuing with another ({0})',
+    'La fuente no ha arrancado: probando otra ({0})': 'The source did not start: trying another one ({0})',
     'Nuevo': 'New', 'Desde el móvil: {0} en Mi lista': 'From your phone: {0} added to My list', 'Revisar la cola del móvil': 'Check the phone queue',
     'Revisando…': 'Checking…', '{0} añadidos desde el móvil': '{0} added from your phone', 'La cola está vacía': 'The queue is empty',
     'Desde el móvil: escribe títulos o enlaces de IMDb en el archivo cola.txt de ese Gist (gist.github.com) y llegan a Mi lista en unos minutos.':
@@ -6259,7 +6260,7 @@
           sub.textContent += tr(' · elegida automáticamente: pulsa OK en otra para cambiar');
           Nav.setRoot(root, auto.row);
           ctx.autoPlay = false; // al volver a esta lista no arrancar otra vez
-          Player.open(auto.s, ctx, auto.row);
+          Player.open(auto.s, ctx, auto.row, 1); // si no arranca, el reproductor prueba solo las siguientes
           return;
         }
         if (isTop(screen)) Nav.setRoot(root, streams[0]._row);
@@ -6385,10 +6386,11 @@
       try { return !!(window.webapis && webapis.avplay && webapis.avplay.open); } catch (e) { return false; }
     },
 
-    open: function (stream, ctx, row) {
+    // tries: en la elegida automáticamente, qué intento es (1 la recomendada, 2 la siguiente…); 0 si la eligió el usuario
+    open: function (stream, ctx, row, tries) {
       var self = this;
       if (this.stream) this.close(); // por si aún sigue abierto otro vídeo: AVPlay no admite dos a la vez
-      this.ctx = ctx; this.stream = stream; this.row = row || null;
+      this.ctx = ctx; this.stream = stream; this.row = row || null; this.autoTries = tries || 0;
       var session = ++this.session;
       this.duration = 0; this.time = 0; this.paused = false; this.started = false; this.lastPaused = null;
       this.finalUrl = null; this.probeText = ''; this.probeId = 0;
@@ -6439,8 +6441,8 @@
         if (self.stream !== stream) return;
         self.finalUrl = finalUrl;
         if (self.hasAV()) self.openAV(finalUrl); else self.openHTML(finalUrl);
-      }, function (msg) {
-        if (self.stream === stream) self.fail(msg);
+      }, function (e) {
+        if (self.stream === stream) self.fail(e.msg, e.fatal);
       });
 
       Subs.fetchList(ctx).then(function (list) {
@@ -6543,7 +6545,10 @@
           var m = /\/videos\/([a-z_]+?)(_v\d+)?\.mp4/.exec(final);
           x.onreadystatechange = null;
           try { x.abort(); } catch (e) { /* ya terminada */ }
-          if (m && srcOrigin && final.indexOf(srcOrigin) === 0) reject(notices[m[1]] || tr('Aviso de {0}: {1}', src, m[1]));
+          // con la cuenta bloqueada, la clave mala o el límite alcanzado fallarían todas: no probar otra sola
+          if (m && srcOrigin && final.indexOf(srcOrigin) === 0) {
+            reject({ msg: notices[m[1]] || tr('Aviso de {0}: {1}', src, m[1]), fatal: /^(blocked_access|failed_access|limits_exceeded)$/.test(m[1]) });
+          }
           else resolve(final);
         };
         x.onerror = x.ontimeout = function () { resolve(url); }; // si no se puede comprobar, intentar igualmente
@@ -7319,9 +7324,18 @@
       return true;
     },
 
-    fail: function (msg) {
+    // la siguiente a probar sola cuando la elegida automáticamente no arranca: en el orden de la lista,
+    // la primera instantánea que quepa en la conexión (como la recomendada) o, si no hay, la primera que quede
+    nextAuto: function (from) {
+      var list = from && from.parentNode;
+      if (!list) return null;
+      var rows = Array.prototype.filter.call(list.querySelectorAll('.stream'), function (r) { return r._stream && r !== from && !r._failed && !r._stream.media.bad; });
+      return rows.filter(function (r) { return r._stream.cached && !r._stream.heavy; })[0] || rows[0] || null;
+    },
+
+    fail: function (msg, fatal) {
       logEv('fallo', msg, { archivo: this.stream && this.stream.file, addon: this.stream && this.stream.addon });
-      var row = this.row, ctx = this.ctx, played = this.started, at = this.seekTarget !== null ? this.seekTarget : this.time;
+      var row = this.row, ctx = this.ctx, played = this.started, at = this.seekTarget !== null ? this.seekTarget : this.time, tries = this.autoTries;
       this.spinner(false);
       if (!this.leave()) return;
       // volver a la lista con la siguiente fuente ya seleccionada
@@ -7340,6 +7354,15 @@
           Nav.focus(alt);
           Player.open(alt._stream, again, alt);
           toast(tr('La fuente ha fallado: sigue con otra ({0})', alt._stream.quality), 6000);
+          return;
+        }
+        // la elegida automáticamente no ha llegado a arrancar: probar sola la siguiente (hasta 4 en total, y no sin red)
+        var nextTry = !played && tries && tries < 4 && !fatal && !Net.down ? this.nextAuto(row) : null;
+        if (nextTry) {
+          logEv('fuente', 'siguiente automática', { de: row._stream && row._stream.file, a: nextTry._stream.file, intento: tries + 1 });
+          Nav.focus(nextTry);
+          Player.open(nextTry._stream, ctx, nextTry, tries + 1);
+          toast(tr('La fuente no ha arrancado: probando otra ({0})', nextTry._stream.quality), 6000);
           return;
         }
         var next = row.nextSibling;
@@ -8643,7 +8666,7 @@
 
   // ---------------------------------------------------------------- arranque
 
-  var VERSION = '0.27.5';
+  var VERSION = '0.27.6';
 
   function fitScreen() {
     var z = window.innerWidth / 1920;

@@ -293,7 +293,7 @@
           sub.textContent += tr(' · elegida automáticamente: pulsa OK en otra para cambiar');
           Nav.setRoot(root, auto.row);
           ctx.autoPlay = false; // al volver a esta lista no arrancar otra vez
-          Player.open(auto.s, ctx, auto.row);
+          Player.open(auto.s, ctx, auto.row, 1); // si no arranca, el reproductor prueba solo las siguientes
           return;
         }
         if (isTop(screen)) Nav.setRoot(root, streams[0]._row);
