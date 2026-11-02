@@ -26,6 +26,8 @@ const ok = (c, t) => console.log((c ? '✓ ' : '✗ ') + t);
       const RES = (n) => 'https://torrentio.strem.fun/resolve/alldebrid/K/' + n;
       if (mode === 'notice') return req.respond({ status: 200, headers: cors, contentType: 'application/json', body: JSON.stringify({ streams:
         ['A', 'B', 'C', 'D'].map((x) => s('1080p', x + '.1080p.x264', RES(x))) }) });
+      if (mode === 'dup') return req.respond({ status: 200, headers: cors, contentType: 'application/json', body: JSON.stringify({ streams: [
+        s('1080p', 'A.1080p.x264', BAD('a1')), s('1080p', 'A.1080p.x264', BAD('a2')), s('1080p', 'B.1080p.x264', VIDEO)] }) });
       const streams = mode === 'third'
         ? [s('1080p', 'A.1080p.x264', BAD('a')), s('1080p', 'B.1080p.x264', BAD('b')), s('1080p', 'C.1080p.x264', VIDEO)]
         : ['A', 'B', 'C', 'D', 'E'].map((x) => s('1080p', x + '.1080p.x264', BAD(x)));
@@ -95,7 +97,7 @@ const ok = (c, t) => console.log((c ? '✓ ' : '✗ ') + t);
   st = await state();
   console.log('mismo aviso:', JSON.stringify(st));
   ok(!st.playing && st.failed.length === 2 && /han fallado igual/.test(st.toast), 'para tras dos fallos con el mismo aviso');
-  ok(!(await box()), 'con fuentes buenas el aviso de arriba se quita');
+  ok(/AllDebrid falla/.test(await box()), 'con la lista buena pero los enlaces fallando: «AllDebrid falla»');
   // 6) clave mala: Torrentio dice «unavailable» igual, pero la lista y la etiqueta dicen que es la clave
   adBad = true; mode = 'down';
   await key('Escape'); await sleep(800); await key('Escape'); await sleep(1500);
@@ -105,6 +107,15 @@ const ok = (c, t) => console.log((c ? '✓ ' : '✗ ') + t);
   console.log('clave mala:', msg2, '·', await box());
   ok(/La clave de AllDebrid no es válida/.test(msg2) && /Clave de AllDebrid no válida/.test(await box()), 'con la clave mal lo dice la lista y la etiqueta');
   ok(await p.evaluate(() => !!Array.prototype.filter.call(document.querySelectorAll('.btn'), (x) => /Abrir ajustes/.test(x.textContent)).length), 'con la clave mal ofrece abrir Ajustes');
+  // 7) clave arreglada; la misma release repetida en la lista se salta y, al arrancar una del debrid, se quita la etiqueta
+  adBad = false; mode = 'dup';
+  await key('Escape'); await sleep(800); await key('Escape'); await sleep(1500);
+  await p.evaluate(() => StremTV.open('movie', 'tt0137523')); await sleep(2500);
+  await key('Enter'); await sleep(6000);
+  st = await state();
+  console.log('repetida:', JSON.stringify(st), '·', JSON.stringify(await box()));
+  ok(st.playing && st.file === 'B.1080p.x264' && st.failed.length === 1, 'salta la repetida de la que falló');
+  ok(!(await box()), 'al arrancar una fuente del debrid se quita la etiqueta');
   ok(!cached.length, 'la lista del debrid y la comprobación se piden sin caché' + (cached.length ? ': ' + cached[0] : ''));
   console.log('ERRORES:', errs.length ? errs : 'ninguno');
   await b.close();

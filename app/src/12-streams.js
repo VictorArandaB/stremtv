@@ -161,7 +161,7 @@
   // aún no ha vuelto, en cuanto vuelva.
   // También lo marcan la lista de fuentes (al ver ese aviso o fuentes buenas) y el reproductor (dos fallos iguales seguidos)
   var DebridStatus = {
-    down: false, since: 0, timer: null, checking: false, lastCheck: 0, waitingNet: false, beat: Date.now(),
+    down: false, since: 0, links: 0, account: null, timer: null, linkTimer: null, checking: false, lastCheck: 0, waitingNet: false, beat: Date.now(),
     schedule: function (ms) {
       clearTimeout(DebridStatus.timer);
       DebridStatus.timer = setTimeout(DebridStatus.check, ms || (DebridStatus.down ? 120000 : 900000));
@@ -193,48 +193,72 @@
       // solo si la red estaba caída de verdad: si no (el addon tarda), ya está el reintento en 1 min, sin bucles
       Net.whenBack(function () { DebridStatus.waitingNet = false; DebridStatus.check(); }, function () { DebridStatus.waitingNet = false; });
     },
-    // ask: preguntar al debrid por la cuenta, por si no está caído sino que la clave está mal
+    // el addon dice que el debrid no responde. ask: preguntar al debrid por la cuenta, por si es la clave
     lost: function (why, ask) {
-      if (ask) {
-        debridAccount().then(function (a) { DebridStatus.lost(why, false); if (!a.ok) DebridStatus.label(accountProblem(a), a); })
-          .catch(function () { DebridStatus.lost(why, false); });
-        return;
-      }
       if (!DebridStatus.down) {
         DebridStatus.down = true;
         DebridStatus.since = Date.now();
         logEv('debrid', 'caído', { aviso: why });
       }
-      var da = debridAddon(), box;
-      if (!DebridStatus.down) return;
-      DebridStatus.label('⚠ ' + tr('{0} caído', DEBRID_NAMES[settings.debrid]));
-      box = $('#debridbox');
-      box.title = tr('{0} no funciona ahora mismo con {1}', DEBRID_NAMES[settings.debrid], da ? da.manifest.name : '');
+      if (ask) DebridStatus.askAccount();
+      DebridStatus.render();
       DebridStatus.schedule();
     },
-    label: function (text, account) {
+    // el addon da la lista pero los enlaces fallan (dos seguidos con el mismo aviso del debrid): Torrentio guarda las
+    // listas de antes, así que una lista buena no dice que el debrid funcione. Se quita al reproducir una fuente del
+    // debrid o a los 30 min sin repetirse
+    linksFailing: function (notice) {
+      if (!DebridStatus.links) logEv('debrid', 'enlaces fallan', { aviso: notice });
+      DebridStatus.links = Date.now();
+      clearTimeout(DebridStatus.linkTimer);
+      DebridStatus.linkTimer = setTimeout(function () { DebridStatus.linksOk('30 min sin repetirse'); }, 1800000);
+      DebridStatus.askAccount();
+      DebridStatus.render();
+    },
+    linksOk: function (why) {
+      if (!DebridStatus.links) return;
+      DebridStatus.links = 0;
+      clearTimeout(DebridStatus.linkTimer);
+      logEv('debrid', 'enlaces vuelven a ir', { por: why });
+      DebridStatus.render();
+    },
+    askAccount: function () {
+      if (!settings.key) return;
+      debridAccount().then(function (a) {
+        var bad = a.ok ? null : a;
+        if (bad && (!DebridStatus.account || DebridStatus.account.why !== bad.why)) logEv('debrid', 'cuenta', { problema: bad.why });
+        DebridStatus.account = bad;
+        DebridStatus.render();
+      }, function () { /* no se sabe: se queda como estaba */ });
+    },
+    // la etiqueta junto al reloj: primero la cuenta (clave mal, caducada), después caído y después enlaces que fallan
+    render: function () {
+      var name = DEBRID_NAMES[settings.debrid], da = debridAddon(), addon = da ? da.manifest.name : '', a = DebridStatus.account;
+      var text = a ? (a.why === 'key' ? tr('Clave de {0} no válida', name) : accountProblem(a))
+        : DebridStatus.down ? tr('{0} caído', name) : DebridStatus.links ? tr('{0} falla', name) : '';
+      var title = a ? '' : DebridStatus.down ? tr('{0} no funciona ahora mismo con {1}', name, addon)
+        : tr('{0} da la lista de fuentes, pero {1} no entrega los enlaces', addon, name);
       var box = $('#debridbox');
+      if (!text) { if (box) box.classList.add('hidden'); return; }
       if (!box) {
         box = el('div');
         box.id = 'debridbox';
         document.body.appendChild(box);
       }
-      if (account) {
-        text = '⚠ ' + (account.why === 'key' ? tr('Clave de {0} no válida', DEBRID_NAMES[settings.debrid]) : text);
-        logEv('debrid', 'cuenta', { problema: account.why });
-      }
-      box.textContent = text;
+      box.textContent = '⚠ ' + text;
+      box.title = title;
       box.classList.remove('hidden');
     },
+    // el addon vuelve a dar fuentes (los enlaces que fallaban siguen marcados hasta que uno funcione)
     ok: function () {
       if (DebridStatus.down) {
         DebridStatus.down = false;
         logEv('debrid', 'vuelve a funcionar', { s: Math.round((Date.now() - DebridStatus.since) / 1000) });
-        var box = $('#debridbox');
-        if (box) box.classList.add('hidden');
         streamCache = {}; // las listas guardadas tenían el aviso de error en vez de fuentes
-        toast(tr('{0} vuelve a funcionar', DEBRID_NAMES[settings.debrid]), 4000);
+        if (!DebridStatus.links) toast(tr('{0} vuelve a funcionar', DEBRID_NAMES[settings.debrid]), 4000);
       }
+      if (DebridStatus.account) DebridStatus.askAccount(); // por si ya se ha arreglado la clave
+      DebridStatus.render();
       DebridStatus.schedule();
     }
   };

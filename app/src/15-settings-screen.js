@@ -237,6 +237,9 @@
         settings.key = (v || '').replace(/\s+/g, '');
         input.value = settings.key;
         saveSettings();
+        DebridStatus.account = null; // la etiqueta de arriba, con la clave nueva
+        DebridStatus.askAccount();
+        DebridStatus.render();
         if (settings.key) testKey();
       });
       box.appendChild(el('div', 'note', 'Real-Debrid: real-debrid.com/apitoken · AllDebrid: alldebrid.com/apikeys'));

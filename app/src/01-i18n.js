@@ -172,6 +172,7 @@
     'La suscripción de {0} ha caducado': 'The {0} subscription has expired', 'Clave de {0} no válida': 'Invalid {0} key',
     '✓ Clave válida · premium hasta el {0}': '✓ Valid key · premium until {0}', 'Clave sin comprobar': 'Key not checked',
     '{0} no responde ({1})': '{0} is not responding ({1})', '{0} fuentes de prueba': '{0} test sources', 'Clave no válida para {0}': 'Invalid key for {0}',
+    '{0} falla': '{0} failing', '{0} da la lista de fuentes, pero {1} no entrega los enlaces': '{0} lists sources, but {1} does not deliver the links',
     '{0} no funciona ahora mismo con {1}': '{0} is not working with {1} right now', '{0} caído': '{0} down',
     '{0} vuelve a funcionar': '{0} is working again',
     'Las dos últimas fuentes han fallado igual: puede que {0} tenga problemas ahora mismo.': 'The last two sources failed the same way: {0} may be having problems right now.',

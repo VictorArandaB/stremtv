@@ -475,6 +475,8 @@
       if (this.started) return;
       this.started = true;
       var c = this.ctx, s = this.stream;
+      this.lastFailNotice = '';
+      if (s && !s.addon) DebridStatus.linksOk('reproduce ' + (s.file || '')); // fuente del debrid que arranca: sus enlaces van
       if (s && c.type === 'series') saveSrcPref(c.metaId, { hash: s.hash, binge: s.binge, group: s.group });
     },
 
@@ -1049,12 +1051,18 @@
     nextAuto: function (from) {
       var list = from && from.parentNode;
       if (!list) return null;
-      var rows = Array.prototype.filter.call(list.querySelectorAll('.stream'), function (r) { return r._stream && r !== from && !r._failed && !r._stream.media.bad; });
+      var all = Array.prototype.slice.call(list.querySelectorAll('.stream')), failed = {};
+      // la misma release en otra entrada de la lista (el mismo archivo) fallaría igual: se salta
+      all.forEach(function (r) { if (r._stream && (r._failed || r === from)) failed[r._stream.file] = true; });
+      var rows = all.filter(function (r) { return r._stream && r !== from && !r._failed && !r._stream.media.bad && !failed[r._stream.file]; });
       return rows.filter(function (r) { return r._stream.cached && !r._stream.heavy; })[0] || rows[0] || null;
     },
 
     fail: function (msg, fatal, notice) {
       logEv('fallo', msg, { archivo: this.stream && this.stream.file, addon: this.stream && this.stream.addon });
+      // dos fuentes seguidas (solas o a mano) con el mismo aviso del debrid: la etiqueta de arriba lo dice, aunque el addon dé la lista
+      if (notice && notice === this.lastFailNotice) { DebridStatus.linksFailing(notice); DebridStatus.check(); }
+      this.lastFailNotice = notice || '';
       var row = this.row, ctx = this.ctx, played = this.started, at = this.seekTarget !== null ? this.seekTarget : this.time, tries = this.autoTries, prevNotice = this.autoNotice;
       this.spinner(false);
       if (!this.leave()) return;
@@ -1081,7 +1089,6 @@
         var same = !!(notice && notice === prevNotice);
         if (same) {
           logEv('fuente', 'paro: mismo aviso dos veces', { aviso: notice, intento: tries });
-          DebridStatus.check(); // por si es el debrid caído: que salga el aviso de arriba
           msg = tr('Las dos últimas fuentes han fallado igual: puede que {0} tenga problemas ahora mismo.', DEBRID_NAMES[settings.debrid]) + ' ' + msg;
         }
         var nextTry = !played && tries && tries < 4 && !fatal && !same && !Net.down ? this.nextAuto(row) : null;
