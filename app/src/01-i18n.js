@@ -167,6 +167,8 @@
     'OK cambiar · Atrás seguir con esta': 'OK switch · Back keep this one', 'La fuente ha fallado: sigue con otra ({0})': 'The source failed: continuing with another ({0})',
     'La fuente no ha arrancado: probando otra ({0})': 'The source did not start: trying another one ({0})',
     '{0} no está disponible ahora mismo para {1}. No es cosa de tu clave: prueba dentro de un rato.': '{0} is not available for {1} right now. Your key is fine: try again in a while.',
+    '{0} no funciona ahora mismo con {1}': '{0} is not working with {1} right now', '{0} caído': '{0} down',
+    '{0} vuelve a funcionar': '{0} is working again',
     'Las dos últimas fuentes han fallado igual: puede que {0} tenga problemas ahora mismo.': 'The last two sources failed the same way: {0} may be having problems right now.',
     'Nuevo': 'New', 'Desde el móvil: {0} en Mi lista': 'From your phone: {0} added to My list', 'Revisar la cola del móvil': 'Check the phone queue',
     'Revisando…': 'Checking…', '{0} añadidos desde el móvil': '{0} added from your phone', 'La cola está vacía': 'The queue is empty',

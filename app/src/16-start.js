@@ -1,6 +1,6 @@
   // ---------------------------------------------------------------- arranque
 
-  var VERSION = '0.27.7';
+  var VERSION = '0.27.8';
 
   function fitScreen() {
     var z = window.innerWidth / 1920;
@@ -38,6 +38,7 @@
     refreshAddons();
     autoBackup();
     startQueue();
+    DebridStatus.schedule(20000); // ¿funciona el debrid con el addon de fuentes? (aviso fijo arriba si no)
     fitScreen();
     window.addEventListener('resize', fitScreen);
     registerKeys();

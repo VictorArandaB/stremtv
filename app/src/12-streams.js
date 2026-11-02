@@ -114,6 +114,71 @@
   // respuestas de los addons de fuentes, 5 min: la ficha las pide en segundo plano (prefetchStreams) para que
   // «▶ Ver» no tenga que esperar; si la pantalla de fuentes llega antes de que respondan, comparte la petición
   var streamCache = {};
+
+  // el aviso del addon cuando el debrid no le responde («AllDebrid is currently unavailable!»): en vez de fuentes,
+  // una sola entrada de error. Devuelve su texto o ''
+  function debridDownText(list) {
+    var x = list && list.length === 1 && list[0];
+    var t = x && /error/i.test(x.name || '') ? x.title || x.description || '' : '';
+    return /unavailable|try again later/i.test(t) ? t.replace(/\s+/g, ' ') : '';
+  }
+
+  // ¿funciona el debrid a través del addon de fuentes? Se pregunta por Cadena perpetua (siempre tiene fuentes)
+  // a los 20 s de arrancar y cada 15 min; mientras está caído, cada 2 min, con un aviso fijo arriba hasta que vuelve.
+  // También lo marcan la lista de fuentes (al ver ese aviso o fuentes buenas) y el reproductor (dos fallos iguales seguidos)
+  var DebridStatus = {
+    down: false, since: 0, timer: null, checking: false, lastCheck: 0,
+    schedule: function (ms) {
+      clearTimeout(DebridStatus.timer);
+      DebridStatus.timer = setTimeout(DebridStatus.check, ms || (DebridStatus.down ? 120000 : 900000));
+    },
+    check: function () {
+      var da = debridAddon();
+      if (!da || !settings.key) { DebridStatus.ok(); return; }
+      if (DebridStatus.checking) return;
+      // sin red o con la app en segundo plano no se pregunta: ya se mirará al volver
+      if (Net.down || document.hidden) { DebridStatus.schedule(); return; }
+      DebridStatus.checking = true;
+      DebridStatus.lastCheck = Date.now();
+      getJSON(sourcesBase(da) + '/stream/movie/' + PROBE_ID + '.json').then(function (d) {
+        DebridStatus.checking = false;
+        var why = debridDownText(d.streams);
+        if (why) DebridStatus.lost(why); else if ((d.streams || []).length) DebridStatus.ok(); else DebridStatus.schedule();
+      }, function () { DebridStatus.checking = false; DebridStatus.schedule(); }); // el addon no responde: no se sabe
+    },
+    lost: function (why) {
+      if (!DebridStatus.down) {
+        DebridStatus.down = true;
+        DebridStatus.since = Date.now();
+        logEv('debrid', 'caído', { aviso: why });
+      }
+      var da = debridAddon(), box = $('#debridbox');
+      if (!DebridStatus.down) return;
+      if (!box) {
+        box = el('div');
+        box.id = 'debridbox';
+        document.body.appendChild(box);
+      }
+      box.textContent = '⚠ ' + tr('{0} caído', DEBRID_NAMES[settings.debrid]);
+      box.title = tr('{0} no funciona ahora mismo con {1}', DEBRID_NAMES[settings.debrid], da ? da.manifest.name : '');
+      box.classList.remove('hidden');
+      DebridStatus.schedule();
+    },
+    ok: function () {
+      if (DebridStatus.down) {
+        DebridStatus.down = false;
+        logEv('debrid', 'vuelve a funcionar', { s: Math.round((Date.now() - DebridStatus.since) / 1000) });
+        var box = $('#debridbox');
+        if (box) box.classList.add('hidden');
+        streamCache = {}; // las listas guardadas tenían el aviso de error en vez de fuentes
+        toast(tr('{0} vuelve a funcionar', DEBRID_NAMES[settings.debrid]), 4000);
+      }
+      DebridStatus.schedule();
+    }
+  };
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden && Date.now() - DebridStatus.lastCheck > (DebridStatus.down ? 60000 : 300000)) DebridStatus.check();
+  });
   function streamJSON(url) {
     var now = Date.now();
     for (var k in streamCache) if (now - streamCache[k].ts > 300000) delete streamCache[k];
@@ -180,16 +245,18 @@
         var d = r[0], extra = [].concat.apply([], r[1]);
         if (d.failed && !extra.length) throw d.failed;
         var streams = (d.streams || []).map(parseStream);
+        // el debrid caído para el addon: aviso fijo arriba (aunque haya fuentes de otros addons) y, si no hay más, decirlo aquí
+        var down = debridDownText(d.streams);
+        if (down) DebridStatus.lost(down);
+        else if (streams.some(function (x) { return x.url && !x.error; })) DebridStatus.ok();
         if (streams.length === 1 && streams[0].error && !extra.length) {
           sub.textContent = '';
-          var why = streams[0].raw.title || '';
-          // el debrid caído para el addon («AllDebrid is currently unavailable!»): la clave está bien, no mandar a Ajustes
-          if (/unavailable|try again later/i.test(why)) {
-            logEv('fuentes', 'debrid no disponible', { id: ctx.videoId, aviso: why });
+          // la clave está bien: no mandar a Ajustes
+          if (down) {
             return message(tr('{0} no está disponible ahora mismo para {1}. No es cosa de tu clave: prueba dentro de un rato.',
-              DEBRID_NAMES[settings.debrid], dAddon.manifest.name) + ' (' + why.replace(/\s+/g, ' ') + ')');
+              DEBRID_NAMES[settings.debrid], dAddon.manifest.name) + ' (' + down + ')');
           }
-          return message(tr('La clave de {0} no es válida o ha caducado.', DEBRID_NAMES[settings.debrid]) + ' ' + why, true);
+          return message(tr('La clave de {0} no es válida o ha caducado.', DEBRID_NAMES[settings.debrid]) + ' ' + (streams[0].raw.title || ''), true);
         }
         if (!settings.key && !extra.length && !streams.some(function (x) { return x.url && !x.error; })) {
           sub.textContent = tr('{0} torrents encontrados', streams.length);

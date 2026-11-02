@@ -1081,6 +1081,7 @@
         var same = !!(notice && notice === prevNotice);
         if (same) {
           logEv('fuente', 'paro: mismo aviso dos veces', { aviso: notice, intento: tries });
+          DebridStatus.check(); // por si es el debrid caído: que salga el aviso de arriba
           msg = tr('Las dos últimas fuentes han fallado igual: puede que {0} tenga problemas ahora mismo.', DEBRID_NAMES[settings.debrid]) + ' ' + msg;
         }
         var nextTry = !played && tries && tries < 4 && !fatal && !same && !Net.down ? this.nextAuto(row) : null;

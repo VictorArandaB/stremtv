@@ -75,7 +75,12 @@ const ok = (c, t) => console.log((c ? '✓ ' : '✗ ') + t);
   const msg = await p.evaluate(() => (document.querySelector('.loading') || {}).textContent || '');
   console.log('caído:', msg);
   ok(/no está disponible ahora mismo/.test(msg) && !/clave de AllDebrid no es válida/.test(msg), 'aviso de debrid caído, no de clave mala');
-  await key('Escape'); await sleep(800); await key('Escape'); await sleep(1500);
+  const box = () => p.evaluate(() => { const b = document.getElementById('debridbox'); return b && !b.classList.contains('hidden') ? b.textContent : ''; });
+  await key('Escape'); await sleep(1500);
+  const shown = await box();
+  console.log('aviso arriba:', shown);
+  ok(/AllDebrid caído/.test(shown), 'aviso fijo arriba con el debrid caído');
+  await p.screenshot({ path: __dirname + '/shots/90-debrid-down.png' });
 
   // 5) dos seguidas con el mismo aviso del debrid: para en la segunda
   mode = 'notice';
@@ -84,6 +89,7 @@ const ok = (c, t) => console.log((c ? '✓ ' : '✗ ') + t);
   st = await state();
   console.log('mismo aviso:', JSON.stringify(st));
   ok(!st.playing && st.failed.length === 2 && /han fallado igual/.test(st.toast), 'para tras dos fallos con el mismo aviso');
+  ok(!(await box()), 'con fuentes buenas el aviso de arriba se quita');
   console.log('ERRORES:', errs.length ? errs : 'ninguno');
   await b.close();
 })().catch((e) => { console.error(e); process.exit(1); });
