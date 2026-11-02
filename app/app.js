@@ -326,6 +326,8 @@
     'ir al %': 'go to %', '⚠ Esta fuente se corta': '⚠ This source keeps stalling', 'Cambiar a {0}': 'Switch to {0}',
     'OK cambiar · Atrás seguir con esta': 'OK switch · Back keep this one', 'La fuente ha fallado: sigue con otra ({0})': 'The source failed: continuing with another ({0})',
     'La fuente no ha arrancado: probando otra ({0})': 'The source did not start: trying another one ({0})',
+    '{0} no está disponible ahora mismo para {1}. No es cosa de tu clave: prueba dentro de un rato.': '{0} is not available for {1} right now. Your key is fine: try again in a while.',
+    'Las dos últimas fuentes han fallado igual: puede que {0} tenga problemas ahora mismo.': 'The last two sources failed the same way: {0} may be having problems right now.',
     'Nuevo': 'New', 'Desde el móvil: {0} en Mi lista': 'From your phone: {0} added to My list', 'Revisar la cola del móvil': 'Check the phone queue',
     'Revisando…': 'Checking…', '{0} añadidos desde el móvil': '{0} added from your phone', 'La cola está vacía': 'The queue is empty',
     'Desde el móvil: escribe títulos o enlaces de IMDb en el archivo cola.txt de ese Gist (gist.github.com) y llegan a Mi lista en unos minutos.':
@@ -6149,8 +6151,14 @@
         var streams = (d.streams || []).map(parseStream);
         if (streams.length === 1 && streams[0].error && !extra.length) {
           sub.textContent = '';
-          return message(tr('La clave de {0} no es válida o ha caducado.', DEBRID_NAMES[settings.debrid]) + ' ' +
-            (streams[0].raw.title || ''), true);
+          var why = streams[0].raw.title || '';
+          // el debrid caído para el addon («AllDebrid is currently unavailable!»): la clave está bien, no mandar a Ajustes
+          if (/unavailable|try again later/i.test(why)) {
+            logEv('fuentes', 'debrid no disponible', { id: ctx.videoId, aviso: why });
+            return message(tr('{0} no está disponible ahora mismo para {1}. No es cosa de tu clave: prueba dentro de un rato.',
+              DEBRID_NAMES[settings.debrid], dAddon.manifest.name) + ' (' + why.replace(/\s+/g, ' ') + ')');
+          }
+          return message(tr('La clave de {0} no es válida o ha caducado.', DEBRID_NAMES[settings.debrid]) + ' ' + why, true);
         }
         if (!settings.key && !extra.length && !streams.some(function (x) { return x.url && !x.error; })) {
           sub.textContent = tr('{0} torrents encontrados', streams.length);
@@ -6386,11 +6394,12 @@
       try { return !!(window.webapis && webapis.avplay && webapis.avplay.open); } catch (e) { return false; }
     },
 
-    // tries: en la elegida automáticamente, qué intento es (1 la recomendada, 2 la siguiente…); 0 si la eligió el usuario
-    open: function (stream, ctx, row, tries) {
+    // tries: en la elegida automáticamente, qué intento es (1 la recomendada, 2 la siguiente…); 0 si la eligió el usuario.
+    // lastNotice: el aviso del debrid con el que falló el intento anterior
+    open: function (stream, ctx, row, tries, lastNotice) {
       var self = this;
       if (this.stream) this.close(); // por si aún sigue abierto otro vídeo: AVPlay no admite dos a la vez
-      this.ctx = ctx; this.stream = stream; this.row = row || null; this.autoTries = tries || 0;
+      this.ctx = ctx; this.stream = stream; this.row = row || null; this.autoTries = tries || 0; this.autoNotice = lastNotice || '';
       var session = ++this.session;
       this.duration = 0; this.time = 0; this.paused = false; this.started = false; this.lastPaused = null;
       this.finalUrl = null; this.probeText = ''; this.probeId = 0;
@@ -6442,7 +6451,7 @@
         self.finalUrl = finalUrl;
         if (self.hasAV()) self.openAV(finalUrl); else self.openHTML(finalUrl);
       }, function (e) {
-        if (self.stream === stream) self.fail(e.msg, e.fatal);
+        if (self.stream === stream) self.fail(e.msg, e.fatal, e.code);
       });
 
       Subs.fetchList(ctx).then(function (list) {
@@ -6547,7 +6556,7 @@
           try { x.abort(); } catch (e) { /* ya terminada */ }
           // con la cuenta bloqueada, la clave mala o el límite alcanzado fallarían todas: no probar otra sola
           if (m && srcOrigin && final.indexOf(srcOrigin) === 0) {
-            reject({ msg: notices[m[1]] || tr('Aviso de {0}: {1}', src, m[1]), fatal: /^(blocked_access|failed_access|limits_exceeded)$/.test(m[1]) });
+            reject({ msg: notices[m[1]] || tr('Aviso de {0}: {1}', src, m[1]), code: m[1], fatal: /^(blocked_access|failed_access|limits_exceeded)$/.test(m[1]) });
           }
           else resolve(final);
         };
@@ -7333,9 +7342,9 @@
       return rows.filter(function (r) { return r._stream.cached && !r._stream.heavy; })[0] || rows[0] || null;
     },
 
-    fail: function (msg, fatal) {
+    fail: function (msg, fatal, notice) {
       logEv('fallo', msg, { archivo: this.stream && this.stream.file, addon: this.stream && this.stream.addon });
-      var row = this.row, ctx = this.ctx, played = this.started, at = this.seekTarget !== null ? this.seekTarget : this.time, tries = this.autoTries;
+      var row = this.row, ctx = this.ctx, played = this.started, at = this.seekTarget !== null ? this.seekTarget : this.time, tries = this.autoTries, prevNotice = this.autoNotice;
       this.spinner(false);
       if (!this.leave()) return;
       // volver a la lista con la siguiente fuente ya seleccionada
@@ -7356,12 +7365,18 @@
           toast(tr('La fuente ha fallado: sigue con otra ({0})', alt._stream.quality), 6000);
           return;
         }
-        // la elegida automáticamente no ha llegado a arrancar: probar sola la siguiente (hasta 4 en total, y no sin red)
-        var nextTry = !played && tries && tries < 4 && !fatal && !Net.down ? this.nextAuto(row) : null;
+        // la elegida automáticamente no ha llegado a arrancar: probar sola la siguiente (hasta 4 en total, y no sin red).
+        // Dos seguidas con el mismo aviso del debrid suelen ser el debrid caído, no la fuente: entonces parar
+        var same = !!(notice && notice === prevNotice);
+        if (same) {
+          logEv('fuente', 'paro: mismo aviso dos veces', { aviso: notice, intento: tries });
+          msg = tr('Las dos últimas fuentes han fallado igual: puede que {0} tenga problemas ahora mismo.', DEBRID_NAMES[settings.debrid]) + ' ' + msg;
+        }
+        var nextTry = !played && tries && tries < 4 && !fatal && !same && !Net.down ? this.nextAuto(row) : null;
         if (nextTry) {
           logEv('fuente', 'siguiente automática', { de: row._stream && row._stream.file, a: nextTry._stream.file, intento: tries + 1 });
           Nav.focus(nextTry);
-          Player.open(nextTry._stream, ctx, nextTry, tries + 1);
+          Player.open(nextTry._stream, ctx, nextTry, tries + 1, notice);
           toast(tr('La fuente no ha arrancado: probando otra ({0})', nextTry._stream.quality), 6000);
           return;
         }
@@ -8666,7 +8681,7 @@
 
   // ---------------------------------------------------------------- arranque
 
-  var VERSION = '0.27.6';
+  var VERSION = '0.27.7';
 
   function fitScreen() {
     var z = window.innerWidth / 1920;

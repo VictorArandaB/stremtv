@@ -15,11 +15,18 @@ const ok = (c, t) => console.log((c ? '✓ ' : '✗ ') + t);
     const u = req.url();
     if (u.indexOf('/stream/') >= 0) {
       const s = (name, file, url) => ({ name: '[AD+] Torrentio\n' + name, title: file + '\n👤 50 💾 2 GB ⚙️ x', url });
+      if (mode === 'down') return req.respond({ status: 200, headers: cors, contentType: 'application/json', body: JSON.stringify({ streams: [
+        { name: 'Torrentio\nAD error', title: 'AllDebrid is currently unavailable!\nPlease try again later.', url: 'https://torrentio.strem.fun/videos/failed_unavailable_v1.mp4' }] }) });
+      const RES = (n) => 'https://torrentio.strem.fun/resolve/alldebrid/K/' + n;
+      if (mode === 'notice') return req.respond({ status: 200, headers: cors, contentType: 'application/json', body: JSON.stringify({ streams:
+        ['A', 'B', 'C', 'D'].map((x) => s('1080p', x + '.1080p.x264', RES(x))) }) });
       const streams = mode === 'third'
         ? [s('1080p', 'A.1080p.x264', BAD('a')), s('1080p', 'B.1080p.x264', BAD('b')), s('1080p', 'C.1080p.x264', VIDEO)]
         : ['A', 'B', 'C', 'D', 'E'].map((x) => s('1080p', x + '.1080p.x264', BAD(x)));
       return req.respond({ status: 200, headers: cors, contentType: 'application/json', body: JSON.stringify({ streams }) });
     }
+    if (u.indexOf('/resolve/') >= 0) return req.respond({ status: 302, headers: Object.assign({ Location: 'https://torrentio.strem.fun/videos/failed_unavailable_v1.mp4' }, cors), body: '' });
+    if (u.indexOf('/videos/failed_') >= 0) return req.respond({ status: 200, headers: cors, contentType: 'video/mp4', body: 'x' });
     if (u.indexOf('bad.test') >= 0) return req.respond({ status: 404, headers: cors, contentType: 'text/plain', body: 'no' });
     if (u.indexOf('opensubtitles-v3') >= 0) return req.respond({ status: 200, headers: cors, contentType: 'application/json', body: '{"subtitles":[]}' });
     req.continue();
@@ -59,6 +66,24 @@ const ok = (c, t) => console.log((c ? '✓ ' : '✗ ') + t);
   st = await state();
   console.log('a mano:', JSON.stringify(st));
   ok(!st.playing && st.failed.length === 5, 'a mano no encadena otra');
+  await key('Escape'); await sleep(800); await key('Escape'); await sleep(1500);
+
+  // 4) el debrid caído para Torrentio: aviso claro, sin decir que la clave está mal
+  mode = 'down';
+  await p.evaluate(() => StremTV.open('movie', 'tt0071562')); await sleep(2500);
+  await key('Enter'); await sleep(3000);
+  const msg = await p.evaluate(() => (document.querySelector('.loading') || {}).textContent || '');
+  console.log('caído:', msg);
+  ok(/no está disponible ahora mismo/.test(msg) && !/clave de AllDebrid no es válida/.test(msg), 'aviso de debrid caído, no de clave mala');
+  await key('Escape'); await sleep(800); await key('Escape'); await sleep(1500);
+
+  // 5) dos seguidas con el mismo aviso del debrid: para en la segunda
+  mode = 'notice';
+  await p.evaluate(() => StremTV.open('movie', 'tt0468569')); await sleep(2500);
+  await key('Enter'); await sleep(6000);
+  st = await state();
+  console.log('mismo aviso:', JSON.stringify(st));
+  ok(!st.playing && st.failed.length === 2 && /han fallado igual/.test(st.toast), 'para tras dos fallos con el mismo aviso');
   console.log('ERRORES:', errs.length ? errs : 'ninguno');
   await b.close();
 })().catch((e) => { console.error(e); process.exit(1); });

@@ -182,8 +182,14 @@
         var streams = (d.streams || []).map(parseStream);
         if (streams.length === 1 && streams[0].error && !extra.length) {
           sub.textContent = '';
-          return message(tr('La clave de {0} no es válida o ha caducado.', DEBRID_NAMES[settings.debrid]) + ' ' +
-            (streams[0].raw.title || ''), true);
+          var why = streams[0].raw.title || '';
+          // el debrid caído para el addon («AllDebrid is currently unavailable!»): la clave está bien, no mandar a Ajustes
+          if (/unavailable|try again later/i.test(why)) {
+            logEv('fuentes', 'debrid no disponible', { id: ctx.videoId, aviso: why });
+            return message(tr('{0} no está disponible ahora mismo para {1}. No es cosa de tu clave: prueba dentro de un rato.',
+              DEBRID_NAMES[settings.debrid], dAddon.manifest.name) + ' (' + why.replace(/\s+/g, ' ') + ')');
+          }
+          return message(tr('La clave de {0} no es válida o ha caducado.', DEBRID_NAMES[settings.debrid]) + ' ' + why, true);
         }
         if (!settings.key && !extra.length && !streams.some(function (x) { return x.url && !x.error; })) {
           sub.textContent = tr('{0} torrents encontrados', streams.length);
