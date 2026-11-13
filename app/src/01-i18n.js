@@ -14,7 +14,7 @@
     'Actualización descargada: se aplicará la próxima vez que abras StremTV': 'Update downloaded: it will apply the next time you open StremTV',
     // inicio, anime y búsqueda
     'Inicio': 'Home', 'Anime': 'Anime', 'Buscar': 'Search', 'Ajustes': 'Settings',
-    'Configura tu Real-Debrid o AllDebrid para poder reproducir': 'Set up Real-Debrid or AllDebrid to be able to play',
+    'Configura tu Real-Debrid, AllDebrid o TorBox para poder reproducir': 'Set up Real-Debrid, AllDebrid or TorBox to be able to play',
     'Continuar viendo': 'Continue watching', 'Continuar (Trakt)': 'Continue (Trakt)',
     'Recomendadas para ti: películas': 'Recommended for you: movies', 'Recomendadas para ti: series': 'Recommended for you: shows',
     'Películas populares': 'Popular movies', 'Series populares': 'Popular shows',
@@ -50,8 +50,8 @@
     'Buscando fuentes…': 'Looking for sources…', 'Abrir ajustes': 'Open settings',
     'La clave de {0} no es válida o ha caducado.': 'The {0} key is invalid or has expired.',
     '{0} torrents encontrados': '{0} torrents found',
-    'Sin un servicio debrid configurado la tele no puede reproducir torrents. Añade tu clave de Real-Debrid o AllDebrid en Ajustes.':
-      'Without a debrid service the TV cannot play torrents. Add your Real-Debrid or AllDebrid key in Settings.',
+    'Sin un servicio debrid configurado la tele no puede reproducir torrents. Añade tu clave de Real-Debrid, AllDebrid o TorBox en Ajustes.':
+      'Without a debrid service the TV cannot play torrents. Add your Real-Debrid, AllDebrid or TorBox key in Settings.',
     'No hay fuentes en caché para este título. Puedes desactivar «Solo en caché» en Ajustes para ver más.':
       'There are no cached sources for this title. You can turn off “Cached only” in Settings to see more.',
     'No se han encontrado fuentes.': 'No sources found.',

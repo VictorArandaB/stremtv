@@ -231,7 +231,7 @@
       box.appendChild(el('div', 'note', esc(tr('Los addons de fuentes que piden configuración (Comet, MediaFusion…) se configuran en su web con tu debrid y se pega aquí la URL que dan. Sus catálogos salen en Inicio y en la búsqueda.'))));
 
       heading(tr('Servicio debrid'));
-      opt('Servicio', function () { return DEBRID_NAMES[settings.debrid]; }, cycle('debrid', ['realdebrid', 'alldebrid']));
+      opt('Servicio', function () { return DEBRID_NAMES[settings.debrid]; }, cycle('debrid', ['realdebrid', 'alldebrid', 'torbox']));
 
       var input = textField('Clave API (pulsa OK para escribirla)', settings.key, 'Pega o escribe aquí tu clave', function (v) {
         settings.key = (v || '').replace(/\s+/g, '');
@@ -242,7 +242,7 @@
         DebridStatus.render();
         if (settings.key) testKey();
       });
-      box.appendChild(el('div', 'note', 'Real-Debrid: real-debrid.com/apitoken · AllDebrid: alldebrid.com/apikeys'));
+      box.appendChild(el('div', 'note', 'Real-Debrid: real-debrid.com/apitoken · AllDebrid: alldebrid.com/apikeys · TorBox: torbox.app/settings'));
 
       var testBtn = el('div', 'btn', tr('Probar clave'));
       var status = el('span', 'note');

@@ -174,7 +174,7 @@
     'Actualización descargada: se aplicará la próxima vez que abras StremTV': 'Update downloaded: it will apply the next time you open StremTV',
     // inicio, anime y búsqueda
     'Inicio': 'Home', 'Anime': 'Anime', 'Buscar': 'Search', 'Ajustes': 'Settings',
-    'Configura tu Real-Debrid o AllDebrid para poder reproducir': 'Set up Real-Debrid or AllDebrid to be able to play',
+    'Configura tu Real-Debrid, AllDebrid o TorBox para poder reproducir': 'Set up Real-Debrid, AllDebrid or TorBox to be able to play',
     'Continuar viendo': 'Continue watching', 'Continuar (Trakt)': 'Continue (Trakt)',
     'Recomendadas para ti: películas': 'Recommended for you: movies', 'Recomendadas para ti: series': 'Recommended for you: shows',
     'Películas populares': 'Popular movies', 'Series populares': 'Popular shows',
@@ -210,8 +210,8 @@
     'Buscando fuentes…': 'Looking for sources…', 'Abrir ajustes': 'Open settings',
     'La clave de {0} no es válida o ha caducado.': 'The {0} key is invalid or has expired.',
     '{0} torrents encontrados': '{0} torrents found',
-    'Sin un servicio debrid configurado la tele no puede reproducir torrents. Añade tu clave de Real-Debrid o AllDebrid en Ajustes.':
-      'Without a debrid service the TV cannot play torrents. Add your Real-Debrid or AllDebrid key in Settings.',
+    'Sin un servicio debrid configurado la tele no puede reproducir torrents. Añade tu clave de Real-Debrid, AllDebrid o TorBox en Ajustes.':
+      'Without a debrid service the TV cannot play torrents. Add your Real-Debrid, AllDebrid or TorBox key in Settings.',
     'No hay fuentes en caché para este título. Puedes desactivar «Solo en caché» en Ajustes para ver más.':
       'There are no cached sources for this title. You can turn off “Cached only” in Settings to see more.',
     'No se han encontrado fuentes.': 'No sources found.',
@@ -525,7 +525,7 @@
   // el «último audio elegido» ya no se usa (0.20.1): el orden es el título, Ajustes, la app e inglés
   if ('lastAudio' in settings || 'lastAudioAnime' in settings) { delete settings.lastAudio; delete settings.lastAudioAnime; saveSettings(); }
 
-  var DEBRID_NAMES = { realdebrid: 'Real-Debrid', alldebrid: 'AllDebrid' };
+  var DEBRID_NAMES = { realdebrid: 'Real-Debrid', alldebrid: 'AllDebrid', torbox: 'TorBox' };
   var QUALITY_NAMES = { all: 'Todas', '1080': 'Hasta 1080p', '720': 'Hasta 720p' };
   var RATE_NAMES = { auto: 'Automática', none: 'Sin límite', '10': '10 Mb/s', '20': '20 Mb/s', '40': '40 Mb/s' };
 
@@ -3989,7 +3989,7 @@
       if (noSources || !settings.key) {
         var warn = el('div', 'row');
         var b = el('div', 'btn primary', noSources ? tr('Añade un addon de fuentes en Ajustes → Fuentes y debrid para poder reproducir')
-          : tr('Configura tu Real-Debrid o AllDebrid para poder reproducir'));
+          : tr('Configura tu Real-Debrid, AllDebrid o TorBox para poder reproducir'));
         b.style.marginLeft = '80px';
         focusable(b, function () { openSettings('sources'); });
         warn.appendChild(b);
@@ -6043,7 +6043,7 @@
       url: s.url,
       infoHash: s.infoHash,
       quality: quality,
-      cached: /\+\]|⚡/.test(head), // [AD+] Torrentio, [AD⚡] Comet: ya en el debrid
+      cached: /\+\]|⚡/.test(head), // [AD+] o [TB+] Torrentio, [AD⚡] Comet: ya en el debrid
       download: /download/i.test(head + quality),
       error: /error/i.test(quality) || /failed_access|failed_/.test(s.url || ''),
       file: (s.behaviorHints && s.behaviorHints.filename) || lines[0],
@@ -6119,6 +6119,16 @@
         if (/^AUTH_(BAD|MISSING)_APIKEY$/.test(code)) return { ok: false, why: 'key' };
         if (/^AUTH_(BLOCKED|USER_BANNED)$/.test(code)) return { ok: false, why: 'blocked' };
         throw new Error(code || 'AllDebrid');
+      });
+    }
+    if (settings.debrid === 'torbox') {
+      // plan 0 = cuenta gratuita (sin suscripción); con la clave mal responde 401 o 403 (AUTH_ERROR)
+      return xhr('GET', 'https://api.torbox.app/v1/api/user/me', { headers: { Authorization: 'Bearer ' + (settings.key || '') } }).then(looseJSON).then(function (d) {
+        var u = d && d.data || {};
+        return u.plan > 0 ? { ok: true, premium: true, until: Date.parse(u.premium_expires_at) || 0 } : { ok: false, why: 'expired' };
+      }, function (e) {
+        if (e.status === 401 || e.status === 403) return { ok: false, why: 'key' };
+        throw e;
       });
     }
     return xhr('GET', 'https://api.real-debrid.com/rest/1.0/user', { headers: { Authorization: 'Bearer ' + (settings.key || '') } }).then(looseJSON).then(function (u) {
@@ -6346,7 +6356,7 @@
         }
         if (!settings.key && !extra.length && !streams.some(function (x) { return x.url && !x.error; })) {
           sub.textContent = tr('{0} torrents encontrados', streams.length);
-          return message(tr('Sin un servicio debrid configurado la tele no puede reproducir torrents. Añade tu clave de Real-Debrid o AllDebrid en Ajustes.'), true);
+          return message(tr('Sin un servicio debrid configurado la tele no puede reproducir torrents. Añade tu clave de Real-Debrid, AllDebrid o TorBox en Ajustes.'), true);
         }
         streams = streams.filter(function (s) { return s.url && !s.error; }).concat(extra);
         // tasa estimada (Mb/s) = tamaño / duración; las que no caben en la conexión van al final
@@ -7703,6 +7713,96 @@
     }
   };
 
+  // ---------------------------------------------------------------- Smart Hub Preview
+
+  // Con StremTV enfocada en la barra de aplicaciones de la tele (sin abrirla), Samsung enseña encima una fila de casillas:
+  // «Continuar viendo» (de esta tele) y «Siguientes episodios» (Trakt). OK en una abre la app en su ficha.
+  // Las casillas solo las puede poner un servicio de fondo del paquete (service.js, id «<paquete>.preview»):
+  // la app le pasa el JSON ya hecho y él llama a webapis.preview.setPreviewData. Con un paquete anterior, sin el
+  // servicio, el envío falla una vez y no se vuelve a intentar hasta el siguiente arranque.
+  // Se envía a los 20 s de arrancar, cada 30 min y al salir de la app (que es cuando se ven), solo si han cambiado.
+  var Preview = {
+    sig: '', next: [], failed: false, lastRaw: '', lastScreen: null,
+    // imagen: el fondo apaisado de metahub (480x270, dentro de lo que admite Samsung); sin id de IMDb, la carátula
+    tile: function (m, title, subtitle, playable) {
+      var id = String(m.id || ''), imdb = /^tt\d+$/.test(id);
+      if (!id || (!imdb && !m.poster)) return null;
+      return { title: title, subtitle: subtitle || '', image_ratio: imdb ? '16by9' : '2by3',
+        image_url: imdb ? 'https://images.metahub.space/background/small/' + id + '/img' : m.poster,
+        action_data: JSON.stringify({ type: m.type, id: id }), is_playable: !!playable };
+    },
+    data: function () {
+      var used = {}, cont = [], up = [];
+      continueList().slice(0, 12).forEach(function (p) {
+        var ep = p.label && p.label.indexOf(p.name + ' · ') === 0 ? p.label.slice(p.name.length + 3) : '';
+        var t = Preview.tile({ id: p.metaId, type: p.type, poster: p.poster }, p.name, ep || Math.round(100 * p.t / p.d) + ' %', true);
+        if (t && !used[p.metaId]) { used[p.metaId] = true; cont.push(t); }
+      });
+      Preview.next.forEach(function (m) {
+        if (used[m.id] || up.length >= 20) return;
+        var code = m.label && m.label.indexOf(m.name + ' · ') === 0 ? m.label.slice(m.name.length + 3) : '';
+        var t = Preview.tile(m, m.name, code + (m.isNew ? (code ? ' · ' : '') + tr('Nuevo') : ''), false);
+        if (t) { used[m.id] = true; up.push(t); }
+      });
+      var sections = [];
+      if (cont.length) sections.push({ title: tr('Continuar viendo'), tiles: cont });
+      if (up.length) sections.push({ title: tr('Siguientes episodios'), tiles: up });
+      return { sections: sections };
+    },
+    send: function () {
+      if (Preview.failed || typeof tizen === 'undefined' || !tizen.application) return;
+      var d = Preview.data();
+      if (!d.sections.length) return;
+      var json = JSON.stringify(d);
+      if (json === Preview.sig) return;
+      var off = function (e) {
+        Preview.failed = true;
+        logEv('preview', 'no disponible', { error: String(e && (e.name || e.message) || e) });
+      };
+      try {
+        var id = tizen.application.getCurrentApplication().appInfo.packageId + '.preview';
+        tizen.application.launchAppControl(new tizen.ApplicationControl('http://tizen.org/appcontrol/operation/pick', null, null, null,
+          [new tizen.ApplicationControlData('preview', [json])]), id, function () {
+          Preview.sig = json;
+          logEv('preview', 'enviado', { continuar: d.sections[0].tiles.length, casillas: d.sections.reduce(function (n, s) { return n + s.tiles.length; }, 0) });
+        }, off);
+      } catch (e) { off(e); }
+    },
+    // con Trakt, primero la lista de siguientes episodios (la misma de Inicio, guardada 10 min)
+    refresh: function () {
+      if (Preview.failed || typeof tizen === 'undefined' || document.hidden) return;
+      (Trakt.linked() ? Trakt.upNext().catch(function () { return Preview.next; }) : Promise.resolve([])).then(function (list) {
+        Preview.next = list || [];
+        Preview.send();
+      });
+    },
+    // la casilla elegida llega en PAYLOAD como {"values": "<action_data>"}, al arrancar o con la app ya abierta
+    deepLink: function () {
+      var raw = '';
+      try {
+        var data = tizen.application.getCurrentApplication().getRequestedAppControl().appControl.data || [];
+        for (var i = 0; i < data.length; i++) if (data[i].key === 'PAYLOAD') raw = data[i].value[0];
+      } catch (e) { return; }
+      if (!raw) return;
+      var a = looseJSON((looseJSON(raw) || {}).values);
+      if (!a || !a.id) return;
+      // la tele repite la última petición al volver a la app por el icono: si su ficha sigue delante, nada
+      if (raw === Preview.lastRaw && isTop(Preview.lastScreen)) return;
+      while (Player.stream && stack.length > 1) pop(); // un vídeo en pausa de antes: se cierra guardando la posición
+      Preview.lastRaw = raw;
+      logEv('preview', 'abrir', { id: a.id });
+      push(Preview.lastScreen = detailScreen(a.type || 'series', a.id));
+    },
+    start: function () {
+      if (typeof tizen === 'undefined' || !tizen.application) return;
+      window.addEventListener('appcontrol', Preview.deepLink);
+      Preview.deepLink();
+      setTimeout(Preview.refresh, 20000);
+      setInterval(Preview.refresh, 1800000);
+      document.addEventListener('visibilitychange', function () { if (document.hidden) Preview.send(); });
+    }
+  };
+
   // ---------------------------------------------------------------- pausa automática y protector de pantalla
 
   // al salir de la app (botón Home, cambio de fuente…) el vídeo se pausa en vez de seguir reproduciéndose
@@ -8169,7 +8269,7 @@
       box.appendChild(el('div', 'note', esc(tr('Los addons de fuentes que piden configuración (Comet, MediaFusion…) se configuran en su web con tu debrid y se pega aquí la URL que dan. Sus catálogos salen en Inicio y en la búsqueda.'))));
 
       heading(tr('Servicio debrid'));
-      opt('Servicio', function () { return DEBRID_NAMES[settings.debrid]; }, cycle('debrid', ['realdebrid', 'alldebrid']));
+      opt('Servicio', function () { return DEBRID_NAMES[settings.debrid]; }, cycle('debrid', ['realdebrid', 'alldebrid', 'torbox']));
 
       var input = textField('Clave API (pulsa OK para escribirla)', settings.key, 'Pega o escribe aquí tu clave', function (v) {
         settings.key = (v || '').replace(/\s+/g, '');
@@ -8180,7 +8280,7 @@
         DebridStatus.render();
         if (settings.key) testKey();
       });
-      box.appendChild(el('div', 'note', 'Real-Debrid: real-debrid.com/apitoken · AllDebrid: alldebrid.com/apikeys'));
+      box.appendChild(el('div', 'note', 'Real-Debrid: real-debrid.com/apitoken · AllDebrid: alldebrid.com/apikeys · TorBox: torbox.app/settings'));
 
       var testBtn = el('div', 'btn', tr('Probar clave'));
       var status = el('span', 'note');
@@ -8960,7 +9060,7 @@
 
   // ---------------------------------------------------------------- arranque
 
-  var VERSION = '0.27.14';
+  var VERSION = '0.27.15';
 
   function fitScreen() {
     var z = window.innerWidth / 1920;
@@ -9004,11 +9104,12 @@
     registerKeys();
     document.documentElement.lang = settings.lang;
     push(homeScreen());
+    Preview.start(); // casillas del Smart Hub y ficha pedida desde una de ellas (después de Inicio: Atrás vuelve a él)
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
   else start();
 
   // exponer para depurar desde la consola
-  window.StremTV = { bootLog: function () { return load('boot', []); }, settings: settings, Player: Player, Subs: Subs, Saver: Saver, Nav: Nav, Trakt: Trakt, stack: stack, toast: function (m, ms) { toast(tr(m), ms); }, open: function (type, id) { push(detailScreen(type, id)); }, openMeta: openMeta, openSettings: openSettings, checkQueue: checkQueue };
+  window.StremTV = { bootLog: function () { return load('boot', []); }, settings: settings, Player: Player, Subs: Subs, Saver: Saver, Nav: Nav, Trakt: Trakt, stack: stack, toast: function (m, ms) { toast(tr(m), ms); }, open: function (type, id) { push(detailScreen(type, id)); }, openMeta: openMeta, openSettings: openSettings, Preview: Preview, checkQueue: checkQueue };
 })();

@@ -1,6 +1,6 @@
   // ---------------------------------------------------------------- arranque
 
-  var VERSION = '0.27.14';
+  var VERSION = '0.27.15';
 
   function fitScreen() {
     var z = window.innerWidth / 1920;
@@ -44,11 +44,12 @@
     registerKeys();
     document.documentElement.lang = settings.lang;
     push(homeScreen());
+    Preview.start(); // casillas del Smart Hub y ficha pedida desde una de ellas (después de Inicio: Atrás vuelve a él)
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
   else start();
 
   // exponer para depurar desde la consola
-  window.StremTV = { bootLog: function () { return load('boot', []); }, settings: settings, Player: Player, Subs: Subs, Saver: Saver, Nav: Nav, Trakt: Trakt, stack: stack, toast: function (m, ms) { toast(tr(m), ms); }, open: function (type, id) { push(detailScreen(type, id)); }, openMeta: openMeta, openSettings: openSettings, checkQueue: checkQueue };
+  window.StremTV = { bootLog: function () { return load('boot', []); }, settings: settings, Player: Player, Subs: Subs, Saver: Saver, Nav: Nav, Trakt: Trakt, stack: stack, toast: function (m, ms) { toast(tr(m), ms); }, open: function (type, id) { push(detailScreen(type, id)); }, openMeta: openMeta, openSettings: openSettings, Preview: Preview, checkQueue: checkQueue };
 })();

@@ -12,7 +12,7 @@
   // el «último audio elegido» ya no se usa (0.20.1): el orden es el título, Ajustes, la app e inglés
   if ('lastAudio' in settings || 'lastAudioAnime' in settings) { delete settings.lastAudio; delete settings.lastAudioAnime; saveSettings(); }
 
-  var DEBRID_NAMES = { realdebrid: 'Real-Debrid', alldebrid: 'AllDebrid' };
+  var DEBRID_NAMES = { realdebrid: 'Real-Debrid', alldebrid: 'AllDebrid', torbox: 'TorBox' };
   var QUALITY_NAMES = { all: 'Todas', '1080': 'Hasta 1080p', '720': 'Hasta 720p' };
   var RATE_NAMES = { auto: 'Automática', none: 'Sin límite', '10': '10 Mb/s', '20': '20 Mb/s', '40': '40 Mb/s' };
 

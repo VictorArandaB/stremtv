@@ -2,7 +2,7 @@
 const puppeteer = require('puppeteer-core');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const ok = (c, t) => console.log((c ? '✓ ' : '✗ ') + t);
-let adBad = false, down = false;
+let adBad = false, down = false, lastStream = '';
 (async () => {
   const b = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: 'new', defaultViewport: { width: 1920, height: 1080 } });
   const p = await b.newPage(); const errs = []; p.on('pageerror', (e) => errs.push(e.message));
@@ -13,9 +13,14 @@ let adBad = false, down = false;
     if (u.indexOf('api.alldebrid.com/v4/user') >= 0) return req.respond({ status: 200, headers: cors, contentType: 'application/json', body: JSON.stringify(adBad
       ? { status: 'error', error: { code: 'AUTH_BAD_APIKEY', message: 'The auth apikey is invalid' } }
       : { status: 'success', data: { user: { isPremium: true, premiumUntil: 1800000000 } } }) });
-    if (u.indexOf('/stream/') >= 0) return req.respond({ status: 200, headers: cors, contentType: 'application/json', body: JSON.stringify({ streams: down
+    if (u.indexOf('api.torbox.app/v1/api/user/me') >= 0) {
+      if (req.method() === 'OPTIONS') return req.respond({ status: 204, headers: Object.assign({ 'Access-Control-Allow-Headers': 'authorization' }, cors) });
+      return req.respond(adBad ? { status: 403, headers: cors, contentType: 'application/json', body: JSON.stringify({ success: false, error: 'AUTH_ERROR', detail: 'x', data: null }) }
+        : { status: 200, headers: cors, contentType: 'application/json', body: JSON.stringify({ success: true, data: { plan: 2, premium_expires_at: '2027-03-01T00:00:00Z' } }) });
+    }
+    if (u.indexOf('/stream/') >= 0) { lastStream = u; return req.respond({ status: 200, headers: cors, contentType: 'application/json', body: JSON.stringify({ streams: down
       ? [{ name: 'Torrentio\nAD error', title: 'AllDebrid is currently unavailable!\nPlease try again later.', url: 'https://torrentio.strem.fun/videos/failed_unavailable_v1.mp4' }]
-      : ['A', 'B', 'C'].map((x) => ({ name: '[AD+] Torrentio\n1080p', title: x + '.1080p\n👤 5 💾 2 GB', url: 'https://x.test/' + x })) }) });
+      : ['A', 'B', 'C'].map((x) => ({ name: '[AD+] Torrentio\n1080p', title: x + '.1080p\n👤 5 💾 2 GB', url: 'https://x.test/' + x })) }) }); }
     req.continue();
   });
   await p.goto(('http://127.0.0.1:' + (process.env.STV_PORT || 8090) + '/'), { waitUntil: 'networkidle2' });
@@ -35,6 +40,16 @@ let adBad = false, down = false;
   adBad = false; down = true;
   t = await test(); console.log('caído:', t);
   ok(/✓ Clave válida/.test(t) && /no funciona ahora mismo con Torrentio/.test(t), 'clave buena y debrid caído: lo dice');
+  // TorBox: Torrentio lo acepta en su dirección (torbox=clave) y la clave se pregunta a api.torbox.app
+  down = false;
+  await p.evaluate(() => { localStorage.setItem('stv.settings', JSON.stringify({ key: 'TBKEY', debrid: 'torbox' })); });
+  await p.reload({ waitUntil: 'networkidle2' }); await sleep(1000);
+  await p.evaluate(() => StremTV.openSettings('sources')); await sleep(1500);
+  t = await test(); console.log('torbox buena:', t);
+  ok(/✓ Clave válida · premium hasta el/.test(t) && /3 fuentes de prueba/.test(t) && /torbox=TBKEY/.test(decodeURIComponent(lastStream)), 'TorBox: clave válida y fuentes pedidas con torbox=clave');
+  adBad = true;
+  t = await test(); console.log('torbox mala:', t);
+  ok(/✗ La clave de TorBox no es válida/.test(t), 'TorBox: clave mala');
   console.log('ERRORES:', errs.length ? errs : 'ninguno');
   await b.close();
 })().catch((e) => { console.error(e); process.exit(1); });

@@ -9,6 +9,9 @@ node "$ROOT/tools/build-app.js" --check
 rm -rf "$OUT" "$ROOT/StremTV.wgt" && mkdir -p "$OUT"
 cp "$ROOT"/app/index.html "$ROOT"/app/boot.js "$ROOT"/app/app.js "$ROOT"/app/style.css "$OUT"/
 cp "$ROOT"/wgt/config.xml "$ROOT"/wgt/icon.png "$OUT"/
+# servicio de fondo del Smart Hub Preview (id StrmTV2026.preview en config.xml). En la raíz: tizen.js firma las rutas
+# de las carpetas como «service%2Fservice.js» y la tele podría no dar la firma por buena
+cp "$ROOT"/wgt/service.js "$OUT"/
 VERSION=$(sed -n 's/.*"version": "\([0-9.]*\)".*/\1/p' "$ROOT/package.json" | head -1)
 sed -i '' "s/__PKG_VERSION__/$VERSION/" "$OUT/boot.js"
 # la versión del widget siempre cuadra con package.json (solo la línea <widget, no la declaración <?xml version="1.0"?>)
@@ -18,6 +21,6 @@ cd "$OUT"
 node "$ROOT/tools/node_modules/tizen/cli.js" build . -t wgt -o "$ROOT/StremTV.wgt" \
   --author "$ROOT/tools/author.p12" --authorPwd "$(cat "$ROOT/tools/author.pwd")" -p public
 # comprobación: solo deben ir los archivos de la app y las firmas
-EXTRA=$(unzip -Z1 "$ROOT/StremTV.wgt" | grep -vxE 'index.html|boot.js|app.js|style.css|config.xml|icon.png|author-signature.xml|signature1.xml' || true)
+EXTRA=$(unzip -Z1 "$ROOT/StremTV.wgt" | grep -vxE 'index.html|boot.js|app.js|style.css|config.xml|icon.png|service.js|author-signature.xml|signature1.xml' || true)
 if [ -n "$EXTRA" ]; then echo "ERROR: archivos inesperados en el paquete:"; echo "$EXTRA"; rm -f "$ROOT/StremTV.wgt"; exit 1; fi
 echo "OK: $(unzip -Z1 "$ROOT/StremTV.wgt" | tr '\n' ' ')"

@@ -63,7 +63,7 @@
       url: s.url,
       infoHash: s.infoHash,
       quality: quality,
-      cached: /\+\]|⚡/.test(head), // [AD+] Torrentio, [AD⚡] Comet: ya en el debrid
+      cached: /\+\]|⚡/.test(head), // [AD+] o [TB+] Torrentio, [AD⚡] Comet: ya en el debrid
       download: /download/i.test(head + quality),
       error: /error/i.test(quality) || /failed_access|failed_/.test(s.url || ''),
       file: (s.behaviorHints && s.behaviorHints.filename) || lines[0],
@@ -139,6 +139,16 @@
         if (/^AUTH_(BAD|MISSING)_APIKEY$/.test(code)) return { ok: false, why: 'key' };
         if (/^AUTH_(BLOCKED|USER_BANNED)$/.test(code)) return { ok: false, why: 'blocked' };
         throw new Error(code || 'AllDebrid');
+      });
+    }
+    if (settings.debrid === 'torbox') {
+      // plan 0 = cuenta gratuita (sin suscripción); con la clave mal responde 401 o 403 (AUTH_ERROR)
+      return xhr('GET', 'https://api.torbox.app/v1/api/user/me', { headers: { Authorization: 'Bearer ' + (settings.key || '') } }).then(looseJSON).then(function (d) {
+        var u = d && d.data || {};
+        return u.plan > 0 ? { ok: true, premium: true, until: Date.parse(u.premium_expires_at) || 0 } : { ok: false, why: 'expired' };
+      }, function (e) {
+        if (e.status === 401 || e.status === 403) return { ok: false, why: 'key' };
+        throw e;
       });
     }
     return xhr('GET', 'https://api.real-debrid.com/rest/1.0/user', { headers: { Authorization: 'Bearer ' + (settings.key || '') } }).then(looseJSON).then(function (u) {
@@ -366,7 +376,7 @@
         }
         if (!settings.key && !extra.length && !streams.some(function (x) { return x.url && !x.error; })) {
           sub.textContent = tr('{0} torrents encontrados', streams.length);
-          return message(tr('Sin un servicio debrid configurado la tele no puede reproducir torrents. Añade tu clave de Real-Debrid o AllDebrid en Ajustes.'), true);
+          return message(tr('Sin un servicio debrid configurado la tele no puede reproducir torrents. Añade tu clave de Real-Debrid, AllDebrid o TorBox en Ajustes.'), true);
         }
         streams = streams.filter(function (s) { return s.url && !s.error; }).concat(extra);
         // tasa estimada (Mb/s) = tamaño / duración; las que no caben en la conexión van al final

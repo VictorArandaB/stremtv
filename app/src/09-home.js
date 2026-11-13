@@ -345,7 +345,7 @@
       if (noSources || !settings.key) {
         var warn = el('div', 'row');
         var b = el('div', 'btn primary', noSources ? tr('Añade un addon de fuentes en Ajustes → Fuentes y debrid para poder reproducir')
-          : tr('Configura tu Real-Debrid o AllDebrid para poder reproducir'));
+          : tr('Configura tu Real-Debrid, AllDebrid o TorBox para poder reproducir'));
         b.style.marginLeft = '80px';
         focusable(b, function () { openSettings('sources'); });
         warn.appendChild(b);

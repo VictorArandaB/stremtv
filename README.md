@@ -7,7 +7,7 @@ Escrito en ES5 y CSS sin funciones modernas para que funcione en el motor web de
 ## Qué hace
 - Catálogo y búsqueda de películas y series (Cinemeta).
 - **Anime**: en emisión, tendencias, populares y mejor valorados, con búsqueda (addon Kitsu; acepta IDs de AniDB/MAL/AniList).
-- **Sin fuentes de serie, como Stremio**: reproduce lo que den los addons que añadas en Ajustes → Fuentes y debrid. Con addons que aceptan debrid en su dirección, usa tu **Real-Debrid** o **AllDebrid** y las opciones de Ajustes (calidad, solo en caché…).
+- **Sin fuentes de serie, como Stremio**: reproduce lo que den los addons que añadas en Ajustes → Fuentes y debrid. Con addons que aceptan debrid en su dirección, usa tu **Real-Debrid**, **AllDebrid** o **TorBox** y las opciones de Ajustes (calidad, solo en caché…).
 - Prioriza fuentes en español y marca las instantáneas (en caché).
 - Reproductor nativo de Samsung (AVPlay) si está disponible, con HTML5 como alternativa. Cambio de pista de audio con AVPlay.
 - Subtítulos en español/inglés de OpenSubtitles, con ajuste de sincronía.
@@ -56,6 +56,7 @@ Escrito en ES5 y CSS sin funciones modernas para que funcione en el motor web de
 - **Series que Trakt numera distinto** (Mashle, The Apothecary Diaries: en Trakt una sola temporada larga): los episodios se emparejan por fecha de emisión, así que salen como vistos, las filas dicen el episodio correcto y lo que ves se registra en Trakt con su número.
 - **Sin spoilers** (Ajustes → General, desactivado de serie): en la ficha, los episodios que aún no has visto (en la tele o en Trakt) salen sin sinopsis ni imagen, solo con el título, y el INFO del vídeo muestra la sinopsis de la serie en vez de la del episodio.
 - **Tu año en StremTV** (Ajustes, y en Inicio en diciembre y enero): horas, películas, episodios y series terminadas del año, tus series más vistas y tus películas mejor puntuadas, géneros, el mes y el día de la semana con más tele, la racha más larga y el día de maratón. Con Trakt, de todo su historial del año (se guarda: el año en curso se rehace a diario); sin Trakt, de lo visto en esta tele. Años anteriores con ◀ ▶.
+- **Smart Hub Preview**: con StremTV enfocada en la barra de aplicaciones de la tele, sin abrirla, salen encima «Continuar viendo» y «Siguientes episodios» (Trakt); OK en una casilla abre la app en su ficha. Necesita el paquete con el servicio de fondo (reinstalar el `.wgt`).
 - **Trakt**: vinculación con código, scrobble automático (visto al pasar del 80 %), «Continuar», tu lista, recomendaciones y episodios vistos. El anime se registra usando su equivalencia en IMDb.
 
 ## Instalación
@@ -82,6 +83,7 @@ Al abrir StremTV por primera vez, **Ajustes → Fuentes y debrid** se abre solo 
 2. Si el addon admite debrid, elige el servicio y escribe tu clave:
    - **Real-Debrid**: https://real-debrid.com/apitoken
    - **AllDebrid**: https://alldebrid.com/apikeys
+   - **TorBox**: https://torbox.app/settings
 
 ### Cuentas (Ajustes → Cuentas) — opcionales; cada una desbloquea funciones
 | Servicio | Para qué sirve | Dónde se saca (gratis) |
@@ -97,7 +99,7 @@ Al abrir StremTV por primera vez, **Ajustes → Fuentes y debrid** se abre solo 
 
 Una vez instalada, StremTV **se actualiza sola**: al arrancar comprueba el último commit de `main` en GitHub y descarga `app.js`/`style.css` (vía jsDelivr) para aplicarlos en el **siguiente** arranque. Para la mayoría de cambios **no hace falta reinstalar**.
 
-Solo hay que **volver a empaquetar e instalar el `.wgt`** cuando cambian `boot.js`, `index.html` o `config.xml` (el cargador, el HTML base o los permisos/CSP), porque esos archivos no se autoactualizan.
+Solo hay que **volver a empaquetar e instalar el `.wgt`** cuando cambian `boot.js`, `index.html`, `config.xml` o `wgt/service.js` (el cargador, el HTML base, los permisos/CSP o el servicio del Smart Hub Preview), porque esos archivos no se autoactualizan.
 
 ## Mando
 | Tecla | Navegación | Reproductor |
