@@ -257,6 +257,8 @@
     'Sincronizar subtítulos… (ahora {0})': 'Sync subtitles… (now {0})', 'Subtítulos': 'Subtitles',
     'No se pudo activar el subtítulo incrustado': 'Could not enable the embedded subtitle', 'Subtítulos activados': 'Subtitles on',
     'El subtítulo está vacío o no se puede leer': 'The subtitle is empty or unreadable',
+    'Subtítulo incrustado activado': 'Embedded subtitle on', ' (se usará en el resto de la serie)': ' (it will be used for the rest of the show)',
+    ' (se recordará para esta película)': ' (it will be remembered for this movie)',
     'No se pudo descargar el subtítulo': 'Could not download the subtitle',
     'sin desfase': 'no offset', ' (más tarde)': ' (later)', ' (antes)': ' (earlier)',
     '◀ adelantar · ▶ retrasar (0,25 s) &nbsp;·&nbsp; ▲ ▼ 1 s &nbsp;·&nbsp; OK terminar':
@@ -6503,17 +6505,20 @@
   }
 
   var Subs = {
-    cues: [], idx: 0, offset: 0, list: [], current: null, embedded: false, auto: false, manual: false,
+    // pref: el subtítulo elegido a mano en esta película o serie ({kind: 'off'|'emb'|'ext', …}); prefDone: ya aplicado
+    cues: [], idx: 0, offset: 0, list: [], current: null, embedded: false, embIndex: -1, auto: false, manual: false,
+    pref: null, prefDone: false, listReady: false,
     box: null,
     reset: function () {
-      this.cues = []; this.idx = 0; this.offset = 0; this.list = []; this.current = null; this.embedded = false; this.auto = false; this.manual = false;
+      this.cues = []; this.idx = 0; this.offset = 0; this.list = []; this.current = null; this.embedded = false; this.embIndex = -1; this.auto = false; this.manual = false;
+      this.pref = null; this.prefDone = false; this.listReady = false;
       this.box.textContent = '';
       this.box.className = (settings.subSize === 'big' ? 'big' : '') + (settings.subBg ? ' bg' : '') +
         (settings.subColor === 'yellow' ? ' yellow' : '') + (settings.subPos === 'high' ? ' high' : '');
     },
     fetchList: function (ctx) {
       var self = this, mine = Player.session;
-      if (!ctx.imdb) { self.list = []; return Promise.resolve([]); }
+      if (!ctx.imdb) { self.list = []; self.listReady = true; return Promise.resolve([]); }
       var sid = ctx.type === 'movie' ? ctx.imdb : ctx.srcImdb ? ctx.srcImdb + ':' + ctx.srcS + ':' + ctx.srcE : ctx.imdb + ':' + ctx.imdbS + ':' + ctx.imdbE;
       var sources = [{ url: SUBS_ADDON, name: '' }].concat(addonsFor('subtitles', ctx.type, sid).map(function (a) { return { url: a.url, name: a.manifest.name }; }));
       return Promise.all(sources.map(function (src) {
@@ -6526,6 +6531,12 @@
         if (Player.session !== mine) return []; // llegó tarde: el reproductor se ha cerrado o se ha vuelto a abrir
         self.list = [].concat.apply([], r).filter(function (x) { return rank(x.lang) < 3; })
           .sort(function (a, b) { return rank(a.lang) - rank(b.lang); }).slice(0, 40);
+        // el idioma elegido a mano en la serie, aunque no sea ni el de Ajustes ni español ni inglés
+        var pl = self.pref && self.pref.kind === 'ext' && self.pref.lang;
+        if (pl && rank(pl) === 3) {
+          self.list = [].concat.apply([], r).filter(function (x) { return x.lang === pl; }).slice(0, 10).concat(self.list);
+        }
+        self.listReady = true;
         return self.list;
       });
     },
@@ -6609,6 +6620,7 @@
       this.closeInfo();
       Subs.box = $('#subs');
       Subs.reset();
+      Subs.pref = (srcPrefs[ctx.metaId] && srcPrefs[ctx.metaId].sub) || null;
       this.syncMode = false;
       Subs.offset = subOffsets[ctx.videoId] ? subOffsets[ctx.videoId].o : 0;
       this.spinner(true, tr('Conectando con {0}…', DEBRID_NAMES[settings.debrid]));
@@ -6636,11 +6648,8 @@
         if (self.stream === stream) self.fail(e.msg, e.fatal, e.code);
       });
 
-      Subs.fetchList(ctx).then(function (list) {
-        if (self.session !== session || settings.subLang === 'off' || self.skipAutoSubs() || Subs.embedded || Subs.manual) return;
-        for (var i = 0; i < list.length; i++) {
-          if (list[i].lang === settings.subLang) { Subs.auto = true; Subs.select(list[i]); return; }
-        }
+      Subs.fetchList(ctx).then(function () {
+        if (self.session === session) self.autoSubs();
       });
       this.tickTimer = setInterval(function () { self.tick(); }, 250);
       this.saveTimer = setInterval(function () { self.saveProgress(); }, 10000);
@@ -7058,23 +7067,74 @@
       for (i = 0; i < tracks.length; i++) if (tracks[i].index === cur || tracks.length === 1) this.audioKey = langKey(tracks[i].lang);
       // con el audio en el mismo idioma que los subtítulos automáticos, sobran
       if (Subs.auto && this.skipAutoSubs()) { Subs.auto = false; Subs.select(null); }
-      // subtítulos que trae el propio archivo en el idioma elegido: van sincronizados, mejor que los de OpenSubtitles
-      if (!Subs.embedded && !Subs.manual && settings.subLang !== 'off' && !this.skipAutoSubs()) {
-        var texts = this.avTracks('TEXT');
-        for (i = 0; i < texts.length; i++) {
-          if (langKey(texts[i].lang) !== settings.subLang) continue;
-          try {
-            webapis.avplay.setSelectTrack('TEXT', texts[i].index);
-            webapis.avplay.setSilentSubtitle(false);
-            Subs.select(null);
-            Subs.embedded = true;
-            Subs.auto = true;
-            this.applySubOffset();
-          } catch (e) { /* se quedan los de OpenSubtitles */ }
-          break;
-        }
-      }
+      this.autoSubs();
       return !pick || now === pick.index;
+    },
+
+    // subtítulos solos: primero lo elegido a mano en esta película o serie y, si no se puede, el idioma de Ajustes.
+    // Se llama al llegar la lista de OpenSubtitles y con cada comprobación del audio (las pistas del archivo)
+    autoSubs: function () {
+      if (Subs.manual || Subs.embedded || Subs.prefDone) return;
+      var p = Subs.pref, av = this.backend === 'av', i;
+      if (p && p.kind === 'off') return;
+      if (p && p.kind === 'emb') {
+        // la tele no acepta bien el cambio de pista antes de empezar (como el audio): se espera a que arranque
+        if (av && !this.started) return;
+        var t = this.prefEmbedded(this.avTracks('TEXT'), p);
+        if (t && this.selectEmbedded(t.index)) {
+          Subs.prefDone = true;
+          logEv('subtitulos', 'incrustado de la serie', { pista: t.pos + 1, de: t.n });
+          return;
+        }
+        logEv('subtitulos', 'incrustado de la serie no aplicable', { pista: p.pos + 1, de: p.n, hay: this.avTracks('TEXT').length });
+        Subs.pref = p = null; // otro archivo: como si no se hubiera elegido nada
+      }
+      if (p && p.kind === 'ext') {
+        if (!Subs.listReady) return;
+        var same = Subs.list.filter(function (x) { return x.lang === p.lang; });
+        var s = same.filter(function (x) { return (x.addon || '') === (p.addon || ''); })[0] || same[0];
+        if (s) {
+          Subs.prefDone = true;
+          Subs.auto = false;
+          if (Subs.current !== s) Subs.select(s);
+          return;
+        }
+        Subs.pref = p = null;
+      }
+      if (settings.subLang === 'off' || this.skipAutoSubs()) return;
+      // subtítulos que trae el propio archivo en el idioma elegido: van sincronizados, mejor que los de OpenSubtitles
+      var texts = this.avTracks('TEXT');
+      for (i = 0; i < texts.length; i++) {
+        if (langKey(texts[i].lang) !== settings.subLang) continue;
+        if (this.selectEmbedded(texts[i].index)) { Subs.auto = true; return; }
+        break;
+      }
+      if (Subs.current || !Subs.listReady) return;
+      for (i = 0; i < Subs.list.length; i++) {
+        if (Subs.list[i].lang === settings.subLang) { Subs.auto = true; Subs.select(Subs.list[i]); return; }
+      }
+    },
+
+    // la pista incrustada que toca: la del mismo idioma si la tele lo da (esta no lo da nunca: track_lang vacío)
+    // o la misma posición si el archivo trae las mismas pistas y no es de otra release
+    prefEmbedded: function (texts, p) {
+      var i;
+      if (p.lang) for (i = 0; i < texts.length; i++) if (langKey(texts[i].lang) === p.lang) return { index: texts[i].index, pos: i, n: texts.length };
+      var g = this.stream && this.stream.group;
+      if (texts.length !== p.n || !(p.pos < texts.length) || (p.group && g && p.group !== g)) return null;
+      return { index: texts[p.pos].index, pos: p.pos, n: texts.length };
+    },
+
+    selectEmbedded: function (index) {
+      try {
+        webapis.avplay.setSelectTrack('TEXT', index);
+        webapis.avplay.setSilentSubtitle(false);
+      } catch (e) { return false; } // se quedan los de OpenSubtitles
+      Subs.select(null);
+      Subs.embedded = true;
+      Subs.embIndex = index;
+      this.applySubOffset();
+      return true;
     },
 
     // mientras la tele no acepta la pista elegida (1-2 s al empezar) suena la primera: silencio hasta entonces.
@@ -7348,12 +7408,17 @@
     },
 
     subsMenu: function () {
-      var self = this, items = [{ label: tr('Sin subtítulos'), value: 'off', selected: !Subs.current && !Subs.embedded }];
-      if (this.backend === 'av') {
-        this.avTracks('TEXT').forEach(function (t, i) {
-          items.push({ label: tr('Incrustado: {0}', t.lang || tr('pista {0}', i + 1)), value: 'emb', index: t.index });
-        });
-      }
+      var self = this, c = this.ctx, items = [{ label: tr('Sin subtítulos'), value: 'off', selected: !Subs.current && !Subs.embedded }];
+      var texts = this.backend === 'av' ? this.avTracks('TEXT') : [];
+      texts.forEach(function (t, i) {
+        items.push({ label: tr('Incrustado: {0}', t.lang || tr('pista {0}', i + 1)), value: 'emb', index: t.index, pos: i, lang: langKey(t.lang),
+          selected: Subs.embedded && Subs.embIndex === t.index });
+      });
+      // se recuerda en esta película o serie (como el audio)
+      var remember = function (sub) {
+        if (c && c.metaId) saveSrcPref(c.metaId, { sub: sub });
+        return c && c.type === 'series' ? tr(' (se usará en el resto de la serie)') : tr(' (se recordará para esta película)');
+      };
       Subs.list.forEach(function (s) {
         items.push({ label: (tr(LANG_NAMES[s.lang]) || s.lang) + ' · ' + (s.addon ? s.addon + ' · ' : '') + (s.subtitleFileName || s.id), value: 'ext', sub: s, selected: Subs.current === s });
       });
@@ -7365,19 +7430,17 @@
         Subs.auto = false;
         Subs.manual = true;
         Subs.embedded = false;
+        Subs.embIndex = -1;
         try { if (self.backend === 'av') webapis.avplay.setSilentSubtitle(true); } catch (e) { /* no soportado */ }
-        if (it.value === 'off') { Subs.select(null); return; }
+        if (it.value === 'off') { Subs.select(null); toast(tr('Sin subtítulos') + remember({ kind: 'off' })); return; }
         if (it.value === 'emb') {
-          Subs.select(null);
-          try {
-            webapis.avplay.setSelectTrack('TEXT', it.index);
-            webapis.avplay.setSilentSubtitle(false);
-            Subs.embedded = true;
-            self.applySubOffset();
-          } catch (e) { toast(tr('No se pudo activar el subtítulo incrustado')); }
+          if (self.selectEmbedded(it.index)) {
+            toast(tr('Subtítulo incrustado activado') + remember({ kind: 'emb', pos: it.pos, n: texts.length, lang: it.lang, group: (self.stream && self.stream.group) || '' }));
+          } else toast(tr('No se pudo activar el subtítulo incrustado'));
           return;
         }
-        Subs.select(it.sub).then(function () { if (Subs.cues.length) toast(tr('Subtítulos activados')); });
+        var msg = remember({ kind: 'ext', lang: it.sub.lang, addon: it.sub.addon || '' });
+        Subs.select(it.sub).then(function () { if (Subs.cues.length) toast(tr('Subtítulos activados') + msg); });
       });
     },
 
@@ -8897,7 +8960,7 @@
 
   // ---------------------------------------------------------------- arranque
 
-  var VERSION = '0.27.13';
+  var VERSION = '0.27.14';
 
   function fitScreen() {
     var z = window.innerWidth / 1920;
@@ -8947,5 +9010,5 @@
   else start();
 
   // exponer para depurar desde la consola
-  window.StremTV = { bootLog: function () { return load('boot', []); }, settings: settings, Player: Player, Saver: Saver, Nav: Nav, Trakt: Trakt, stack: stack, toast: function (m, ms) { toast(tr(m), ms); }, open: function (type, id) { push(detailScreen(type, id)); }, openMeta: openMeta, openSettings: openSettings, checkQueue: checkQueue };
+  window.StremTV = { bootLog: function () { return load('boot', []); }, settings: settings, Player: Player, Subs: Subs, Saver: Saver, Nav: Nav, Trakt: Trakt, stack: stack, toast: function (m, ms) { toast(tr(m), ms); }, open: function (type, id) { push(detailScreen(type, id)); }, openMeta: openMeta, openSettings: openSettings, checkQueue: checkQueue };
 })();

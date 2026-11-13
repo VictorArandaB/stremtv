@@ -97,6 +97,8 @@
     'Sincronizar subtítulos… (ahora {0})': 'Sync subtitles… (now {0})', 'Subtítulos': 'Subtitles',
     'No se pudo activar el subtítulo incrustado': 'Could not enable the embedded subtitle', 'Subtítulos activados': 'Subtitles on',
     'El subtítulo está vacío o no se puede leer': 'The subtitle is empty or unreadable',
+    'Subtítulo incrustado activado': 'Embedded subtitle on', ' (se usará en el resto de la serie)': ' (it will be used for the rest of the show)',
+    ' (se recordará para esta película)': ' (it will be remembered for this movie)',
     'No se pudo descargar el subtítulo': 'Could not download the subtitle',
     'sin desfase': 'no offset', ' (más tarde)': ' (later)', ' (antes)': ' (earlier)',
     '◀ adelantar · ▶ retrasar (0,25 s) &nbsp;·&nbsp; ▲ ▼ 1 s &nbsp;·&nbsp; OK terminar':
