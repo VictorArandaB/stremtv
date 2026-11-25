@@ -24,3 +24,5 @@ node "$ROOT/tools/node_modules/tizen/cli.js" build . -t wgt -o "$ROOT/StremTV.wg
 EXTRA=$(unzip -Z1 "$ROOT/StremTV.wgt" | grep -vxE 'index.html|boot.js|app.js|style.css|config.xml|icon.png|service.js|author-signature.xml|signature1.xml' || true)
 if [ -n "$EXTRA" ]; then echo "ERROR: archivos inesperados en el paquete:"; echo "$EXTRA"; rm -f "$ROOT/StremTV.wgt"; exit 1; fi
 echo "OK: $(unzip -Z1 "$ROOT/StremTV.wgt" | tr '\n' ' ')"
+# copia para el instalador del iPhone (docs/instalar.html, GitHub Pages)
+cp "$ROOT/StremTV.wgt" "$ROOT/docs/StremTV.wgt"

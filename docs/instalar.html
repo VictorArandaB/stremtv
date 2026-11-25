@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#0d0f14">
+<title>Instalar StremTV</title>
+<!-- Pasos para instalar StremTV en una Samsung desde un iPhone con a-Shell (ejecuta instalar.py). Sin dependencias. -->
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #0d0f14; color: #fff; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 560px; margin: 0 auto; padding: 28px 16px 48px; }
+  h1 { font-size: 28px; margin: 0 0 6px; }
+  h1 b { color: #8a7dff; }
+  .sub { color: #aab; font-size: 17px; line-height: 1.45; margin: 0 0 24px; }
+  ol { list-style: none; padding: 0; margin: 0; counter-reset: paso; }
+  li { counter-increment: paso; background: #161a26; border: 2px solid #232839; border-radius: 16px; padding: 18px 18px 18px 64px;
+    position: relative; margin-bottom: 14px; font-size: 18px; line-height: 1.5; }
+  li::before { content: counter(paso); position: absolute; left: 16px; top: 16px; width: 34px; height: 34px; border-radius: 50%;
+    background: #6d5df5; color: #fff; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+  li p { margin: 8px 0 0; }
+  .btn { display: block; width: 100%; margin-top: 12px; font-size: 19px; font-weight: 600; padding: 16px; border: 0; border-radius: 14px;
+    background: #6d5df5; color: #fff; text-align: center; text-decoration: none; font-family: inherit; }
+  .btn.ok { background: #2e7d32; }
+  code { display: block; margin-top: 10px; padding: 12px; background: #0d0f14; border-radius: 10px; font-size: 13px; color: #c9c4ff;
+    word-break: break-all; font-family: ui-monospace, Menlo, monospace; }
+  .note { color: #99a; font-size: 16px; }
+  h2 { font-size: 19px; margin: 30px 0 10px; }
+  .faq p { font-size: 16px; line-height: 1.5; color: #ccd; margin: 0 0 12px; }
+  .faq b { color: #fff; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Instalar <b>StremTV</b></h1>
+  <p class="sub">En una Samsung de 2017 o más nueva, con este iPhone. Se hace una sola vez y tarda unos 10 minutos.
+    Antes de empezar: <b>la tele encendida</b> y el <b>iPhone conectado al mismo Wi-Fi</b> que la tele.</p>
+
+  <ol>
+    <li>Instala la app gratuita <b>a-Shell</b>.
+      <a class="btn" href="https://apps.apple.com/app/a-shell/id1473805438">Abrir a-Shell en la App Store</a>
+    </li>
+    <li>Pulsa este botón para copiar la orden de instalación:
+      <button class="btn" id="copy" type="button">Copiar la orden</button>
+      <code id="cmd">curl -LO https://victorarandab.github.io/stremtv/instalar.py; curl -LO https://victorarandab.github.io/stremtv/StremTV.wgt; python3 instalar.py</code>
+    </li>
+    <li>Abre <b>a-Shell</b>, toca la pantalla negra, mantén el dedo y elige <b>Pegar</b>. Después pulsa la tecla <b>Intro</b> (↵) del teclado.
+      <p class="note">Si el iPhone pregunta si a-Shell puede buscar dispositivos en la red local, pulsa <b>Permitir</b>.</p>
+    </li>
+    <li>Mira la tele: si sale un aviso para dejar conectar un aparato, pulsa <b>Permitir</b> con el mando.</li>
+    <li>Sigue lo que dice el iPhone: en la ventana de la tele pones <b>On</b>, escribes los números que salen en el iPhone,
+      pulsas <b>OK</b> y <b>desenchufas la tele 30 segundos</b>.</li>
+    <li>Vuelve a a-Shell y espera hasta que diga <b>🎉 ¡LISTO!</b> StremTV aparecerá en las aplicaciones de la tele.</li>
+  </ol>
+
+  <h2>Si algo no va</h2>
+  <div class="faq">
+    <p><b>«No encuentro la tele»:</b> comprueba que la tele está encendida y en el mismo Wi-Fi. En el iPhone, ve a
+      Ajustes → Privacidad y seguridad → Red local y activa a-Shell. Después vuelve a pegar la orden.</p>
+    <p><b>Se apagó la pantalla del iPhone:</b> desbloquéalo y vuelve a a-Shell; sigue solo.</p>
+    <p><b>Cualquier otro mensaje con ❌:</b> haz una captura de pantalla y mándasela a quien te pasó la app.</p>
+  </div>
+</main>
+<script>
+  document.getElementById('copy').addEventListener('click', function () {
+    var b = this, text = document.getElementById('cmd').textContent;
+    function done() { b.textContent = '✓ Copiada'; b.className = 'btn ok'; }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, fallback);
+    } else { fallback(); }
+    function fallback() {
+      var r = document.createRange(); r.selectNodeContents(document.getElementById('cmd'));
+      var s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+      try { document.execCommand('copy'); done(); } catch (e) { b.textContent = 'Mantén el dedo sobre el texto y cópialo'; }
+    }
+  });
+</script>
+</body>
+</html>

@@ -6,3 +6,5 @@ tools/*
 !tools/build-app.js
 *.wgt
 wgt-build/
+# paquete publicado en GitHub Pages para docs/instalar.html (lo copia build-wgt.sh)
+!docs/StremTV.wgt
