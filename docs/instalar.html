@@ -41,11 +41,16 @@
     <li>Instala la app gratuita <b>a-Shell</b>.
       <a class="btn" href="https://apps.apple.com/app/a-shell/id1473805438">Abrir a-Shell en la App Store</a>
     </li>
-    <li>Pulsa este botón para copiar la orden de instalación:
-      <button class="btn" id="copy" type="button">Copiar la orden</button>
-      <code id="cmd">curl -L -o instalar.py https://victorarandab.github.io/stremtv/instalar.py; curl -L -o StremTV.wgt https://victorarandab.github.io/stremtv/StremTV.wgt; python3 instalar.py</code>
+    <li>Copia la <b>primera orden</b>:
+      <button class="btn" data-cmd="cmd1" type="button">Copiar la orden 1</button>
+      <code id="cmd1">curl -L -o instalar.py https://victorarandab.github.io/stremtv/instalar.py -o StremTV.wgt https://victorarandab.github.io/stremtv/StremTV.wgt</code>
+      <p>Abre <b>a-Shell</b>, toca la pantalla negra, mantén el dedo y elige <b>Pegar</b>. Pulsa la tecla <b>Intro</b> (↵) del teclado
+        y espera unos segundos a que termine.</p>
     </li>
-    <li>Abre <b>a-Shell</b>, toca la pantalla negra, mantén el dedo y elige <b>Pegar</b>. Después pulsa la tecla <b>Intro</b> (↵) del teclado.
+    <li>Vuelve aquí y copia la <b>segunda orden</b>:
+      <button class="btn" data-cmd="cmd2" type="button">Copiar la orden 2</button>
+      <code id="cmd2">python3 instalar.py</code>
+      <p>Pégala en a-Shell igual y pulsa <b>Intro</b>.</p>
       <p class="note">Si el iPhone pregunta si a-Shell puede buscar dispositivos en la red local, pulsa <b>Permitir</b>.</p>
     </li>
     <li>Mira la tele: si sale un aviso para dejar conectar un aparato, pulsa <b>Permitir</b> con el mando.</li>
@@ -57,23 +62,25 @@
   <h2>Si algo no va</h2>
   <div class="faq">
     <p><b>«No encuentro la tele»:</b> comprueba que la tele está encendida y en el mismo Wi-Fi. En el iPhone, ve a
-      Ajustes → Privacidad y seguridad → Red local y activa a-Shell. Después vuelve a pegar la orden.</p>
+      Ajustes → Privacidad y seguridad → Red local y activa a-Shell. Después vuelve a pegar la orden 2.</p>
     <p><b>Se apagó la pantalla del iPhone:</b> desbloquéalo y vuelve a a-Shell; sigue solo.</p>
     <p><b>Cualquier otro mensaje con ❌:</b> haz una captura de pantalla y mándasela a quien te pasó la app.</p>
   </div>
 </main>
 <script>
-  document.getElementById('copy').addEventListener('click', function () {
-    var b = this, text = document.getElementById('cmd').textContent;
-    function done() { b.textContent = '✓ Copiada'; b.className = 'btn ok'; }
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).then(done, fallback);
-    } else { fallback(); }
-    function fallback() {
-      var r = document.createRange(); r.selectNodeContents(document.getElementById('cmd'));
-      var s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
-      try { document.execCommand('copy'); done(); } catch (e) { b.textContent = 'Mantén el dedo sobre el texto y cópialo'; }
-    }
+  Array.prototype.forEach.call(document.querySelectorAll('[data-cmd]'), function (b) {
+    b.addEventListener('click', function () {
+      var code = document.getElementById(b.getAttribute('data-cmd')), label = b.textContent;
+      function done() { b.textContent = '✓ Copiada'; b.className = 'btn ok'; }
+      function fallback() {
+        var r = document.createRange(); r.selectNodeContents(code);
+        var s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+        try { document.execCommand('copy'); done(); } catch (e) { b.textContent = 'Mantén el dedo sobre el texto y cópialo'; }
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(code.textContent).then(done, fallback);
+      } else { fallback(); }
+    });
   });
 </script>
 </body>

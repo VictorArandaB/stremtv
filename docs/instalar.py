@@ -253,7 +253,9 @@ def get_wgt():
     here = os.path.dirname(os.path.abspath(__file__))
     for p in (os.path.join(here, "StremTV.wgt"), "StremTV.wgt"):
         if os.path.exists(p) and os.path.getsize(p) > 10000:
-            return open(p, "rb").read()
+            data = open(p, "rb").read()
+            if data[:2] == b"PK":  # un .wgt es un zip; si no, es una página de error descargada
+                return data
     say("Descargando StremTV…")
     try:
         return urllib.request.urlopen(WGT_URL, timeout=60).read()
