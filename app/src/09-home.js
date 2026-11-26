@@ -9,11 +9,11 @@
     Array.prototype.forEach.call(document.querySelectorAll('.clock'), function (c) { if (c.textContent !== t) c.textContent = t; });
   }
   setInterval(tickClocks, 10000);
-  // en la tele el reloj se ha visto parado sin poder reproducirlo: al volver a la app o al pulsar una tecla se pone al día
-  // y, si el temporizador llevaba más de un minuto sin saltar, queda en el registro
+  // al volver a la app o al pulsar una tecla se pone al día y se relanzan los temporizadores atrasados (ver healIntervals);
+  // si el del reloj llevaba más de un minuto sin saltar con la app delante, queda en el registro
   function clockCheck(why) {
-    var gap = Date.now() - clockTick;
-    if (gap > 60000 && !document.hidden) logEv('reloj', 'temporizador parado ' + Math.round(gap / 1000) + ' s', { al: why });
+    var gap = Date.now() - clockTick, n = healIntervals();
+    if (gap > 60000 && !document.hidden) logEv('reloj', 'temporizador parado ' + Math.round(gap / 1000) + ' s', { al: why, relanzados: n });
     tickClocks();
   }
   document.addEventListener('visibilitychange', function () { if (!document.hidden) clockCheck('volver a la app'); });

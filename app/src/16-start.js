@@ -1,6 +1,6 @@
   // ---------------------------------------------------------------- arranque
 
-  var VERSION = '0.27.15';
+  var VERSION = '0.27.16';
 
   function fitScreen() {
     var z = window.innerWidth / 1920;

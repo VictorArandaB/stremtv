@@ -4,6 +4,47 @@
 (function () {
   'use strict';
 
+  // En la tele, al volver de una suspensión (botón Home, reposo) cada setInterval cuyo turno pasó mientras dormía salta
+  // una vez y ya nunca más: el reloj se quedaba en la hora de la última tecla, el protector no salía... Se rehacen con
+  // setTimeout encadenados (cada salto programa el siguiente) y, al volver a la app, se relanzan los que vayan con retraso.
+  // Los identificadores no chocan con los de la tele, y clearInterval/clearTimeout valen para los dos.
+  var nativeSetTimeout = window.setTimeout, nativeClearTimeout = window.clearTimeout, nativeClearInterval = window.clearInterval;
+  var intervals = {}, intervalSeq = 1000000000;
+  function armInterval(it, delay) {
+    nativeClearTimeout.call(window, it.t);
+    it.due = Date.now() + delay;
+    it.t = nativeSetTimeout.call(window, function () {
+      if (intervals[it.id] !== it) return;
+      armInterval(it, it.ms); // antes de llamar: si la función falla, la cadena sigue
+      it.fn.apply(window, it.args);
+    }, delay);
+  }
+  window.setInterval = function (fn, ms) {
+    var it = { id: ++intervalSeq, fn: fn, ms: Math.max(+ms || 0, 4), args: Array.prototype.slice.call(arguments, 2) };
+    intervals[it.id] = it;
+    armInterval(it, it.ms);
+    return it.id;
+  };
+  function clearAny(native) {
+    return function (id) {
+      var it = intervals[id];
+      if (!it) return native.call(window, id);
+      delete intervals[id];
+      nativeClearTimeout.call(window, it.t);
+    };
+  }
+  window.clearInterval = clearAny(nativeClearInterval);
+  window.clearTimeout = clearAny(nativeClearTimeout);
+  // relanza los que lleven más de un segundo de retraso; devuelve cuántos
+  function healIntervals() {
+    var n = 0, now = Date.now();
+    Object.keys(intervals).forEach(function (id) {
+      var it = intervals[id];
+      if (now > it.due + 1000) { armInterval(it, 0); n++; }
+    });
+    return n;
+  }
+
   var CINEMETA = 'https://v3-cinemeta.strem.io';
   var ANIME = 'https://anime-kitsu.strem.fun'; // catálogo de anime (Kitsu, acepta IDs de AniDB/MAL/AniList)
   var SUBS_ADDON = 'https://opensubtitles-v3.strem.io';
