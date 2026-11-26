@@ -187,7 +187,7 @@
       if ($('#osd-top')) return;
       var top = el('div', 'clock');
       top.id = 'osd-top';
-      top.textContent = clockText(new Date());
+      top.textContent = clockText(clockNow());
       $('#player').insertBefore(top, $('#osd'));
       var sub = el('div');
       sub.id = 'osd-sub';
@@ -216,7 +216,7 @@
       row('Subtítulos', Subs.embedded ? tr('incrustados') : Subs.current ? (tr(LANG_NAMES[Subs.current.lang]) || Subs.current.lang) : tr('no'));
       row('Reproductor', this.backend === 'av' ? tr('nativo (AVPlay)') : 'HTML5');
       if (this.duration) {
-        var end = new Date(Date.now() + Math.max(0, this.duration - this.time) * 1000);
+        var end = new Date(clockNow().getTime() + Math.max(0, this.duration - this.time) * 1000);
         row('Posición', fmtTime(this.time) + ' / ' + fmtTime(this.duration) + ' · ' + tr('termina a las {0}', clockText(end)));
       }
       box.innerHTML = '<div class="ip-poster"' + (c.poster ? ' style="background-image:url(&quot;' + esc(c.poster) + '&quot;)"' : '') + '></div>' +
@@ -404,7 +404,7 @@
       }
       var shown = this.seekTarget !== null ? this.seekTarget : this.time;
       $('#osd-cur').textContent = fmtTime(shown);
-      var end = new Date(Date.now() + Math.max(0, this.duration - shown) * 1000);
+      var end = new Date(clockNow().getTime() + Math.max(0, this.duration - shown) * 1000);
       $('#osd-dur').textContent = this.duration ? tr('termina a las {0}', clockText(end)) + ' · ' + fmtTime(this.duration) : '--:--';
       $('#osd-progress').style.width = this.duration ? (shown / this.duration * 100) + '%' : '0';
       // burbuja con el tiempo de destino mientras se avanza o retrocede

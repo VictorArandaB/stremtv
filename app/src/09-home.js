@@ -1,20 +1,45 @@
   // ---------------------------------------------------------------- pantalla: inicio
 
   function clockText(d) { return d.getHours() + ':' + (d.getMinutes() < 10 ? '0' : '') + d.getMinutes(); }
+  // La hora de JavaScript en la tele se queda atrás aunque la del sistema esté bien: el motor web la saca de la hora a la
+  // que arrancó más un contador que no avanza con la tele en reposo, y la app sigue viva entre reposos (se vio media hora
+  // de retraso). Los relojes usan la hora de jsDelivr (cabecera Date, que deja leer), al arrancar, al volver a la app y
+  // cada 30 min; diferencias de menos de un minuto no se corrigen (la cabecera va por segundos y la petición tarda)
+  var clockSkew = 0, clockSyncAt = 0;
+  function clockNow() { return new Date(Date.now() + clockSkew); }
+  function clockSync() {
+    if (Date.now() - clockSyncAt < 60000) return;
+    clockSyncAt = Date.now();
+    var t0 = Date.now(), server = 0;
+    xhr('GET', 'https://cdn.jsdelivr.net/gh/VictorArandaB/stremtv@main/package.json?t=' + t0, {
+      timeout: 10000, probe: true, head: function (x) { server = Date.parse(x.getResponseHeader('Date') || '') || 0; }
+    }).then(function () {
+      if (!server) return;
+      var t1 = Date.now(), skew = server + 500 - (t0 + t1) / 2; // la cabecera trunca los segundos: medio segundo más
+      if (t1 - t0 > 10000) return;
+      skew = Math.abs(skew) < 60000 ? 0 : Math.round(skew);
+      if (Math.abs(skew - clockSkew) >= 60000) logEv('reloj', 'desfase ' + Math.round(skew / 1000) + ' s', { antes: Math.round(clockSkew / 1000) });
+      clockSkew = skew;
+      tickClocks();
+    }, function () { clockSyncAt = 0; });
+  }
   // un solo temporizador para todos los relojes (cabeceras y reproductor)
   var clockTick = Date.now();
   function tickClocks() {
     clockTick = Date.now();
-    var t = clockText(new Date());
+    var t = clockText(clockNow());
     Array.prototype.forEach.call(document.querySelectorAll('.clock'), function (c) { if (c.textContent !== t) c.textContent = t; });
   }
   setInterval(tickClocks, 10000);
+  setTimeout(clockSync, 3000);
+  setInterval(clockSync, 1800000);
   // al volver a la app o al pulsar una tecla se pone al día y se relanzan los temporizadores atrasados (ver healIntervals);
   // si el del reloj llevaba más de un minuto sin saltar con la app delante, queda en el registro
   function clockCheck(why) {
     var gap = Date.now() - clockTick, n = healIntervals();
     if (gap > 60000 && !document.hidden) logEv('reloj', 'temporizador parado ' + Math.round(gap / 1000) + ' s', { al: why, relanzados: n });
     tickClocks();
+    clockSync();
   }
   document.addEventListener('visibilitychange', function () { if (!document.hidden) clockCheck('volver a la app'); });
   document.addEventListener('keydown', function () { if (Date.now() - clockTick > 15000) clockCheck('tecla'); }, true);
@@ -28,7 +53,7 @@
       focusable(tab, function () { if (t[0] !== active) openTab(t[0]); });
       h.appendChild(tab);
     });
-    h.appendChild(el('div', 'clock', clockText(new Date())));
+    h.appendChild(el('div', 'clock', clockText(clockNow())));
     return h;
   }
   // cada pestaña se abre sobre Inicio (Atrás siempre vuelve a Inicio); al volver a Inicio, el foco en su pestaña,

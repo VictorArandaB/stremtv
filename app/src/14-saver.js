@@ -127,7 +127,7 @@
       // inactividad: mientras llegan los títulos, el reloj sobre negro
       this.pool = [];
       box.querySelector('.sv-info').className = 'sv-info';
-      box.querySelector('.sv-info').innerHTML = '<div class="sv-clock clock">' + clockText(new Date()) + '</div>';
+      box.querySelector('.sv-info').innerHTML = '<div class="sv-clock clock">' + clockText(clockNow()) + '</div>';
       saverItems(settings.saverShow).then(function (items) {
         if (!Saver.on || Saver.gen !== gen) return;
         // si lo elegido está vacío (sin pendientes, lista vacía), novedades
@@ -154,7 +154,7 @@
         prev.classList.remove('on');
         // el texto cambia de esquina en cada fondo para no marcar la pantalla
         infoBox.className = 'sv-info c' + (n % 4);
-        infoBox.innerHTML = '<div class="sv-clock clock">' + clockText(new Date()) + '</div>' +
+        infoBox.innerHTML = '<div class="sv-clock clock">' + clockText(clockNow()) + '</div>' +
           '<div class="sv-title">' + esc(tr('En pausa: {0}', c.epLabel ? c.name + ' · ' + c.epLabel.split(' · ')[0] : c.name || c.label || '')) + '</div>' +
           (item && item.name && item.name !== c.name ? '<div class="sv-sub">' + esc(item.name) + '</div>' : '') +
           '<div class="sv-sub">' + esc(tr('Pulsa cualquier tecla para volver')) + '</div>';
@@ -187,7 +187,7 @@
       var box = $('#saver'), layers = box.querySelectorAll('.sv-bg'), infoBox = box.querySelector('.sv-info');
       if (!item) {
         infoBox.className = 'sv-info';
-        infoBox.innerHTML = '<div class="sv-clock clock">' + clockText(new Date()) + '</div>';
+        infoBox.innerHTML = '<div class="sv-clock clock">' + clockText(clockNow()) + '</div>';
         return;
       }
       this.shown = item;
@@ -210,7 +210,7 @@
       // logo que no carga: el nombre en texto
       var logo = infoBox.querySelector('img');
       if (logo) logo.onerror = function () { logo.parentNode.innerHTML = '<b>' + esc(d.name) + '</b>'; };
-      box.querySelector('.sv-corner-clock').textContent = clockText(new Date());
+      box.querySelector('.sv-corner-clock').textContent = clockText(clockNow());
     },
 
     stop: function () {
